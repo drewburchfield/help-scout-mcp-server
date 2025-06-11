@@ -1,0 +1,24 @@
+{
+  "name": "helpscout-search",
+  "description": "Search-capable MCP server for Help Scout inboxes, conversations, and threads.",
+  "version": "0.1.0",
+  "mcpVersion": "0.5.0",
+  "resources": [
+    "helpscout://inboxes", 
+    "helpscout://conversations", 
+    "helpscout://threads", 
+    "helpscout://clock"
+  ],
+  "tools": [
+    "searchInboxes", 
+    "searchConversations", 
+    "getConversationSummary",
+    "getThreads", 
+    "getServerTime"
+  ],
+  "prompts": [
+    "search-last-7-days", 
+    "find-urgent-tags", 
+    "list-inbox-activity"
+  ]
+}

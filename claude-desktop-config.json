@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "helpscout": {
+      "command": "node",
+      "args": ["/path/to/helpscout-mcp-server/dist/index.js"],
+      "env": {
+        "HELPSCOUT_API_KEY": "Bearer your-personal-access-token-here",
+        "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",
+        "ALLOW_PII": "false",
+        "CACHE_TTL_SECONDS": "300",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

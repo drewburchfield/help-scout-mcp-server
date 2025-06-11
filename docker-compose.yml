@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  helpscout-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: helpscout-mcp-server:latest
+    container_name: helpscout-mcp-server
+    environment:
+      - HELPSCOUT_API_KEY=${HELPSCOUT_API_KEY}
+      - HELPSCOUT_APP_SECRET=${HELPSCOUT_APP_SECRET}
+      - HELPSCOUT_BASE_URL=${HELPSCOUT_BASE_URL:-https://api.helpscout.net/v2/}
+      - ALLOW_PII=${ALLOW_PII:-false}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
+      - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-10000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    networks:
+      - helpscout-network
+
+  # Optional: Redis for distributed caching (commented out by default)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: helpscout-redis
+  #   restart: unless-stopped
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - helpscout-network
+
+networks:
+  helpscout-network:
+    driver: bridge
+
+# volumes:
+#   redis_data:
