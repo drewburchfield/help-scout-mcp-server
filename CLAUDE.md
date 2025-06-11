@@ -99,3 +99,49 @@ To test the implementation:
 4. The server communicates via stdio using the MCP protocol
 
 For Claude Desktop integration, see `claude-desktop-config.json` example.
+
+## Repository Management Strategy
+
+This repository follows a dual-branch strategy for managing development vs public release:
+
+### Branch Structure
+
+- **`dev` branch**: Complete development version
+  - Contains CLAUDE.md (this file)
+  - Contains original PRD documentation (helpscout_mcp_prd.md)
+  - Contains development notes and internal files
+  - Contains claude-desktop-config.json example
+  - May reference development tools and processes
+
+- **`main` branch**: Clean public release version
+  - Excludes CLAUDE.md and internal development files
+  - Excludes PRD and development documentation
+  - Clean commit history without development references
+  - Ready for open source publication
+
+### Workflow
+
+1. **All development work happens on `dev` branch**
+2. **When ready to publish/update public version:**
+   - Create clean `main` branch from `dev`
+   - Remove internal files: CLAUDE.md, helpscout_mcp_prd.md, claude-desktop-config.json
+   - Clean up any development references in commit messages
+   - Push `main` branch for public consumption
+
+### Files to Exclude from Public Release
+
+- `CLAUDE.md` (this file)
+- `helpscout_mcp_prd.md` (original PRD)
+- `claude-desktop-config.json` (development example)
+- Any files with internal development notes
+- References to development tools in commit messages
+
+### Syncing Changes
+
+When making updates:
+1. Work on `dev` branch with full context
+2. Test and validate changes
+3. Cherry-pick or recreate clean commits for `main` branch
+4. Ensure `main` branch maintains clean public presentation
+
+This approach allows us to maintain full development context while presenting a polished public repository.
