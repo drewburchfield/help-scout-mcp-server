@@ -124,7 +124,8 @@ This repository follows a dual-branch strategy for managing development vs publi
 1. **All development work happens on `dev` branch**
 2. **When ready to publish/update public version:**
    - Create clean `main` branch from `dev`
-   - Remove internal files: CLAUDE.md, helpscout_mcp_prd.md, claude-desktop-config.json
+   - Remove internal files: CLAUDE.md, helpscout_mcp_prd.md
+   - Keep useful files: claude-desktop-config.json (user example)
    - Clean up any development references in commit messages
    - Push `main` branch for public consumption
 
@@ -132,9 +133,14 @@ This repository follows a dual-branch strategy for managing development vs publi
 
 - `CLAUDE.md` (this file)
 - `helpscout_mcp_prd.md` (original PRD)
-- `claude-desktop-config.json` (development example)
 - Any files with internal development notes
 - References to development tools in commit messages
+
+### Files to Keep in Public Release
+
+- `claude-desktop-config.json` (useful example for users)
+- All source code and documentation
+- README with inline examples
 
 ### Syncing Changes
 
