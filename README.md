@@ -1,54 +1,96 @@
-# Help Scout MCP Server
+# 🎯 Help Scout MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that provides read-only access to Help Scout inboxes, conversations, and threads. This allows LLM agents to search and retrieve Help Scout data for customer support analysis and automation.
+[![npm version](https://badge.fury.io/js/helpscout-mcp-server.svg)](https://badge.fury.io/js/helpscout-mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://typescriptlang.org/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://docker.com/)
 
-## Features
+> **The first and only MCP server for Help Scout integration** 🏆
 
-- **Search Capabilities**: Search inboxes, conversations, and threads
-- **Time-Relative Queries**: Built-in server time reference for accurate date filtering
-- **Caching**: LRU cache with configurable TTL for performance
-- **Security**: PII redaction options and read-only API access
-- **MCP Compliant**: Full Model Context Protocol implementation
-- **Docker Ready**: Containerized deployment with Docker Compose
+A powerful [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that bridges Help Scout with AI agents. Enable LLMs to intelligently search, analyze, and retrieve customer support data from your Help Scout account with enterprise-grade security and performance.
 
-## Installation
+## ✨ Features
 
-### Prerequisites
+- **🔍 Advanced Search**: Search inboxes, conversations, and threads with rich filtering
+- **⏰ Time-Relative Queries**: Built-in server time anchor for accurate date filtering  
+- **🚀 High Performance**: LRU caching with configurable TTL for sub-second responses
+- **🔒 Enterprise Security**: PII redaction, read-only access, and OAuth2 authentication
+- **📋 MCP Compliant**: Full Model Context Protocol implementation with resources, tools & prompts
+- **🐳 Production Ready**: Docker support with health checks and observability
+- **🎯 Pre-built Prompts**: Ready-to-use workflows for common support scenarios
+- **📊 Smart Pagination**: Cursor-based navigation with field selection for optimal performance
 
-- Node.js 18+ 
-- Help Scout API credentials
-- (Optional) Docker for containerized deployment
+## 🚀 Quick Start
 
-### Local Development
+### 📦 NPM Installation (Recommended)
 
-1. Clone and install dependencies:
 ```bash
-git clone <repository-url>
-cd helpscout-mcp-server
-npm install
+# Install globally
+npm install -g helpscout-mcp-server
+
+# Or install locally in your project
+npm install helpscout-mcp-server
 ```
 
-2. Configure environment variables:
+### ⚡ Get Started in 2 Minutes
+
+1. **Get Help Scout API credentials** from your Help Scout account
+2. **Configure Claude Desktop** with your credentials:
+
+```json
+{
+  "mcpServers": {
+    "helpscout": {
+      "command": "npx",
+      "args": ["helpscout-mcp-server"],
+      "env": {
+        "HELPSCOUT_API_KEY": "Bearer your-personal-access-token-here"
+      }
+    }
+  }
+}
+```
+
+3. **Start chatting** with Claude about your Help Scout data! 🎉
+
+### 💡 Example Conversations
+
+Once connected, you can ask Claude questions like:
+
+- *"Show me all urgent conversations from the last 24 hours"*
+- *"Find conversations tagged with 'billing' that are still open"*  
+- *"What's the latest activity in our support inbox?"*
+- *"Get me the conversation thread for ticket #12345"*
+- *"Search for conversations mentioning 'refund' this week"*
+
+### 🛠️ Development Installation
+
 ```bash
+# Clone the repository
+git clone https://github.com/drewburchfield/helpscout-mcp-server.git
+cd helpscout-mcp-server
+
+# Install dependencies
+npm install
+
+# Configure environment
 cp .env.example .env
 # Edit .env with your Help Scout credentials
-```
 
-3. Build and start:
-```bash
+# Build and test
 npm run build
 npm start
 ```
 
-### Docker Deployment
+### 🐳 Docker Deployment
 
 ```bash
-# Using Docker Compose
+# Quick start with Docker Compose
 docker-compose up -d
 
 # Or build and run manually
 docker build -t helpscout-mcp-server .
-docker run -d --env-file .env helpscout-mcp-server
+docker run --env-file .env -i helpscout-mcp-server
 ```
 
 ## Configuration
@@ -145,16 +187,23 @@ Monitor activity in a specific inbox over a time period.
 
 ## Usage Examples
 
-### With Claude Desktop
+### With Claude Desktop (Local Installation)
 
-Add to your Claude Desktop MCP configuration:
+**Important:** Claude Desktop requires local installation, not Docker containers, due to stdio communication requirements.
 
+1. **Install and build locally:**
+```bash
+npm install
+npm run build
+```
+
+2. **Add to your Claude Desktop MCP configuration:**
 ```json
 {
   "mcpServers": {
     "helpscout": {
       "command": "node",
-      "args": ["/path/to/helpscout-mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/helpscout-mcp-server/dist/index.js"],
       "env": {
         "HELPSCOUT_API_KEY": "Bearer your-personal-access-token-here",
         "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",
@@ -167,12 +216,33 @@ Add to your Claude Desktop MCP configuration:
 }
 ```
 
-**Note:** You can also find this configuration in the included `claude-desktop-config.json` file.
+**Note:** Use the absolute path to your project directory. You can also find this configuration in the included `claude-desktop-config.json` file.
 
-### Direct Usage
+### Docker Usage (Development & Production)
+
+**Docker is ideal for:**
+- Development testing and validation
+- Production deployments  
+- CI/CD pipelines
+- **Not suitable for Claude Desktop integration**
 
 ```bash
-# Start the server
+# Build and run with Docker
+docker build -t helpscout-mcp-server .
+docker run --env-file .env -i helpscout-mcp-server
+
+# Or use Docker Compose
+docker-compose up
+
+# Test server functionality (not Claude Desktop integration)
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | docker run --env-file .env -i helpscout-mcp-server
+```
+
+### Direct Usage (Local Development)
+
+```bash
+# Start the server locally
+npm run build
 node dist/index.js
 
 # The server communicates via stdio MCP protocol
@@ -209,20 +279,83 @@ npm run build
 npm run clean
 ```
 
-## Contributing
+## 🔧 Development
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+### Adding Tests
 
-## License
+Before publishing to npm, we recommend adding comprehensive tests:
 
-MIT License - see LICENSE file for details.
+```bash
+# Run tests
+npm test
 
-## Support
+# Run type checking
+npm run type-check
 
-- [Help Scout API Documentation](https://developer.helpscout.com/)
-- [Model Context Protocol Specification](https://modelcontextprotocol.io)
-- [Issues and Bug Reports](issues)
+# Run linting
+npm run lint
+```
+
+### Publishing to NPM
+
+To publish this server to npm for easy installation:
+
+1. **Update package.json** with your details:
+```json
+{
+  "name": "helpscout-mcp-server",
+  "repository": "https://github.com/yourusername/helpscout-mcp-server",
+  "homepage": "https://github.com/yourusername/helpscout-mcp-server#readme"
+}
+```
+
+2. **Build and publish**:
+```bash
+npm run build
+npm publish
+```
+
+3. **Users can then install globally**:
+```bash
+npm install -g helpscout-mcp-server
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how to get started:
+
+1. 🍴 Fork the repository
+2. 🌟 Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. 💻 Make your changes
+4. ✅ Add tests for new functionality
+5. 🧪 Ensure all tests pass (`npm test`)
+6. 📝 Update documentation as needed
+7. 🚀 Submit a pull request
+
+### 🐛 Bug Reports
+
+Found a bug? Please [open an issue](../../issues) with:
+- Clear description of the problem
+- Steps to reproduce
+- Expected vs actual behavior
+- Environment details (Node.js version, OS, etc.)
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🔗 Related Projects
+
+- [Model Context Protocol](https://modelcontextprotocol.io) - The protocol specification
+- [Claude Desktop](https://claude.ai/desktop) - Official Claude desktop application
+- [Help Scout API](https://developer.helpscout.com/) - Official Help Scout API documentation
+
+## 🙏 Acknowledgments
+
+- [Anthropic](https://anthropic.com) for the Model Context Protocol
+- [Help Scout](https://helpscout.com) for their excellent API
+- The MCP community for inspiration and feedback
+
+---
+
+**⭐ If this project helped you, please consider giving it a star!**

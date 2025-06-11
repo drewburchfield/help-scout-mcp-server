@@ -30,7 +30,8 @@ export class Logger {
       ...context,
     };
 
-    console.log(JSON.stringify(logEntry));
+    // Write logs to stderr to avoid interfering with MCP protocol on stdout
+    console.error(JSON.stringify(logEntry));
   }
 
   error(message: string, context: LogContext = {}): void {

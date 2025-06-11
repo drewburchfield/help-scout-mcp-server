@@ -7,14 +7,7 @@ services:
       dockerfile: Dockerfile
     image: helpscout-mcp-server:latest
     container_name: helpscout-mcp-server
-    environment:
-      - HELPSCOUT_API_KEY=${HELPSCOUT_API_KEY}
-      - HELPSCOUT_APP_SECRET=${HELPSCOUT_APP_SECRET}
-      - HELPSCOUT_BASE_URL=${HELPSCOUT_BASE_URL:-https://api.helpscout.net/v2/}
-      - ALLOW_PII=${ALLOW_PII:-false}
-      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-300}
-      - MAX_CACHE_SIZE=${MAX_CACHE_SIZE:-10000}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+    env_file: .env
     restart: unless-stopped
     stdin_open: true
     tty: true
