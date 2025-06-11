@@ -156,13 +156,18 @@ Add to your Claude Desktop MCP configuration:
       "command": "node",
       "args": ["/path/to/helpscout-mcp-server/dist/index.js"],
       "env": {
-        "HELPSCOUT_API_KEY": "your-key-here",
-        "HELPSCOUT_APP_SECRET": "your-secret-here"
+        "HELPSCOUT_API_KEY": "Bearer your-personal-access-token-here",
+        "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",
+        "ALLOW_PII": "false",
+        "CACHE_TTL_SECONDS": "300",
+        "LOG_LEVEL": "info"
       }
     }
   }
 }
 ```
+
+**Note:** You can also find this configuration in the included `claude-desktop-config.json` file.
 
 ### Direct Usage
 
