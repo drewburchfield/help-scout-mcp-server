@@ -164,7 +164,7 @@ async function main(): Promise<void> {
   await server.start();
 }
 
-// Start the server when this module is executed directly (either via `node dist/index.js` or via an npm bin stub such as `npx helpscout-mcp-server`)
+// Start the server when this module is executed directly (either via `node dist/index.js` or via an npm bin stub such as `npx help-scout-mcp-server`)
 const currentFile = fileURLToPath(import.meta.url);
 const executedFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
 
@@ -172,7 +172,7 @@ const executedFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
 // not to `dist/index.js`. The wrapper immediately requires (imports) this file, so `main()` should still run.
 // We therefore only skip `main()` when the module is imported *programmatically* (e.g., in tests) **and** the caller
 // did not invoke it via the CLI. In those cases the wrapper path comparison will not match the source file path.
-const invokedFromCLI = executedFile === currentFile || executedFile.endsWith('helpscout-mcp-server');
+const invokedFromCLI = executedFile === currentFile || executedFile.endsWith('help-scout-mcp-server');
 
 if (invokedFromCLI) {
   main().catch((error) => {

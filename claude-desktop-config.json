@@ -2,7 +2,7 @@
   "mcpServers": {
     "helpscout": {
       "command": "npx",
-      "args": ["helpscout-mcp-server"],
+      "args": ["help-scout-mcp-server"],
       "env": {
         "HELPSCOUT_API_KEY": "Bearer your-personal-access-token-here",
         "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",

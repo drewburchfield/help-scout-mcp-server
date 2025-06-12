@@ -6,8 +6,8 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 1. **Fork and clone the repository**
 ```bash
-git clone https://github.com/drewburchfield/helpscout-mcp-server.git
-cd helpscout-mcp-server
+git clone https://github.com/drewburchfield/help-scout-mcp-server.git
+cd help-scout-mcp-server
 ```
 
 2. **Install dependencies**

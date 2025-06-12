@@ -23,7 +23,7 @@ FROM node:20-alpine AS production
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S helpscout -u 1001
+    adduser -S help-scout -u 1001
 
 # Set working directory
 WORKDIR /app
@@ -39,8 +39,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/mcp.json ./
 
 # Change ownership to app user
-RUN chown -R helpscout:nodejs /app
-USER helpscout
+RUN chown -R help-scout:nodejs /app
+USER help-scout
 
 # Expose port (if running in HTTP mode)
 EXPOSE 3000
@@ -53,7 +53,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENTRYPOINT ["node", "dist/index.js"]
 
 # Labels for metadata
-LABEL name="helpscout-mcp-server" \
+LABEL name="help-scout-mcp-server" \
       description="Help Scout MCP server for searching inboxes, conversations, and threads" \
       version="0.1.0" \
       maintainer="Drew Burchfield"
