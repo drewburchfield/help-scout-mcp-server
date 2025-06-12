@@ -70,7 +70,6 @@ jobs:
           type=raw,value=latest,enable={{is_default_branch}}
           type=raw,value=v${{ steps.package.outputs.version }}
           type=raw,value=${{ steps.package.outputs.version }}
-          type=sha,prefix={{branch}}-
         labels: |
           org.opencontainers.image.title=Help Scout MCP Server
           org.opencontainers.image.description=Model Context Protocol server for Help Scout - enables AI assistants to search conversations, customers, and support data
@@ -102,6 +101,12 @@ jobs:
         short-description: "MCP server for Help Scout - enables AI assistants to search conversations and support data"
         readme-filepath: ./README.md
     
+  metadata:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
     - name: Update GitHub repository topics
       uses: actions/github-script@v7
       with:
@@ -124,7 +129,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
-    needs: [test, docker]
+    needs: [test, metadata]
     if: github.ref == 'refs/heads/main'
     
     steps:
