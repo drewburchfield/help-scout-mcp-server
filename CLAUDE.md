@@ -157,4 +157,19 @@ When making updates:
 - No "Co-Authored-By: Claude" lines
 - Write clear, conventional commit messages as if authored by the developer
 
+### Publishing Strategy
+
+**Tag-Based Publishing (Preferred Pattern):**
+- Docker builds: Only on git tags (e.g., `v1.0.4`)
+- NPM publishing: Only on git tags (when implemented)
+- GitHub releases: Auto-created from tags
+- Avoids wasteful builds on every commit
+
+**Current Workflow:**
+1. Development on `dev` branch
+2. Version bump: `npm run version:patch/minor/major` (creates commit + tag)
+3. Cherry-pick to `main` branch
+4. Push with tags: `git push origin main --tags`
+5. CI triggers on tags for publishing
+
 This approach allows us to maintain full development context while presenting a polished public repository.
