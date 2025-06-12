@@ -71,7 +71,7 @@ jobs:
       with:
         images: ${{ secrets.DOCKERHUB_USERNAME }}/help-scout-mcp-server
         tags: |
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=latest
           type=raw,value=v${{ steps.package.outputs.version }}
           type=raw,value=${{ steps.package.outputs.version }}
         labels: |
