@@ -7,7 +7,8 @@ on:
   pull_request:
     branches: [ main ]
 
-permissions: write-all
+permissions:
+  contents: write
 
 jobs:
   test:
@@ -103,35 +104,9 @@ jobs:
         short-description: "MCP server for Help Scout - enables AI assistants to search conversations and support data"
         readme-filepath: ./README.md
     
-  metadata:
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Update GitHub repository topics
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const topics = [
-            'mcp',
-            'model-context-protocol', 
-            'help-scout',
-            'helpscout',
-            'customer-support',
-            'typescript',
-            'nodejs'
-          ];
-          
-          await github.rest.repos.replaceAllTopics({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            names: topics
-          });
-
   release:
     runs-on: ubuntu-latest
-    needs: [test, metadata]
+    needs: [test]
     if: github.ref == 'refs/heads/main'
     
     steps:
