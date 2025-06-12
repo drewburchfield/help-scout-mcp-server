@@ -107,10 +107,13 @@ class HelpScoutMCPServer {
       await this.server.connect(transport);
       
       logger.info('Help Scout MCP Server started successfully');
+      
+      // Keep the process running
+      process.stdin.resume();
     } catch (error) {
-      logger.error('Failed to start server', { 
-        error: error instanceof Error ? error.message : String(error) 
-      });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to start server', { error: errorMessage });
+      console.error('MCP Server startup failed:', errorMessage);
       process.exit(1);
     }
   }
@@ -145,11 +148,13 @@ async function main(): Promise<void> {
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught exception', { error: error.message, stack: error.stack });
+    console.error('Uncaught exception:', error.message, error.stack);
     process.exit(1);
   });
   
   process.on('unhandledRejection', (reason) => {
     logger.error('Unhandled rejection', { reason: String(reason) });
+    console.error('Unhandled rejection:', String(reason));
     process.exit(1);
   });
 
@@ -159,9 +164,9 @@ async function main(): Promise<void> {
 // Start the server if this file is executed directly
 if (process.argv[1] && process.argv[1].endsWith('index.js')) {
   main().catch((error) => {
-    logger.error('Failed to start application', { 
-      error: error instanceof Error ? error.message : String(error) 
-    });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Failed to start application', { error: errorMessage });
+    console.error('Application startup failed:', errorMessage);
     process.exit(1);
   });
 }
