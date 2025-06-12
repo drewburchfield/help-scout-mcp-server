@@ -55,5 +55,5 @@ ENTRYPOINT ["node", "dist/index.js"]
 # Labels for metadata
 LABEL name="help-scout-mcp-server" \
       description="Help Scout MCP server for searching inboxes, conversations, and threads" \
-      version="1.0.4" \
+      version="1.0.5" \
       maintainer="Drew Burchfield"
