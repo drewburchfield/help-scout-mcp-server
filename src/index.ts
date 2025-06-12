@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -107,6 +109,7 @@ class HelpScoutMCPServer {
       await this.server.connect(transport);
       
       logger.info('Help Scout MCP Server started successfully');
+      console.error('Help Scout MCP Server started and listening on stdio');
       
       // Keep the process running
       process.stdin.resume();
@@ -132,7 +135,7 @@ class HelpScoutMCPServer {
 
 // Handle graceful shutdown
 async function shutdown(server: HelpScoutMCPServer): Promise<void> {
-  logger.info('Received shutdown signal, stopping server...');
+  console.error('Received shutdown signal, stopping server...');
   await server.stop();
   process.exit(0);
 }
@@ -161,8 +164,17 @@ async function main(): Promise<void> {
   await server.start();
 }
 
-// Start the server if this file is executed directly
-if (process.argv[1] && process.argv[1].endsWith('index.js')) {
+// Start the server when this module is executed directly (either via `node dist/index.js` or via an npm bin stub such as `npx helpscout-mcp-server`)
+const currentFile = fileURLToPath(import.meta.url);
+const executedFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
+
+// When the script is launched through an npm-generated bin wrapper, `process.argv[1]` points to the wrapper file,
+// not to `dist/index.js`. The wrapper immediately requires (imports) this file, so `main()` should still run.
+// We therefore only skip `main()` when the module is imported *programmatically* (e.g., in tests) **and** the caller
+// did not invoke it via the CLI. In those cases the wrapper path comparison will not match the source file path.
+const invokedFromCLI = executedFile === currentFile || executedFile.endsWith('helpscout-mcp-server');
+
+if (invokedFromCLI) {
   main().catch((error) => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('Failed to start application', { error: errorMessage });
