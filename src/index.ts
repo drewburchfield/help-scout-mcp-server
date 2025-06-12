@@ -168,18 +168,11 @@ async function main(): Promise<void> {
 const currentFile = fileURLToPath(import.meta.url);
 const executedFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
 
-// Debug output for troubleshooting
-console.error('DEBUG: currentFile =', currentFile);
-console.error('DEBUG: executedFile =', executedFile);
-console.error('DEBUG: process.argv =', process.argv);
-
 // When the script is launched through an npm-generated bin wrapper, `process.argv[1]` points to the wrapper file,
 // not to `dist/index.js`. The wrapper immediately requires (imports) this file, so `main()` should still run.
 // We therefore only skip `main()` when the module is imported *programmatically* (e.g., in tests) **and** the caller
 // did not invoke it via the CLI. In those cases the wrapper path comparison will not match the source file path.
 const invokedFromCLI = executedFile === currentFile || executedFile.endsWith('helpscout-mcp-server');
-
-console.error('DEBUG: invokedFromCLI =', invokedFromCLI);
 
 if (invokedFromCLI) {
   main().catch((error) => {
