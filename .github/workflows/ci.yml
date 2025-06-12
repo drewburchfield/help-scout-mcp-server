@@ -60,7 +60,7 @@ jobs:
   #     id: meta
   #     uses: docker/metadata-action@v5
   #     with:
-  #       images: helpscout-mcp-server
+  #       images: help-scout-mcp-server
   #       tags: |
   #         type=ref,event=branch
   #         type=sha,prefix={{branch}}-

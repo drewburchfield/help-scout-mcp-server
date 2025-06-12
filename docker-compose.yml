@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  helpscout-mcp:
+  help-scout-mcp:
     build:
       context: .
       dockerfile: Dockerfile
-    image: helpscout-mcp-server:latest
-    container_name: helpscout-mcp-server
+    image: help-scout-mcp-server:latest
+    container_name: help-scout-mcp-server
     env_file: .env
     restart: unless-stopped
     stdin_open: true

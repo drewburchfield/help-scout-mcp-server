@@ -1,6 +1,6 @@
 # 🎯 Help Scout MCP Server
 
-[![npm version](https://badge.fury.io/js/helpscout-mcp-server.svg)](https://badge.fury.io/js/helpscout-mcp-server)
+[![npm version](https://badge.fury.io/js/help-scout-mcp-server.svg)](https://badge.fury.io/js/help-scout-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://typescriptlang.org/)
 [![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://docker.com/)
@@ -28,37 +28,37 @@ The Help Scout MCP Server implements the [Model Context Protocol](https://modelc
 # Option 1: With Personal Access Token (Recommended)
 export HELPSCOUT_API_KEY="Bearer your-personal-access-token-here"
 export HELPSCOUT_BASE_URL="https://api.helpscout.net/v2/"
-npx helpscout-mcp-server
+npx help-scout-mcp-server
 
 # Option 2: With OAuth2 App Credentials (Legacy)
 export HELPSCOUT_API_KEY="your-client-id-here"
 export HELPSCOUT_APP_SECRET="your-client-secret-here"
 export HELPSCOUT_BASE_URL="https://api.helpscout.net/v2/"
-npx helpscout-mcp-server
+npx help-scout-mcp-server
 
 # You can also pass credentials as command line arguments
-npx helpscout-mcp-server --api-key="Bearer your-token-here" --base-url="https://api.helpscout.net/v2/"
+npx help-scout-mcp-server --api-key="Bearer your-token-here" --base-url="https://api.helpscout.net/v2/"
 
 # Or create a .env file in your current directory with the required variables
 # Then simply run:
-npx helpscout-mcp-server
+npx help-scout-mcp-server
 ```
 
 ### Global Installation
 
 ```bash
-npm install -g helpscout-mcp-server
+npm install -g help-scout-mcp-server
 
 # Then run with credentials:
 export HELPSCOUT_API_KEY="Bearer your-personal-access-token-here"
-helpscout-mcp-server
+help-scout-mcp-server
 ```
 
 ### Local Development
 
 ```bash
-git clone https://github.com/yourusername/helpscout-mcp-server.git
-cd helpscout-mcp-server
+git clone https://github.com/yourusername/help-scout-mcp-server.git
+cd help-scout-mcp-server
 npm install
 npm run build
 
@@ -70,14 +70,14 @@ npm start
 
 ```bash
 # Option 1: With Personal Access Token (Recommended)
-docker pull helpscout-mcp-server
-docker run -p 3000:3000 -e HELPSCOUT_API_KEY="Bearer your-token-here" helpscout-mcp-server
+docker pull help-scout-mcp-server
+docker run -p 3000:3000 -e HELPSCOUT_API_KEY="Bearer your-token-here" help-scout-mcp-server
 
 # Option 2: With OAuth2 App Credentials (Legacy)
 docker run -p 3000:3000 \
   -e HELPSCOUT_API_KEY="your-client-id-here" \
   -e HELPSCOUT_APP_SECRET="your-client-secret-here" \
-  helpscout-mcp-server
+  help-scout-mcp-server
 ```
 
 ## ⚙️ Configuration
@@ -125,7 +125,7 @@ Add this to your Claude Desktop configuration:
   "mcpServers": {
     "helpscout": {
       "command": "npx",
-      "args": ["helpscout-mcp-server"],
+      "args": ["help-scout-mcp-server"],
       "env": {
         "HELPSCOUT_API_KEY": "Bearer your-personal-access-token-here",
         "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",
@@ -145,7 +145,7 @@ For OAuth2 authentication (legacy), use:
   "mcpServers": {
     "helpscout": {
       "command": "npx",
-      "args": ["helpscout-mcp-server"],
+      "args": ["help-scout-mcp-server"],
       "env": {
         "HELPSCOUT_API_KEY": "your-client-id-here",
         "HELPSCOUT_APP_SECRET": "your-client-secret-here",
