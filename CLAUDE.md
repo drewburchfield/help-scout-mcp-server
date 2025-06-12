@@ -150,4 +150,11 @@ When making updates:
 3. Cherry-pick or recreate clean commits for `main` branch
 4. Ensure `main` branch maintains clean public presentation
 
+### Commit Message Guidelines
+
+**DO NOT include Claude/AI attribution in commit messages.** Keep commits professional:
+- No "🤖 Generated with [Claude Code]" footers
+- No "Co-Authored-By: Claude" lines
+- Write clear, conventional commit messages as if authored by the developer
+
 This approach allows us to maintain full development context while presenting a polished public repository.
