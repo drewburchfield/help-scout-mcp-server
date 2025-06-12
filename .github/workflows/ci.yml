@@ -82,7 +82,7 @@ jobs:
           org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}#readme
           org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-          io.github.tags=mcp,model-context-protocol,help-scout,helpscout,customer-support,typescript,nodejs
+          io.github.tags=mcp,model-context-protocol,modelcontextprotocol,mcp-server,help-scout,help-scout-api,helpscout,customer-support,typescript,nodejs
     
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
