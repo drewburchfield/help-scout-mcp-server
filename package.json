@@ -1,6 +1,6 @@
 {
   "name": "help-scout-mcp-server",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "The first MCP server for Help Scout - search conversations, threads, and inboxes with AI agents",
   "main": "dist/index.js",
   "type": "module",
@@ -24,9 +24,9 @@
     "test:docker": "node test-docker.cjs",
     "test:docker:ci": "node test-docker-ci.cjs",
     "clean": "rimraf dist",
-    "version:patch": "node scripts/bump-version.js patch",
-    "version:minor": "node scripts/bump-version.js minor", 
-    "version:major": "node scripts/bump-version.js major",
+    "version:patch": "node scripts/bump-version.cjs patch",
+    "version:minor": "node scripts/bump-version.cjs minor",
+    "version:major": "node scripts/bump-version.cjs major",
     "prepublishOnly": "npm run clean && npm run build",
     "prepack": "npm run build"
   },
