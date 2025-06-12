@@ -21,6 +21,8 @@
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "test": "jest",
+    "test:docker": "node test-docker.cjs",
+    "test:docker:ci": "node test-docker-ci.cjs",
     "clean": "rimraf dist",
     "prepublishOnly": "npm run clean && npm run build",
     "prepack": "npm run build"
