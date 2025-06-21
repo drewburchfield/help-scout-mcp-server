@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-
-import { fileURLToPath } from 'url';
-import path from 'path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {

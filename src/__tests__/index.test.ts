@@ -79,7 +79,6 @@ const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {
 });
 
 // Mock console.error to prevent console spam during tests
-const originalConsoleError = console.error;
 const mockConsoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
 
 describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
@@ -217,10 +216,8 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
   });
 
   describe('MCP Protocol Handler Integration - THE REAL DEAL', () => {
-    let server: HelpScoutMCPServer;
-
     beforeEach(() => {
-      server = new HelpScoutMCPServer();
+      new HelpScoutMCPServer();
     });
 
     it('should integrate resources handler correctly', async () => {
