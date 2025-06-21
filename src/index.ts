@@ -20,14 +20,14 @@ import { resourceHandler } from './resources/index.js';
 import { toolHandler } from './tools/index.js';
 import { promptHandler } from './prompts/index.js';
 
-class HelpScoutMCPServer {
+export class HelpScoutMCPServer {
   private server: Server;
 
   constructor() {
     this.server = new Server(
       {
         name: 'helpscout-search',
-        version: '1.0.9',
+        version: '1.0.8',
       },
       {
         capabilities: {

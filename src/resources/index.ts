@@ -12,7 +12,7 @@ export class ResourceHandler {
       throw new Error(`Unsupported protocol: ${protocol}`);
     }
 
-    const path = url.pathname.slice(1); // Remove leading slash
+    const path = url.hostname; // For custom protocols like helpscout://, the resource name is in hostname
     const searchParams = Object.fromEntries(url.searchParams.entries());
 
     logger.info('Handling resource request', { uri, path, params: searchParams });
