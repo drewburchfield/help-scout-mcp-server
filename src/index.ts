@@ -165,14 +165,9 @@ async function main(): Promise<void> {
 }
 
 // Start the server when this module is executed directly (either via `node dist/index.js` or via an npm bin stub such as `npx help-scout-mcp-server`)
-const currentFile = fileURLToPath(import.meta.url);
-const executedFile = process.argv[1] ? path.resolve(process.argv[1]) : '';
-
-// When the script is launched through an npm-generated bin wrapper, `process.argv[1]` points to the wrapper file,
-// not to `dist/index.js`. The wrapper immediately requires (imports) this file, so `main()` should still run.
-// We therefore only skip `main()` when the module is imported *programmatically* (e.g., in tests) **and** the caller
-// did not invoke it via the CLI. In those cases the wrapper path comparison will not match the source file path.
-const invokedFromCLI = executedFile === currentFile || executedFile.endsWith('help-scout-mcp-server');
+// Use a simpler approach that Jest can handle - check if we're in a test environment
+const isTestEnvironment = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
+const invokedFromCLI = !isTestEnvironment;
 
 if (invokedFromCLI) {
   main().catch((error) => {
