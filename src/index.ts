@@ -27,7 +27,7 @@ export class HelpScoutMCPServer {
     this.server = new Server(
       {
         name: 'helpscout-search',
-        version: '1.0.8',
+        version: '1.0.9',
       },
       {
         capabilities: {
