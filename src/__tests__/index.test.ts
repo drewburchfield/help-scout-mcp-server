@@ -152,10 +152,8 @@ describe('HelpScoutMCPServer', () => {
   });
 
   describe('request handlers', () => {
-    let server: any;
-
     beforeEach(() => {
-      server = new HelpScoutMCPServer();
+      new HelpScoutMCPServer();
     });
 
     it('should handle ListResources requests', async () => {
