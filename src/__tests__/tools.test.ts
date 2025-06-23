@@ -35,13 +35,14 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(5);
+      expect(tools).toHaveLength(6);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations', 
         'getConversationSummary',
         'getThreads',
-        'getServerTime'
+        'getServerTime',
+        'advancedConversationSearch'
       ]);
     });
 

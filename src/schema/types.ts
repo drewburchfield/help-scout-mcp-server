@@ -87,6 +87,7 @@ export const SearchInboxesInputSchema = z.object({
 });
 
 export const SearchConversationsInputSchema = z.object({
+  query: z.string().optional(),
   inboxId: z.string().optional(),
   tag: z.string().optional(),
   status: z.enum(['active', 'pending', 'closed', 'spam']).optional(),
@@ -107,6 +108,19 @@ export const GetThreadsInputSchema = z.object({
 
 export const GetConversationSummaryInputSchema = z.object({
   conversationId: z.string(),
+});
+
+export const AdvancedConversationSearchInputSchema = z.object({
+  contentTerms: z.array(z.string()).optional(),
+  subjectTerms: z.array(z.string()).optional(),
+  customerEmail: z.string().optional(),
+  emailDomain: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  inboxId: z.string().optional(),
+  status: z.enum(['active', 'pending', 'closed', 'spam']).optional(),
+  createdAfter: z.string().optional(),
+  createdBefore: z.string().optional(),
+  limit: z.number().min(1).max(100).default(50),
 });
 
 // Response Types
@@ -130,5 +144,6 @@ export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
+export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

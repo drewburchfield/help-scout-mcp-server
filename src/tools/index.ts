@@ -11,6 +11,7 @@ import {
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
   GetConversationSummaryInputSchema,
+  AdvancedConversationSearchInputSchema,
 } from '../schema/types.js';
 
 export class ToolHandler {
@@ -43,10 +44,14 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'Search conversations with various filters',
+        description: 'Search conversations with various filters including full-text content search',
         inputSchema: {
           type: 'object',
           properties: {
+            query: {
+              type: 'string',
+              description: 'HelpScout query syntax for content search. Examples: (body:"keyword"), (subject:"text"), (email:"user@domain.com"), (tag:"tagname"), (customerIds:123), complex: (body:"urgent" OR subject:"support")',
+            },
             inboxId: {
               type: 'string',
               description: 'Filter by inbox ID',
@@ -148,6 +153,64 @@ export class ToolHandler {
           properties: {},
         },
       },
+      {
+        name: 'advancedConversationSearch',
+        description: 'Advanced conversation search with complex boolean queries and customer organization support',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            contentTerms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Search terms to find in conversation body/content (will be OR combined)',
+            },
+            subjectTerms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Search terms to find in conversation subject (will be OR combined)',
+            },
+            customerEmail: {
+              type: 'string',
+              description: 'Exact customer email to search for',
+            },
+            emailDomain: {
+              type: 'string',
+              description: 'Email domain to search for (e.g., "company.com" to find all @company.com emails)',
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Tag names to search for (will be OR combined)',
+            },
+            inboxId: {
+              type: 'string',
+              description: 'Filter by inbox ID',
+            },
+            status: {
+              type: 'string',
+              enum: ['active', 'pending', 'closed', 'spam'],
+              description: 'Filter by conversation status',
+            },
+            createdAfter: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Filter conversations created after this timestamp (ISO8601)',
+            },
+            createdBefore: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Filter conversations created before this timestamp (ISO8601)',
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results (1-100)',
+              minimum: 1,
+              maximum: 100,
+              default: 50,
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -179,6 +242,9 @@ export class ToolHandler {
           break;
         case 'getServerTime':
           result = await this.getServerTime();
+          break;
+        case 'advancedConversationSearch':
+          result = await this.advancedConversationSearch(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -249,6 +315,11 @@ export class ToolHandler {
       sortField: input.sort,
       sortOrder: input.order,
     };
+
+    // Add HelpScout query parameter for content/body search
+    if (input.query) {
+      queryParams.query = input.query;
+    }
 
     if (input.inboxId) queryParams.mailbox = input.inboxId;
     if (input.status) queryParams.status = input.status;
@@ -397,6 +468,92 @@ export class ToolHandler {
         {
           type: 'text',
           text: JSON.stringify(serverTime, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async advancedConversationSearch(args: unknown): Promise<CallToolResult> {
+    const input = AdvancedConversationSearchInputSchema.parse(args);
+
+    // Build HelpScout query syntax
+    const queryParts: string[] = [];
+
+    // Content/body search
+    if (input.contentTerms && input.contentTerms.length > 0) {
+      const bodyQueries = input.contentTerms.map(term => `body:"${term}"`);
+      queryParts.push(`(${bodyQueries.join(' OR ')})`);
+    }
+
+    // Subject search
+    if (input.subjectTerms && input.subjectTerms.length > 0) {
+      const subjectQueries = input.subjectTerms.map(term => `subject:"${term}"`);
+      queryParts.push(`(${subjectQueries.join(' OR ')})`);
+    }
+
+    // Email searches
+    if (input.customerEmail) {
+      queryParts.push(`email:"${input.customerEmail}"`);
+    }
+
+    // Handle email domain search (HelpScout supports domain-only searches)
+    if (input.emailDomain) {
+      const domain = input.emailDomain.replace('@', ''); // Remove @ if present
+      queryParts.push(`email:"${domain}"`);
+    }
+
+    // Tag search
+    if (input.tags && input.tags.length > 0) {
+      const tagQueries = input.tags.map(tag => `tag:"${tag}"`);
+      queryParts.push(`(${tagQueries.join(' OR ')})`);
+    }
+
+    // Build final query
+    const queryString = queryParts.length > 0 ? queryParts.join(' AND ') : undefined;
+
+    // Set up query parameters
+    const queryParams: Record<string, unknown> = {
+      page: 1,
+      size: input.limit || 50,
+      sortField: 'createdAt',
+      sortOrder: 'desc',
+    };
+
+    if (queryString) {
+      queryParams.query = queryString;
+    }
+
+    if (input.inboxId) queryParams.mailbox = input.inboxId;
+    if (input.status) queryParams.status = input.status;
+    if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
+
+    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
+    
+    let conversations = response._embedded?.conversations || [];
+
+    // Apply additional client-side filtering
+    if (input.createdBefore) {
+      const beforeDate = new Date(input.createdBefore);
+      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            results: conversations,
+            searchQuery: queryString,
+            searchCriteria: {
+              contentTerms: input.contentTerms,
+              subjectTerms: input.subjectTerms,
+              customerEmail: input.customerEmail,
+              emailDomain: input.emailDomain,
+              tags: input.tags,
+            },
+            pagination: response.page,
+            nextCursor: response._links?.next?.href,
+          }, null, 2),
         },
       ],
     };
