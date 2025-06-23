@@ -9,16 +9,21 @@
 
 ## 📋 Overview
 
-The Help Scout MCP Server implements the [Model Context Protocol](https://modelcontextprotocol.io) to bridge Help Scout with AI agents. It allows large language models to intelligently search, analyze, and retrieve customer support data from your Help Scout account.
+The Help Scout MCP Server implements the [Model Context Protocol](https://modelcontextprotocol.io) to bridge Help Scout with AI agents. It allows large language models to intelligently search, analyze, and retrieve customer support data from your Help Scout account with advanced query capabilities and robust error handling.
 
 ## ✨ Features
 
-- **Rich Help Scout Integration**: Access conversations, customers, users, mailboxes, and workflows
-- **Semantic Search**: Find relevant conversations based on natural language queries
-- **Data Export**: Export customer data and support history for analysis
-- **Conversation Management**: Allow AI to read, reply to, and manage support tickets
-- **Multiple Transport Modes**: Supports stdio (local) and SSE (network) transports
+- **Rich Help Scout Integration**: Access conversations, threads, inboxes, and server time
+- **Advanced Search Capabilities**: 
+  - Basic conversation search with HelpScout query syntax
+  - Advanced conversation search with boolean queries and content filtering
+  - Inbox search by name
+- **Content Analysis**: Get conversation summaries with first customer message and latest staff reply
+- **Full Thread Access**: Retrieve complete message threads for conversations
+- **Robust Error Handling**: Comprehensive error handling with retry logic and detailed error messages
 - **Enterprise Security**: Configurable PII filtering and secure token handling
+- **Caching & Performance**: Built-in LRU caching with configurable TTL
+- **Comprehensive Logging**: Structured logging with request tracking
 
 ## 🚀 Installation
 
@@ -172,19 +177,45 @@ For OAuth2 authentication (legacy), use:
 
 ### Resources
 
-- `mailbox://`: Access mailbox data
-- `conversation://`: Access conversation and ticket data
-- `customer://`: Access customer profiles
-- `user://`: Access Help Scout user data
-- `workflow://`: Access Help Scout workflows
+- `helpscout://inboxes`: Access all inboxes the user has access to
+- `helpscout://conversations`: Access conversations with optional filtering (mailbox, status, tag, modifiedSince)
+- `helpscout://threads`: Access thread messages for a specific conversation (requires conversationId parameter)
+- `helpscout://clock`: Get current server timestamp for time-relative queries
 
 ### Tools
 
-- `search_conversations`: Find conversations based on query parameters
-- `search_customers`: Find customer profiles based on query parameters
-- `reply_to_conversation`: Send a reply to a Help Scout conversation
-- `create_conversation`: Create a new conversation in Help Scout
-- `update_customer`: Update customer information
+- `searchInboxes`: Search inboxes by name substring with configurable limits
+- `searchConversations`: Search conversations with HelpScout query syntax, filters, and sorting
+- `advancedConversationSearch`: Advanced conversation search with boolean queries for content, subject, email domains, and tags
+- `getConversationSummary`: Get conversation summary with first customer message and latest staff reply
+- `getThreads`: Retrieve all thread messages for a conversation with pagination support
+- `getServerTime`: Get current server time for time-relative searches
+
+### Search Examples
+
+The MCP server supports powerful search capabilities using Help Scout's native query syntax:
+
+#### Basic Conversation Search
+```
+searchConversations with query: (body:"urgent")
+searchConversations with query: (subject:"billing")
+searchConversations with query: (email:"customer@company.com")
+searchConversations with query: (tag:"priority")
+```
+
+#### Advanced Boolean Queries
+```
+searchConversations with query: (body:"urgent" OR subject:"emergency")
+searchConversations with query: (body:"refund" AND tag:"billing")
+advancedConversationSearch with contentTerms: ["urgent", "help"]
+advancedConversationSearch with emailDomain: "company.com"
+```
+
+#### Filtering and Sorting
+- Filter by inbox, status (active/pending/closed/spam), tags, and date ranges
+- Sort by createdAt, updatedAt, or conversation number
+- Pagination support with configurable limits
+- Field selection for partial responses
 
 ## 🧪 Development
 
