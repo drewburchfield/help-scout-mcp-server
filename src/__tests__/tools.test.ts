@@ -35,14 +35,15 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(7);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations', 
         'getConversationSummary',
         'getThreads',
         'getServerTime',
-        'advancedConversationSearch'
+        'advancedConversationSearch',
+        'comprehensiveConversationSearch'
       ]);
     });
 
@@ -317,6 +318,310 @@ describe('ToolHandler', () => {
         expect(response.conversationId).toBe("123");
         expect(response.threads).toHaveLength(2);
       }
+    });
+  });
+
+  describe('comprehensiveConversationSearch', () => {
+    it('should search across multiple statuses by default', async () => {
+      const freshToolHandler = new ToolHandler();
+      
+      // Clean all previous mocks
+      nock.cleanAll();
+      
+      // Re-add the auth mock
+      nock(baseURL)
+        .persist()
+        .post('/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        });
+
+      // Mock responses for each status
+      const mockActiveConversations = {
+        _embedded: {
+          conversations: [
+            {
+              id: 1,
+              subject: 'Active urgent issue',
+              status: 'active',
+              createdAt: '2024-01-01T00:00:00Z'
+            }
+          ]
+        },
+        page: {
+          size: 25,
+          totalElements: 1,
+          totalPages: 1,
+          number: 0
+        }
+      };
+
+      const mockPendingConversations = {
+        _embedded: {
+          conversations: [
+            {
+              id: 2,
+              subject: 'Pending urgent request',
+              status: 'pending',
+              createdAt: '2024-01-02T00:00:00Z'
+            }
+          ]
+        },
+        page: {
+          size: 25,
+          totalElements: 1,
+          totalPages: 1,
+          number: 0
+        }
+      };
+
+      const mockClosedConversations = {
+        _embedded: {
+          conversations: [
+            {
+              id: 3,
+              subject: 'Closed urgent case',
+              status: 'closed',
+              createdAt: '2024-01-03T00:00:00Z'
+            },
+            {
+              id: 4,
+              subject: 'Another closed urgent case',
+              status: 'closed',
+              createdAt: '2024-01-04T00:00:00Z'
+            }
+          ]
+        },
+        page: {
+          size: 25,
+          totalElements: 2,
+          totalPages: 1,
+          number: 0
+        }
+      };
+
+      // Set up nock interceptors for each status
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'active' && params.query === '(body:"urgent" OR subject:"urgent")')
+        .reply(200, mockActiveConversations);
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'pending' && params.query === '(body:"urgent" OR subject:"urgent")')
+        .reply(200, mockPendingConversations);
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'closed' && params.query === '(body:"urgent" OR subject:"urgent")')
+        .reply(200, mockClosedConversations);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'comprehensiveConversationSearch',
+          arguments: {
+            searchTerms: ['urgent'],
+            timeframeDays: 30
+          }
+        }
+      };
+
+      const result = await freshToolHandler.callTool(request);
+      
+      expect(result.isError).toBeUndefined();
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      
+      expect(response.totalConversationsFound).toBe(4);
+      expect(response.totalAvailableAcrossStatuses).toBe(4);
+      expect(response.resultsByStatus).toHaveLength(3);
+      expect(response.resultsByStatus[0].status).toBe('active');
+      expect(response.resultsByStatus[0].conversations).toHaveLength(1);
+      expect(response.resultsByStatus[1].status).toBe('pending');
+      expect(response.resultsByStatus[1].conversations).toHaveLength(1);
+      expect(response.resultsByStatus[2].status).toBe('closed');
+      expect(response.resultsByStatus[2].conversations).toHaveLength(2);
+    });
+
+    it('should handle custom status selection', async () => {
+      const freshToolHandler = new ToolHandler();
+      
+      nock.cleanAll();
+      
+      nock(baseURL)
+        .persist()
+        .post('/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        });
+
+      const mockActiveConversations = {
+        _embedded: {
+          conversations: [
+            {
+              id: 1,
+              subject: 'Active billing issue',
+              status: 'active',
+              createdAt: '2024-01-01T00:00:00Z'
+            }
+          ]
+        },
+        page: {
+          size: 10,
+          totalElements: 1,
+          totalPages: 1,
+          number: 0
+        }
+      };
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'active' && params.query === '(body:"billing" OR subject:"billing")')
+        .reply(200, mockActiveConversations);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'comprehensiveConversationSearch',
+          arguments: {
+            searchTerms: ['billing'],
+            statuses: ['active'],
+            limitPerStatus: 10
+          }
+        }
+      };
+
+      const result = await freshToolHandler.callTool(request);
+      
+      expect(result.isError).toBeUndefined();
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      
+      expect(response.totalConversationsFound).toBe(1);
+      expect(response.resultsByStatus).toHaveLength(1);
+      expect(response.resultsByStatus[0].status).toBe('active');
+    });
+
+    it('should handle search with no results and provide guidance', async () => {
+      const freshToolHandler = new ToolHandler();
+      
+      nock.cleanAll();
+      
+      nock(baseURL)
+        .persist()
+        .post('/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        });
+
+      const emptyResponse = {
+        _embedded: {
+          conversations: []
+        },
+        page: {
+          size: 25,
+          totalElements: 0,
+          totalPages: 0,
+          number: 0
+        }
+      };
+
+      // Mock empty responses for all statuses
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'active')
+        .reply(200, emptyResponse);
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'pending')
+        .reply(200, emptyResponse);
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'closed')
+        .reply(200, emptyResponse);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'comprehensiveConversationSearch',
+          arguments: {
+            searchTerms: ['nonexistent']
+          }
+        }
+      };
+
+      const result = await freshToolHandler.callTool(request);
+      
+      expect(result.isError).toBeUndefined();
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      
+      expect(response.totalConversationsFound).toBe(0);
+      expect(response.searchTips).toBeDefined();
+      expect(response.searchTips).toContain('Try broader search terms or increase the timeframe');
+    });
+  });
+
+  describe('enhanced searchConversations', () => {
+    it('should default to active status when query is provided without status', async () => {
+      const freshToolHandler = new ToolHandler();
+      
+      nock.cleanAll();
+      
+      nock(baseURL)
+        .persist()
+        .post('/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        });
+
+      const mockResponse = {
+        _embedded: {
+          conversations: []
+        },
+        page: {
+          size: 50,
+          totalElements: 0,
+          totalPages: 0,
+          number: 0
+        }
+      };
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'active' && params.query === '(body:"test")')
+        .reply(200, mockResponse);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: {
+            query: '(body:"test")'
+          }
+        }
+      };
+
+      const result = await freshToolHandler.callTool(request);
+      
+      expect(result.isError).toBeUndefined();
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      
+      expect(response.searchInfo.status).toBe('active');
+      expect(response.searchInfo.appliedDefaults).toEqual(['status: active']);
+      expect(response.searchInfo.searchGuidance).toBeDefined();
     });
   });
 });
