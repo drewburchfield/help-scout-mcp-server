@@ -1,6 +1,6 @@
 {
   "name": "help-scout-mcp-server",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "The first MCP server for Help Scout - search conversations, threads, and inboxes with AI agents",
   "main": "dist/index.js",
   "type": "module",
