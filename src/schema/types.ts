@@ -123,6 +123,18 @@ export const AdvancedConversationSearchInputSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
 });
 
+export const MultiStatusConversationSearchInputSchema = z.object({
+  searchTerms: z.array(z.string()).min(1, 'At least one search term is required'),
+  inboxId: z.string().optional(),
+  statuses: z.array(z.enum(['active', 'pending', 'closed', 'spam'])).default(['active', 'pending', 'closed']),
+  searchIn: z.array(z.enum(['body', 'subject', 'both'])).default(['both']),
+  timeframeDays: z.number().min(1).max(365).default(60),
+  createdAfter: z.string().optional(),
+  createdBefore: z.string().optional(),
+  limitPerStatus: z.number().min(1).max(100).default(25),
+  includeVariations: z.boolean().default(true),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -145,5 +157,6 @@ export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSc
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
 export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
+export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

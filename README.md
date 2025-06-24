@@ -187,6 +187,7 @@ For OAuth2 authentication (legacy), use:
 - `searchInboxes`: Search inboxes by name substring with configurable limits
 - `searchConversations`: Search conversations with HelpScout query syntax, filters, and sorting
 - `advancedConversationSearch`: Advanced conversation search with boolean queries for content, subject, email domains, and tags
+- **`comprehensiveConversationSearch`**: **NEW** - Multi-status conversation search that automatically searches across active, pending, and closed conversations. Solves the common issue where searches return no results without specifying status.
 - `getConversationSummary`: Get conversation summary with first customer message and latest staff reply
 - `getThreads`: Retrieve all thread messages for a conversation with pagination support
 - `getServerTime`: Get current server time for time-relative searches
@@ -195,21 +196,90 @@ For OAuth2 authentication (legacy), use:
 
 The MCP server supports powerful search capabilities using Help Scout's native query syntax:
 
-#### Basic Conversation Search
+#### ⭐ Recommended: Comprehensive Multi-Status Search
+```javascript
+// Best for most use cases - searches across all conversation statuses
+comprehensiveConversationSearch({
+  searchTerms: ["urgent", "billing"],
+  timeframeDays: 60,
+  inboxId: "256809"
+})
+
+// Event-specific search across all statuses
+comprehensiveConversationSearch({
+  searchTerms: ["conference", "event"],
+  timeframeDays: 90,
+  searchIn: ["both"],
+  limitPerStatus: 50
+})
 ```
-searchConversations with query: (body:"urgent")
-searchConversations with query: (subject:"billing")
-searchConversations with query: (email:"customer@company.com")
-searchConversations with query: (tag:"priority")
+
+#### Basic Conversation Search (Single Status)
+```javascript
+// Note: Specify status for better results
+searchConversations({
+  query: "(body:\"urgent\")",
+  status: "active"
+})
+
+searchConversations({
+  query: "(subject:\"billing\")",
+  status: "closed"
+})
 ```
 
 #### Advanced Boolean Queries
+```javascript
+searchConversations({
+  query: "(body:\"urgent\" OR subject:\"emergency\")",
+  status: "pending"
+})
+
+advancedConversationSearch({
+  contentTerms: ["urgent", "help"],
+  emailDomain: "company.com",
+  status: "active"
+})
 ```
-searchConversations with query: (body:"urgent" OR subject:"emergency")
-searchConversations with query: (body:"refund" AND tag:"billing")
-advancedConversationSearch with contentTerms: ["urgent", "help"]
-advancedConversationSearch with emailDomain: "company.com"
+
+#### Search Patterns for Different Use Cases
+
+**Event/Brand Search Pattern:**
+```javascript
+comprehensiveConversationSearch({
+  searchTerms: ["CMA", "CMAfest", "Country Music Awards"],
+  timeframeDays: 120,
+  inboxId: "256809",
+  statuses: ["active", "pending", "closed"]
+})
 ```
+
+**Customer Issue Tracking:**
+```javascript
+comprehensiveConversationSearch({
+  searchTerms: ["refund", "billing issue"],
+  timeframeDays: 30,
+  searchIn: ["both"],
+  limitPerStatus: 25
+})
+```
+
+**Support Escalation Search:**
+```javascript
+comprehensiveConversationSearch({
+  searchTerms: ["escalate", "urgent", "emergency"],
+  timeframeDays: 7,
+  statuses: ["active", "pending"]
+})
+```
+
+#### ⚠️ Important Search Tips
+
+1. **Status Requirement**: HelpScout often returns no results without specifying conversation status
+2. **Use Comprehensive Search**: For best results, use `comprehensiveConversationSearch` which automatically handles multiple statuses
+3. **Time Frames**: Default search looks back 60 days, adjust `timeframeDays` as needed
+4. **Search Scope**: Use `searchIn` parameter to focus on body, subject, or both
+5. **Result Limits**: Each status returns up to `limitPerStatus` results (default: 25)
 
 #### Filtering and Sorting
 - Filter by inbox, status (active/pending/closed/spam), tags, and date ranges
