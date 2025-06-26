@@ -1,0 +1,353 @@
+# Help Scout MCP Server - Semgrep Security Rules
+# Self-contained configuration with all rules inline
+
+rules:
+  # ================================
+  # Debug Statement Prevention
+  # ================================
+  - id: no-console-log-production
+    patterns:
+      - pattern: console.log(...)
+      - pattern-not-inside: |
+          if ($DEBUG) { ... }
+      - pattern-not-inside: |
+          if (process.env.NODE_ENV === 'development') { ... }
+    message: "Remove console.log statements before production deployment"
+    severity: WARNING
+    languages: [javascript, typescript]
+    fix: ""
+
+  - id: no-console-debug-production
+    patterns:
+      - pattern-either:
+          - pattern: console.debug(...)
+          - pattern: console.trace(...)
+          - pattern: console.warn(...)
+      - pattern-not-inside: |
+          if ($DEBUG) { ... }
+    message: "Debug statements should be conditional or removed"
+    severity: WARNING
+    languages: [javascript, typescript]
+
+  - id: no-alert-statements
+    pattern: alert(...)
+    message: "Remove alert() statements - use proper user notifications"
+    severity: ERROR
+    languages: [javascript, typescript]
+
+  - id: no-debugger-statements
+    pattern: debugger
+    message: "Remove debugger statements before committing"
+    severity: ERROR
+    languages: [javascript, typescript]
+    fix: ""
+
+  # ================================
+  # Hardcoded Secrets Prevention
+  # ================================
+  - id: no-hardcoded-api-keys
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $KEY = "Bearer $TOKEN"
+          - pattern: |
+              $KEY = "sk-$TOKEN"
+          - pattern: |
+              apiKey: "$TOKEN"
+          - pattern: |
+              api_key = "$TOKEN"
+      - pattern-not: |
+          process.env.$VAR
+      - pattern-not: |
+          $CONFIG.get($KEY)
+    message: "API keys should come from environment variables or secure config"
+    severity: ERROR
+    languages: [javascript, typescript, python]
+
+  - id: no-hardcoded-passwords
+    patterns:
+      - pattern-either:
+          - pattern: |
+              password = "$PASS"
+          - pattern: |
+              passwd = "$PASS"
+          - pattern: |
+              pwd = "$PASS"
+      - pattern-not: |
+          password = ""
+      - pattern-not: |
+          process.env.$VAR
+    message: "Passwords should never be hardcoded"
+    severity: ERROR
+    languages: [javascript, typescript, python]
+
+  - id: no-hardcoded-jwt-secrets
+    patterns:
+      - pattern-either:
+          - pattern: |
+              jwt.sign($PAYLOAD, "$SECRET")
+          - pattern: |
+              jwtSecret = "$SECRET"
+          - pattern: |
+              JWT_SECRET = "$SECRET"
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: .{8,}
+    message: "JWT secrets should come from secure environment variables"
+    severity: ERROR
+    languages: [javascript, typescript]
+
+  # ================================
+  # Security Essentials
+  # ================================
+  - id: no-eval-usage
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: Function(...)
+    message: "Avoid eval() and similar functions - major security risk"
+    severity: ERROR
+    languages: [javascript, typescript]
+
+  - id: no-shell-injection
+    patterns:
+      - pattern-either:
+          - pattern: |
+              exec($CMD)
+          - pattern: |
+              system($CMD)
+          - pattern: |
+              os.system($CMD)
+          - pattern: |
+              subprocess.call($CMD, shell=True)
+      - pattern-not: |
+          $CMD = ["$PROG", ...]
+    message: "Potential shell injection - use parameterized commands"
+    severity: ERROR
+    languages: [javascript, typescript, python]
+
+  - id: no-sql-injection-risk
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $DB.query($SQL + $VAR)
+          - pattern: |
+              $DB.execute($SQL + $VAR)
+          - pattern: |
+              $CURSOR.execute($SQL + $VAR)
+      - pattern-not-inside: |
+          $SQL = "SELECT ... WHERE id = ?"
+    message: "Potential SQL injection - use parameterized queries"
+    severity: ERROR
+    languages: [javascript, typescript, python]
+
+  - id: no-prototype-pollution
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $OBJ["__proto__"] = $VAL
+          - pattern: |
+              $OBJ.constructor.prototype = $VAL
+          - pattern: |
+              Object.prototype.$KEY = $VAL
+    message: "Potential prototype pollution vulnerability"
+    severity: ERROR
+    languages: [javascript, typescript]
+
+  - id: require-https-only
+    patterns:
+      - pattern-either:
+          - pattern: |
+              "http://$URL"
+          - pattern: |
+              http://$URL
+      - pattern-not: |
+          "http://localhost"
+      - pattern-not: |
+          "http://127.0.0.1"
+    message: "Use HTTPS instead of HTTP for external URLs"
+    severity: WARNING
+    languages: [javascript, typescript, python]
+
+  # ================================
+  # Architectural Integrity
+  # ================================
+  - id: no-todo-comments-in-main
+    patterns:
+      - pattern-either:
+          - pattern-regex: ".*TODO.*"
+          - pattern-regex: ".*FIXME.*"
+          - pattern-regex: ".*HACK.*"
+          - pattern-regex: ".*XXX.*"
+    message: "Address TODO/FIXME comments before merging to main"
+    severity: WARNING
+    languages: [javascript, typescript, python, java, go, rust]
+
+  - id: no-empty-catch-blocks
+    patterns:
+      - pattern-either:
+          - pattern: |
+              try { ... } catch ($E) { }
+          - pattern: |
+              try { ... } catch ($E) { /* empty */ }
+    message: "Empty catch blocks hide errors - add logging or handling"
+    severity: WARNING
+    languages: [javascript, typescript, python, java]
+
+  - id: require-error-handling-async
+    patterns:
+      - pattern: |
+          await $FUNC()
+      - pattern-not-inside: |
+          try { ... } catch { ... }
+      - pattern-not-inside: |
+          $FUNC().catch(...)
+    message: "Async operations should have error handling"
+    severity: WARNING
+    languages: [javascript, typescript]
+
+  - id: no-sync-file-operations
+    patterns:
+      - pattern-either:
+          - pattern: fs.readFileSync(...)
+          - pattern: fs.writeFileSync(...)
+          - pattern: fs.existsSync(...)
+      - pattern-not-inside: |
+          if (process.env.NODE_ENV === 'test') { ... }
+    message: "Use async file operations to avoid blocking the event loop"
+    severity: WARNING
+    languages: [javascript, typescript]
+
+  # ================================
+  # Help Scout MCP Specific Rules
+  # ================================
+  - id: helpscout-api-key-exposure
+    patterns:
+      - pattern-either:
+          - pattern: |
+              console.$LOG(..., $KEY, ...)
+          - pattern: |
+              logger.$LOG(..., $KEY, ...)
+          - pattern: |
+              throw new Error($MSG)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: .*(apiKey|api_key|HELPSCOUT_API_KEY|token|bearer|Bearer).*
+      - metavariable-regex:
+          metavariable: $MSG
+          regex: .*(apiKey|api_key|HELPSCOUT_API_KEY|token|bearer|Bearer).*
+    message: "Help Scout API keys should never be logged or exposed in errors"
+    severity: ERROR
+    languages: [typescript]
+
+  - id: helpscout-oauth-secret-hardcoded
+    patterns:
+      - pattern-either:
+          - pattern: HELPSCOUT_APP_SECRET = "$SECRET"
+          - pattern: clientSecret = "$SECRET"
+          - pattern: client_secret = "$SECRET"
+      - pattern-not: process.env.$VAR
+      - pattern-not: config.get($VAR)
+    message: "Help Scout OAuth secrets must come from environment variables"
+    severity: ERROR
+    languages: [typescript]
+
+  - id: helpscout-pii-protection-check
+    patterns:
+      - pattern: |
+          body: $BODY
+      - pattern-not-inside: |
+          $CONFIG.allowPII ? $BODY : '[REDACTED]'
+      - pattern-not-inside: |
+          if (allowPII) { ... }
+      - pattern-not-inside: |
+          allowPII && $BODY
+    message: "Message bodies must check ALLOW_PII configuration before exposure"
+    severity: WARNING
+    languages: [typescript]
+    paths:
+      include:
+        - src/tools/*.ts
+        - src/resources/*.ts
+
+  - id: helpscout-bearer-token-format
+    patterns:
+      - pattern: |
+          Authorization: $TOKEN
+      - pattern-not: |
+          Authorization: `Bearer ${$VAR}`
+      - pattern-not: |
+          Authorization: this.apiKey
+      - pattern-not: |
+          Authorization: $CONFIG.apiKey
+    message: "Use proper Bearer token format for Help Scout API"
+    severity: WARNING
+    languages: [typescript]
+
+  - id: helpscout-error-sensitive-data
+    patterns:
+      - pattern-either:
+          - pattern: |
+              throw new Error(`...$SENSITIVE...`)
+          - pattern: |
+              message: `...$SENSITIVE...`
+          - pattern: |
+              logger.error(`...$SENSITIVE...`)
+      - metavariable-regex:
+          metavariable: $SENSITIVE
+          regex: .*(api.*key|secret|token|password|bearer|oauth).*
+    message: "Don't include sensitive Help Scout data in error messages"
+    severity: ERROR
+    languages: [typescript]
+
+  - id: helpscout-pii-logging-prevention
+    patterns:
+      - pattern-either:
+          - pattern: |
+              console.log($DATA.body)
+          - pattern: |
+              logger.$METHOD($DATA.body)
+          - pattern: |
+              console.log($THREAD)
+          - pattern: |
+              logger.$METHOD($THREAD)
+      - metavariable-regex:
+          metavariable: $DATA
+          regex: .*(conversation|thread|message).*
+      - metavariable-regex:
+          metavariable: $THREAD
+          regex: .*(thread|message|body).*
+    message: "Don't log Help Scout conversation/thread data - may contain PII"
+    severity: ERROR
+    languages: [typescript]
+
+  - id: helpscout-oauth-callback-validation
+    patterns:
+      - pattern: |
+          $CODE = req.query.code
+      - pattern-not-inside: |
+          if (!$CODE) { ... }
+      - pattern-not-inside: |
+          if (typeof $CODE !== 'string') { ... }
+    message: "Validate OAuth callback parameters before use"
+    severity: WARNING
+    languages: [typescript]
+
+  - id: helpscout-token-storage-security
+    patterns:
+      - pattern-either:
+          - pattern: |
+              localStorage.setItem($KEY, $TOKEN)
+          - pattern: |
+              sessionStorage.setItem($KEY, $TOKEN)
+          - pattern: |
+              $OBJ[$KEY] = $TOKEN
+      - metavariable-regex:
+          metavariable: $TOKEN
+          regex: .*(token|key|secret|bearer).*
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: .*(token|key|secret|bearer).*
+    message: "Help Scout tokens should be stored securely (encrypted, server-side)"
+    severity: ERROR
+    languages: [typescript]

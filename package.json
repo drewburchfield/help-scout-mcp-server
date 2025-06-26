@@ -20,6 +20,8 @@
     "dev": "tsx src/index.ts",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
+    "security": "semgrep --config .semgrep.yml .",
+    "security:ci": "semgrep ci",
     "test": "jest",
     "test:docker": "node test-docker.cjs",
     "test:docker:ci": "node test-docker-ci.cjs",

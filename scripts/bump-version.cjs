@@ -20,7 +20,7 @@ if (!['patch', 'minor', 'major'].includes(bumpType)) {
 
 function log(message, type = 'INFO') {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${type}: ${message}`);
+  ;
 }
 
 function updatePackageJson(newVersion) {
