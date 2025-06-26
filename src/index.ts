@@ -42,9 +42,14 @@ export class HelpScoutMCPServer {
     // Resources
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
       logger.debug('Listing resources');
-      return {
-        resources: await resourceHandler.listResources(),
-      };
+      try {
+        return {
+          resources: await resourceHandler.listResources(),
+        };
+      } catch (error) {
+        logger.error('Error listing resources', { error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
     });
 
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
@@ -58,9 +63,14 @@ export class HelpScoutMCPServer {
     // Tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       logger.debug('Listing tools');
-      return {
-        tools: await toolHandler.listTools(),
-      };
+      try {
+        return {
+          tools: await toolHandler.listTools(),
+        };
+      } catch (error) {
+        logger.error('Error listing tools', { error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -74,9 +84,14 @@ export class HelpScoutMCPServer {
     // Prompts
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
       logger.debug('Listing prompts');
-      return {
-        prompts: await promptHandler.listPrompts(),
-      };
+      try {
+        return {
+          prompts: await promptHandler.listPrompts(),
+        };
+      } catch (error) {
+        logger.error('Error listing prompts', { error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
     });
 
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
@@ -95,11 +110,18 @@ export class HelpScoutMCPServer {
       logger.info('Configuration validated');
 
       // Test Help Scout connection
-      const isConnected = await helpScoutClient.testConnection();
-      if (!isConnected) {
-        throw new Error('Failed to connect to Help Scout API');
+      try {
+        const isConnected = await helpScoutClient.testConnection();
+        if (!isConnected) {
+          throw new Error('Failed to connect to Help Scout API');
+        }
+        logger.info('Help Scout API connection established');
+      } catch (error) {
+        logger.error('Failed to establish Help Scout API connection', { 
+          error: error instanceof Error ? error.message : String(error) 
+        });
+        throw error;
       }
-      logger.info('Help Scout API connection established');
 
       // Start the server
       const transport = new StdioServerTransport();
@@ -133,8 +155,13 @@ export class HelpScoutMCPServer {
 // Handle graceful shutdown
 async function shutdown(server: HelpScoutMCPServer): Promise<void> {
   console.error('Received shutdown signal, stopping server...');
-  await server.stop();
-  process.exit(0);
+  try {
+    await server.stop();
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
 }
 
 // Main execution
@@ -158,7 +185,15 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
-  await server.start();
+  try {
+    await server.start();
+  } catch (error) {
+    logger.error('Failed to start server', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
 }
 
 // Start the server when this module is executed directly (either via `node dist/index.js` or via an npm bin stub such as `npx help-scout-mcp-server`)
