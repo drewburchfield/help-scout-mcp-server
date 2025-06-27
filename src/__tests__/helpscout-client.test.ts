@@ -126,6 +126,8 @@ describe('HelpScoutClient', () => {
         .reply(200, mockResponse);
 
       const client = new HelpScoutClient();
+      
+      // For OAuth2 test, don't mock authentication - let it run naturally
       const result = await client.get('/mailboxes');
       
       expect(authScope.isDone()).toBe(true);
@@ -170,12 +172,10 @@ describe('HelpScoutClient', () => {
         .matchHeader('authorization', 'Bearer test-token-404')
         .reply(404, { message: 'Not Found' });
 
-      // Create a client and mock the authenticate method to avoid OAuth issues
-      const { HelpScoutClient } = await import('../utils/helpscout-client.js');
       const client = new HelpScoutClient();
       
-      // Mock the authenticate method to set the token directly
-      (client as any).authenticate = jest.fn(async () => {
+      // Mock the ensureAuthenticated method to bypass authentication issues
+      jest.spyOn(client as any, 'ensureAuthenticated').mockImplementation(async () => {
         (client as any).accessToken = 'test-token-404';
         (client as any).tokenExpiresAt = Date.now() + (24 * 60 * 60 * 1000);
       });
@@ -275,6 +275,13 @@ describe('HelpScoutClient', () => {
         .reply(200, mockResponse);
 
       const client = new HelpScoutClient();
+      
+      // Mock the ensureAuthenticated method to bypass authentication issues
+      jest.spyOn(client as any, 'ensureAuthenticated').mockImplementation(async () => {
+        (client as any).accessToken = 'test-token-ttl';
+        (client as any).tokenExpiresAt = Date.now() + (24 * 60 * 60 * 1000);
+      });
+      
       await client.get('/test-endpoint', {}, { ttl: 0 }); // No caching
       expect(scope.isDone()).toBe(true);
     });
@@ -298,6 +305,13 @@ describe('HelpScoutClient', () => {
         .reply(200, { _embedded: { mailboxes: [] } });
 
       const client = new HelpScoutClient();
+      
+      // Mock the ensureAuthenticated method to bypass authentication issues
+      jest.spyOn(client as any, 'ensureAuthenticated').mockImplementation(async () => {
+        (client as any).accessToken = 'test-token-success';
+        (client as any).tokenExpiresAt = Date.now() + (24 * 60 * 60 * 1000);
+      });
+      
       const result = await client.testConnection();
       expect(result).toBe(true);
     });
@@ -337,6 +351,13 @@ describe('HelpScoutClient', () => {
         .reply(200, mockResponse);
 
       const client = new HelpScoutClient();
+      
+      // Mock the ensureAuthenticated method to bypass authentication issues
+      jest.spyOn(client as any, 'ensureAuthenticated').mockImplementation(async () => {
+        (client as any).accessToken = 'test-token-intercept';
+        (client as any).tokenExpiresAt = Date.now() + (24 * 60 * 60 * 1000);
+      });
+      
       await client.get('/test');
       expect(scope.isDone()).toBe(true);
     });
