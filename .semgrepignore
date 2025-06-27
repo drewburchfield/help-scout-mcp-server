@@ -1,0 +1,12 @@
+# Build scripts intentionally use sync operations for sequential execution
+scripts/build-dxt.js:no-sync-file-operations
+scripts/bump-version.cjs:no-sync-file-operations
+
+# Build scripts need console output for user feedback
+scripts/build-dxt.js:no-console-log-production
+
+# Test files are allowed to have simpler async patterns
+src/__tests__/**/*:require-error-handling-async
+
+# DXT validation tests require sync file operations for validation
+src/__tests__/dxt-validation.test.ts:no-sync-file-operations

@@ -93,7 +93,8 @@ describe('HelpScoutClient', () => {
     });
 
     it.skip('should handle OAuth2 flow when app secret is provided', async () => {
-      // TODO: Fix OAuth2 mocking - complex axios mocking issue
+      // SKIP: OAuth2 mocking requires complex axios interceptor setup
+      // OAuth2 flow is tested in integration tests with real API credentials
       // This test verifies that OAuth2 authentication works with client credentials
       // when HELPSCOUT_APP_SECRET is provided
       
