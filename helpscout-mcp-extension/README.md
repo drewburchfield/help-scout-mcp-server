@@ -9,6 +9,7 @@ DXT is Anthropic's packaging format for MCP servers that provides:
 - ✅ Bundled dependencies (no Node.js setup required)
 - ✅ Secure credential storage in OS keychain
 - ✅ User-friendly configuration UI
+- ✅ Cross-platform support (macOS, Windows, Linux)
 
 ## Building the DXT
 
@@ -40,7 +41,7 @@ This will:
 1. Download the `.dxt` file from GitHub releases
 2. Double-click to open with Claude Desktop
 3. Click "Install"
-4. Enter your Help Scout Personal Access Token
+4. Enter your Help Scout OAuth2 Client ID and Client Secret
 5. Done!
 
 ## Development Notes

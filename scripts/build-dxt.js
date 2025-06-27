@@ -8,6 +8,26 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Cross-platform directory copy function
+function copyDirectory(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    
+    if (entry.isDirectory()) {
+      copyDirectory(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 async function buildDXT() {
   console.log('🏗️  Building DXT extension...');
   
@@ -46,8 +66,8 @@ async function buildDXT() {
     throw new Error('dist directory not found. Please run npm run build first.');
   }
   
-  // Copy all files from dist to server directory
-  execSync(`cp -r ${distDir}/* ${serverDir}/`, { stdio: 'inherit' });
+  // Copy all files from dist to server directory (cross-platform)
+  copyDirectory(distDir, serverDir);
   
   // Create a minimal package.json for production dependencies
   console.log('📦 Creating production package.json...');
