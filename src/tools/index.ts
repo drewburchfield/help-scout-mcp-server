@@ -2,6 +2,8 @@ import { Tool, CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk
 import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js';
 import { config } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
+import { createMcpToolError } from '../utils/mcp-errors.js';
+import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import {
   Inbox,
   Conversation,
@@ -16,17 +18,27 @@ import {
 } from '../schema/types.js';
 
 export class ToolHandler {
+  private callHistory: string[] = [];
+  private currentUserQuery?: string;
+
+  /**
+   * Set the current user query for context-aware validation
+   */
+  setUserContext(userQuery: string): void {
+    this.currentUserQuery = userQuery;
+  }
+
   async listTools(): Promise<Tool[]> {
     return [
       {
         name: 'searchInboxes',
-        description: 'Search inboxes by name substring',
+        description: 'STEP 1: Always use this FIRST when searching conversations. Lists all available inboxes or filters by name. CRITICAL: When a user mentions an inbox by name (e.g., "support inbox", "sales mailbox"), you MUST call this tool first to get the inbox ID before searching conversations.',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'Search query to match inbox names',
+              description: 'Search query to match inbox names. Use empty string "" to list ALL inboxes. This is case-insensitive substring matching.',
             },
             limit: {
               type: 'number',
@@ -45,7 +57,7 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'Search conversations with various filters including full-text content search. IMPORTANT: Specify status (active/pending/closed/spam) for better results, or use comprehensiveConversationSearch for multi-status searching.',
+        description: 'STEP 2: Search conversations after obtaining inbox ID. WARNING: Always get inboxId from searchInboxes first if user mentions an inbox name. IMPORTANT: Specify status (active/pending/closed/spam) for better results, or use comprehensiveConversationSearch for multi-status searching.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -55,7 +67,7 @@ export class ToolHandler {
             },
             inboxId: {
               type: 'string',
-              description: 'Filter by inbox ID',
+              description: 'Filter by inbox ID. REQUIRED when user mentions a specific inbox. Get this ID by calling searchInboxes first!',
             },
             tag: {
               type: 'string',
@@ -155,6 +167,22 @@ export class ToolHandler {
         },
       },
       {
+        name: 'listAllInboxes',
+        description: 'QUICK HELPER: Lists ALL available inboxes with their IDs. This is equivalent to searchInboxes with empty query but more explicit. Use this when you need to see all inboxes or when starting any inbox-specific search.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results (1-100)',
+              minimum: 1,
+              maximum: 100,
+              default: 100,
+            },
+          },
+        },
+      },
+      {
         name: 'advancedConversationSearch',
         description: 'Advanced conversation search with complex boolean queries and customer organization support',
         inputSchema: {
@@ -214,7 +242,7 @@ export class ToolHandler {
       },
       {
         name: 'comprehensiveConversationSearch',
-        description: 'Search conversations across multiple statuses simultaneously - solves the common issue where searches return no results without specifying status. Automatically searches active, pending, and closed conversations.',
+        description: 'RECOMMENDED FOR GENERAL SEARCHES: Searches across multiple statuses simultaneously, solving the common issue where searches return no results. WORKFLOW: 1) If user mentions an inbox name, call searchInboxes FIRST to get the ID. 2) Then use this tool with the inbox ID. This tool automatically searches active, pending, and closed conversations.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -226,7 +254,7 @@ export class ToolHandler {
             },
             inboxId: {
               type: 'string',
-              description: 'Filter by specific inbox ID',
+              description: 'Filter by specific inbox ID. IMPORTANT: If user mentions an inbox by name, you MUST call searchInboxes first to get this ID!',
             },
             statuses: {
               type: 'array',
@@ -286,6 +314,46 @@ export class ToolHandler {
       arguments: request.params.arguments,
     });
 
+    // REVERSE LOGIC VALIDATION: Check API constraints before making the call
+    const validationContext: ToolCallContext = {
+      toolName: request.params.name,
+      arguments: request.params.arguments || {},
+      userQuery: this.currentUserQuery,
+      previousCalls: [...this.callHistory]
+    };
+
+    const validation = HelpScoutAPIConstraints.validateToolCall(validationContext);
+    
+    if (!validation.isValid) {
+      const errorDetails = {
+        errors: validation.errors,
+        suggestions: validation.suggestions,
+        requiredPrerequisites: validation.requiredPrerequisites
+      };
+      
+      logger.warn('Tool call validation failed', {
+        requestId,
+        toolName: request.params.name,
+        validation: errorDetails
+      });
+      
+      // Return helpful error with API constraint guidance
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            error: 'API Constraint Validation Failed',
+            details: errorDetails,
+            helpScoutAPIRequirements: {
+              message: 'This call violates Help Scout API constraints',
+              requiredActions: validation.requiredPrerequisites || [],
+              suggestions: validation.suggestions
+            }
+          }, null, 2)
+        }]
+      };
+    }
+
     try {
       let result: CallToolResult;
 
@@ -305,6 +373,9 @@ export class ToolHandler {
         case 'getServerTime':
           result = await this.getServerTime();
           break;
+        case 'listAllInboxes':
+          result = await this.listAllInboxes(request.params.arguments || {});
+          break;
         case 'advancedConversationSearch':
           result = await this.advancedConversationSearch(request.params.arguments || {});
           break;
@@ -316,31 +387,42 @@ export class ToolHandler {
       }
 
       const duration = Date.now() - startTime;
+      // Add to call history for future validation
+      this.callHistory.push(request.params.name);
+      
+      // Enhance result with API constraint guidance
+      const guidance = HelpScoutAPIConstraints.generateToolGuidance(
+        request.params.name, 
+        JSON.parse((result.content[0] as any).text), 
+        validationContext
+      );
+      
+      if (guidance.length > 0) {
+        const originalContent = JSON.parse((result.content[0] as any).text);
+        originalContent.apiGuidance = guidance;
+        result.content[0] = {
+          type: 'text',
+          text: JSON.stringify(originalContent, null, 2)
+        };
+      }
+
       logger.info('Tool call completed', {
         requestId,
         toolName: request.params.name,
         duration,
+        validationPassed: true,
+        guidanceProvided: guidance.length > 0
       });
 
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
-      logger.error('Tool call failed', {
-        requestId,
+      
+      return createMcpToolError(error, {
         toolName: request.params.name,
-        error: error instanceof Error ? error.message : String(error),
+        requestId,
         duration,
       });
-      
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-        isError: true,
-      };
     }
   }
 
@@ -362,9 +444,22 @@ export class ToolHandler {
         {
           type: 'text',
           text: JSON.stringify({
-            results: filteredInboxes,
+            results: filteredInboxes.map(inbox => ({
+              id: inbox.id,
+              name: inbox.name,
+              email: inbox.email,
+              createdAt: inbox.createdAt,
+              updatedAt: inbox.updatedAt,
+            })),
             query: input.query,
             totalFound: filteredInboxes.length,
+            totalAvailable: inboxes.length,
+            usage: filteredInboxes.length > 0 ? 
+              'NEXT STEP: Use the "id" field from these results in your conversation search tools (comprehensiveConversationSearch or searchConversations)' : 
+              'No inboxes matched your query. Try a different search term or use empty string "" to list all inboxes.',
+            example: filteredInboxes.length > 0 ? 
+              `comprehensiveConversationSearch({ searchTerms: ["your search"], inboxId: "${filteredInboxes[0].id}" })` : 
+              null,
           }, null, 2),
         },
       ],
@@ -558,6 +653,41 @@ export class ToolHandler {
         {
           type: 'text',
           text: JSON.stringify(serverTime, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async listAllInboxes(args: unknown): Promise<CallToolResult> {
+    const input = args as { limit?: number };
+    const limit = input.limit || 100;
+    
+    const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
+      page: 1,
+      size: limit,
+    });
+
+    const inboxes = response._embedded?.mailboxes || [];
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            inboxes: inboxes.map(inbox => ({
+              id: inbox.id,
+              name: inbox.name,
+              email: inbox.email,
+              createdAt: inbox.createdAt,
+              updatedAt: inbox.updatedAt,
+            })),
+            totalInboxes: inboxes.length,
+            usage: 'Use the "id" field from these results in your conversation searches',
+            nextSteps: [
+              'To search in a specific inbox, use the inbox ID with comprehensiveConversationSearch or searchConversations',
+              'To search across all inboxes, omit the inboxId parameter',
+            ],
+          }, null, 2),
         },
       ],
     };

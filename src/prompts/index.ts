@@ -5,6 +5,11 @@ export class PromptHandler {
   async listPrompts(): Promise<Prompt[]> {
     return [
       {
+        name: 'helpscout-best-practices',
+        description: 'Essential workflow guide for using Help Scout MCP effectively - START HERE for correct search patterns',
+        arguments: [],
+      },
+      {
         name: 'search-last-7-days',
         description: 'Search recent conversations across all inboxes from the last 7 days',
         arguments: [
@@ -78,6 +83,9 @@ export class PromptHandler {
       let result: GetPromptResult;
 
       switch (request.params.name) {
+        case 'helpscout-best-practices':
+          result = await this.helpScoutBestPractices();
+          break;
         case 'search-last-7-days':
           result = await this.searchLast7Days(request.params.arguments || {});
           break;
@@ -108,6 +116,141 @@ export class PromptHandler {
     }
   }
 
+  private async helpScoutBestPractices(): Promise<GetPromptResult> {
+    const prompt = `# Help Scout MCP Best Practices Guide
+
+## 🚨 CRITICAL WORKFLOW - Always Follow This Pattern
+
+### The Golden Rule: Inbox Name → Inbox ID → Search
+
+When a user mentions ANY inbox by name (e.g., "support inbox", "sales mailbox", "customer service"), you MUST:
+
+1. **FIRST**: Call \`searchInboxes\` to find the inbox ID
+   - Even if the name seems obvious, always look it up
+   - Use empty string "" to list all inboxes if unsure
+   - Example: \`searchInboxes(query: "support")\` or \`searchInboxes(query: "")\`
+
+2. **THEN**: Use the inbox ID in your conversation search
+   - Never skip the inbox lookup step
+   - Always use the exact ID returned from searchInboxes
+
+### Example Correct Workflow
+
+**User**: "Show me urgent conversations in the support inbox"
+
+**CORRECT Approach**:
+\`\`\`
+1. searchInboxes(query: "support")
+   → Returns: [{id: "12345", name: "Support Inbox"}, ...]
+   
+2. comprehensiveConversationSearch({
+     searchTerms: ["urgent"],
+     inboxId: "12345"
+   })
+\`\`\`
+
+**INCORRECT Approach** (DO NOT DO THIS):
+\`\`\`
+❌ comprehensiveConversationSearch({
+     searchTerms: ["urgent"]
+   })
+   // Missing inbox filter - will search ALL inboxes!
+\`\`\`
+
+## 📋 Common Scenarios and Solutions
+
+### Scenario 1: User Mentions Multiple Inboxes
+**User**: "Check support and sales inboxes for refund requests"
+
+**Workflow**:
+1. Call searchInboxes(query: "") to list ALL inboxes
+2. Identify the support and sales inbox IDs
+3. Run separate searches for each inbox:
+   - comprehensiveConversationSearch with support inbox ID
+   - comprehensiveConversationSearch with sales inbox ID
+4. Combine and present results clearly
+
+### Scenario 2: No Results Found
+If a search returns no results:
+1. Verify the inbox ID is correct (re-run searchInboxes if needed)
+2. Try broader search terms
+3. Extend the timeframe (default is 60 days)
+4. Check different statuses (active, pending, closed)
+5. Consider that the inbox might be empty or have different naming
+
+### Scenario 3: General Search Without Inbox Mention
+**User**: "Find all conversations about billing issues"
+
+**Workflow**:
+1. Use comprehensiveConversationSearch WITHOUT inboxId
+2. This searches across ALL accessible inboxes
+3. Results will show which inbox each conversation belongs to
+
+## 🛠️ Tool Selection Guide
+
+### Use \`comprehensiveConversationSearch\` when:
+- You need results across multiple statuses (recommended default)
+- User wants a broad search
+- You're not sure which status to use
+- Initial searches return no results
+
+### Use \`searchConversations\` when:
+- You need very specific status filtering
+- You're using advanced HelpScout query syntax
+- You need custom sorting or field selection
+
+### Use \`advancedConversationSearch\` when:
+- You need complex boolean logic
+- Searching by email domain
+- Combining multiple search criteria
+
+## ⚠️ Common Pitfalls to Avoid
+
+1. **Never skip the inbox lookup** - Always use searchInboxes first when inbox names are mentioned
+2. **Don't assume inbox IDs** - They're not guessable; you must look them up
+3. **Remember status matters** - Help Scout often returns empty results without status filters
+4. **Use the right tool** - comprehensiveConversationSearch is usually best for general searches
+5. **Check your timeframes** - Default is 60 days; user might need longer
+
+## 📊 Multi-Inbox Reporting Pattern
+
+When analyzing across multiple inboxes:
+\`\`\`
+1. searchInboxes(query: "") → Get all inboxes
+2. For each inbox:
+   - Note the ID and name
+   - Run comprehensiveConversationSearch with that inboxId
+   - Collect results
+3. Present organized summary:
+   - Group by inbox
+   - Show totals and breakdowns
+   - Highlight important patterns
+\`\`\`
+
+## 🔍 Search Tips
+
+- **Empty searches are valid**: searchInboxes(query: "") lists ALL inboxes
+- **Case doesn't matter**: Searches are case-insensitive
+- **Partial matches work**: "sup" will match "Support"
+- **Be specific with timeframes**: Use createdAfter/createdBefore for precision
+- **Combine search terms**: Use arrays in comprehensiveConversationSearch
+
+Remember: When in doubt, start with searchInboxes(query: "") to see all available inboxes!`;
+
+    return {
+      description: 'Essential workflow guide for using Help Scout MCP effectively',
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: prompt,
+          },
+        },
+      ],
+    };
+  }
+
   private async searchLast7Days(args: Record<string, unknown>): Promise<GetPromptResult> {
     const inboxId = args.inboxId as string | undefined;
     const status = args.status as string | undefined;
@@ -122,7 +265,7 @@ export class PromptHandler {
 
 2. Calculate the date 7 days ago from the current time.
 
-3. Search for conversations using the "searchConversations" tool with these parameters:
+3. ${inboxId ? '' : 'IMPORTANT: If the user mentioned a specific inbox by name, you MUST first use "searchInboxes" to get the inbox ID.\n\n4. '}Search for conversations using the "searchConversations" tool with these parameters:
    \`\`\`json
    {
      "createdAfter": "<calculated_date_7_days_ago>",
@@ -174,9 +317,9 @@ This will return conversations created in the last 7 days, sorted by creation da
 
 1. Get current server time using the "getServerTime" tool.
 
-2. Search for conversations with urgent-related tags using the "searchConversations" tool.${timeFilter}
+2. ${inboxId ? '' : 'CRITICAL: If the user mentioned a specific inbox by name (e.g., "support inbox"), you MUST first use "searchInboxes" to get the inbox ID.\n\n3. '}Search for conversations with urgent-related tags using the "searchConversations" tool.${timeFilter}
 
-3. Perform multiple searches for different urgent tag variations:
+${inboxId ? '3' : '4'}. Perform multiple searches for different urgent tag variations:
    
    a) Search for "urgent" tag:
    \`\`\`json

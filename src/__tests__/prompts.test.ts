@@ -34,8 +34,9 @@ describe('PromptHandler', () => {
     it('should return all available prompts', async () => {
       const prompts = await promptHandler.listPrompts();
       
-      expect(prompts).toHaveLength(3);
+      expect(prompts).toHaveLength(4);
       expect(prompts.map((p: any) => p.name)).toEqual([
+        'helpscout-best-practices',
         'search-last-7-days',
         'find-urgent-tags',
         'list-inbox-activity'
@@ -102,9 +103,44 @@ describe('PromptHandler', () => {
       expect(hoursArg!.required).toBe(true);
       expect(includeThreadsArg!.required).toBe(false);
     });
+
+    it('should have helpscout-best-practices prompt with correct structure', async () => {
+      const prompts = await promptHandler.listPrompts();
+      const bestPracticesPrompt = prompts.find((p: any) => p.name === 'helpscout-best-practices');
+      
+      expect(bestPracticesPrompt).toBeDefined();
+      expect(bestPracticesPrompt!.description).toContain('workflow guide');
+      expect(bestPracticesPrompt!.arguments).toHaveLength(0);
+    });
   });
 
   describe('getPrompt', () => {
+    describe('helpscout-best-practices prompt', () => {
+      it('should generate helpscout-best-practices prompt', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'helpscout-best-practices',
+            arguments: {}
+          }
+        };
+
+        const result = await promptHandler.getPrompt(request);
+        
+        expect(result.description).toContain('workflow guide');
+        expect(result.messages).toHaveLength(1);
+        expect(result.messages[0].role).toBe('user');
+        expect(result.messages[0].content.type).toBe('text');
+        
+        const promptText = result.messages[0].content.text;
+        expect(promptText).toContain('Golden Rule');
+        expect(promptText).toContain('searchInboxes');
+        expect(promptText).toContain('comprehensiveConversationSearch');
+        expect(promptText).toContain('CRITICAL WORKFLOW');
+        expect(promptText).toContain('Common Pitfalls to Avoid');
+      });
+    });
+
     describe('search-last-7-days prompt', () => {
       it('should generate basic search-last-7-days prompt', async () => {
         const request = {

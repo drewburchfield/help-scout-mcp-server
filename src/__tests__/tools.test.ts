@@ -35,13 +35,14 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(8);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations', 
         'getConversationSummary',
         'getThreads',
         'getServerTime',
+        'listAllInboxes',
         'advancedConversationSearch',
         'comprehensiveConversationSearch'
       ]);
@@ -81,6 +82,52 @@ describe('ToolHandler', () => {
       expect(response).toHaveProperty('unixTime');
       expect(typeof response.isoTime).toBe('string');
       expect(typeof response.unixTime).toBe('number');
+    });
+  });
+
+  describe('listAllInboxes', () => {
+    it('should list all inboxes with helpful guidance', async () => {
+      const mockResponse = {
+        _embedded: {
+          mailboxes: [
+            { id: 1, name: 'Support Inbox', email: 'support@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
+            { id: 2, name: 'Sales Inbox', email: 'sales@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' }
+          ]
+        },
+        page: { size: 100, totalElements: 2 }
+      };
+
+      nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 100 })
+        .reply(200, mockResponse);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'listAllInboxes',
+          arguments: {}
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content).toHaveLength(1);
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      
+      // Handle error responses
+      if (result.isError) {
+        expect(textContent.text).toContain('Error');
+        return;
+      }
+      
+      const response = JSON.parse(textContent.text);
+      expect(response.inboxes).toHaveLength(2);
+      expect(response.inboxes[0]).toHaveProperty('id', 1);
+      expect(response.inboxes[0]).toHaveProperty('name', 'Support Inbox');
+      expect(response.usage).toContain('Use the "id" field');
+      expect(response.nextSteps).toBeDefined();
+      expect(response.totalInboxes).toBe(2);
     });
   });
 
