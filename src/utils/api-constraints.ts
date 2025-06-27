@@ -208,7 +208,7 @@ export class HelpScoutAPIConstraints {
   /**
    * Generate validation guidance for tool responses
    */
-  static generateToolGuidance(toolName: string, result: any, context: ToolCallContext): string[] {
+  static generateToolGuidance(toolName: string, result: any, _context: ToolCallContext): string[] {
     const guidance: string[] = [];
     
     if (toolName === 'searchInboxes') {
