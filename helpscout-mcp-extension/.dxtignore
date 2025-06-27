@@ -1,0 +1,7 @@
+cert.pem
+key.pem
+cert-config.conf
+nashburch-*
+*.crt
+*.p12
+*.key

@@ -30,7 +30,10 @@
     "version:minor": "node scripts/bump-version.cjs minor",
     "version:major": "node scripts/bump-version.cjs major",
     "prepublishOnly": "npm run clean && npm run build",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "dxt:build": "node scripts/build-dxt.js",
+    "dxt:pack": "npm run dxt:build && cd helpscout-mcp-extension && npx @anthropic-ai/dxt pack",
+    "build:all": "npm run build && npm run dxt:build"
   },
   "keywords": [
     "mcp",
@@ -66,6 +69,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@anthropic-ai/dxt": "^0.1.0",
     "@types/jest": "^29.5.8",
     "@types/node": "^20.10.4",
     "@typescript-eslint/eslint-plugin": "^6.13.2",

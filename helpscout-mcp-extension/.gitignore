@@ -1,0 +1,10 @@
+# DXT build artifacts
+build/
+*.dxt
+
+# Logs
+*.log
+
+# Temporary files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#1E88E5" stroke="#1565C0" stroke-width="4"/>
+  
+  <!-- Help Scout beacon icon -->
+  <circle cx="64" cy="64" r="45" fill="#FFFFFF" opacity="0.2"/>
+  
+  <!-- Speech bubble -->
+  <path d="M32 45 C32 35, 42 28, 54 28 L82 28 C94 28, 104 35, 104 45 L104 70 C104 80, 94 87, 82 87 L70 87 L58 100 L58 87 L54 87 C42 87, 32 80, 32 70 Z" fill="#FFFFFF"/>
+  
+  <!-- Message lines -->
+  <rect x="42" y="40" width="32" height="4" rx="2" fill="#1E88E5"/>
+  <rect x="42" y="50" width="44" height="4" rx="2" fill="#1E88E5"/>
+  <rect x="42" y="60" width="26" height="4" rx="2" fill="#1E88E5"/>
+  
+  <!-- Help Scout logo dot -->
+  <circle cx="86" cy="52" r="6" fill="#1E88E5"/>
+  
+  <!-- Connection indicator -->
+  <circle cx="96" cy="24" r="8" fill="#4CAF50"/>
+  <circle cx="96" cy="24" r="4" fill="#FFFFFF"/>
+</svg>

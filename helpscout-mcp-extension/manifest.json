@@ -1,0 +1,170 @@
+{
+  "dxt_version": "0.1",
+  "name": "help-scout-mcp-server",
+  "display_name": "Help Scout MCP Server",
+  "version": "1.1.1",
+  "description": "Connect Claude to your Help Scout data for intelligent customer support analysis",
+  "long_description": "Enterprise-grade Help Scout integration for AI assistants.\n\n**Core Features:**\n• Advanced conversation search with query syntax\n• Multi-status search across active/pending/closed conversations\n• Boolean search with OR/AND logic across multiple fields\n• Complete thread message retrieval with context\n• Conversation summaries with customer and staff messages\n• Inbox discovery and server time utilities\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional PII redaction for data privacy\n• Comprehensive audit logging\n• Rate limiting with automatic retry",
+  "author": {
+    "name": "Drew Burchfield",
+    "url": "https://github.com/drewburchfield"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/drewburchfield/help-scout-mcp-server"
+  },
+  "icon": "icon.png",
+  "screenshots": [],
+  "server": {
+    "type": "node",
+    "entry_point": "build/server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/build/server/index.js"
+      ],
+      "env": {
+        "HELPSCOUT_API_KEY": "${user_config.client_id}",
+        "HELPSCOUT_APP_SECRET": "${user_config.app_secret}",
+        "HELPSCOUT_BASE_URL": "${user_config.base_url}",
+        "ALLOW_PII": "${user_config.allow_pii}",
+        "LOG_LEVEL": "${user_config.log_level}",
+        "CACHE_TTL_SECONDS": "${user_config.cache_ttl}",
+        "MAX_CACHE_SIZE": "${user_config.max_cache_size}"
+      }
+    }
+  },
+  "user_config": {
+    "client_id": {
+      "type": "string",
+      "title": "Help Scout Client ID",
+      "description": "Your OAuth2 Client ID from Help Scout My Apps",
+      "placeholder": "your-client-id-here",
+      "sensitive": true,
+      "required": true
+    },
+    "app_secret": {
+      "type": "string",
+      "title": "Help Scout Client Secret",
+      "description": "Your OAuth2 Client Secret from Help Scout My Apps",
+      "placeholder": "your-client-secret-here",
+      "sensitive": true,
+      "required": true
+    },
+    "base_url": {
+      "type": "string",
+      "title": "API Base URL",
+      "description": "Help Scout API base URL",
+      "default": "https://api.helpscout.net/v2/",
+      "required": false
+    },
+    "allow_pii": {
+      "type": "boolean",
+      "title": "Allow PII",
+      "description": "Allow personally identifiable information in message bodies",
+      "default": false,
+      "required": false
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log Level",
+      "description": "Logging verbosity level",
+      "default": "info",
+      "enum": [
+        "error",
+        "warn",
+        "info",
+        "debug"
+      ],
+      "required": false
+    },
+    "cache_ttl": {
+      "type": "number",
+      "title": "Cache TTL (seconds)",
+      "description": "How long to cache API responses",
+      "default": 300,
+      "required": false
+    },
+    "max_cache_size": {
+      "type": "number",
+      "title": "Max Cache Size",
+      "description": "Maximum number of cached entries",
+      "default": 10000,
+      "required": false
+    }
+  },
+  "tools": [
+    {
+      "name": "searchInboxes",
+      "description": "Search Help Scout inboxes by name"
+    },
+    {
+      "name": "searchConversations",
+      "description": "Search Help Scout conversations with various filters including full-text content search"
+    },
+    {
+      "name": "getConversationSummary",
+      "description": "Get conversation summary with first customer message and latest staff reply"
+    },
+    {
+      "name": "getThreads",
+      "description": "Retrieve all thread messages for a conversation"
+    },
+    {
+      "name": "getServerTime",
+      "description": "Get current server time for date-relative queries"
+    },
+    {
+      "name": "advancedConversationSearch",
+      "description": "Advanced conversation search with complex boolean queries and customer organization support"
+    },
+    {
+      "name": "comprehensiveConversationSearch",
+      "description": "Search conversations across multiple statuses simultaneously - automatically searches active, pending, and closed conversations"
+    }
+  ],
+  "resources": [
+    {
+      "uri": "helpscout://inboxes",
+      "description": "List all accessible Help Scout inboxes"
+    },
+    {
+      "uri": "helpscout://conversations",
+      "description": "Search conversations with filters"
+    },
+    {
+      "uri": "helpscout://threads",
+      "description": "Get thread messages for a conversation"
+    },
+    {
+      "uri": "helpscout://clock",
+      "description": "Current server timestamp"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "search-last-7-days",
+      "description": "Find recent conversations from the last 7 days",
+      "text": "To search for conversations from the last 7 days:\n1. Use getServerTime tool to get current timestamp\n2. Calculate date 7 days ago\n3. Use searchConversations with createdAfter parameter\n4. Optionally get details with getConversationSummary or getThreads"
+    },
+    {
+      "name": "find-urgent-tags",
+      "description": "Locate urgent or priority conversations",
+      "text": "To find urgent conversations:\n1. Use getServerTime tool\n2. Search for conversations with tags like 'urgent', 'priority', 'high-priority', 'critical'\n3. Use searchConversations tool with tag parameter\n4. Consider using getConversationSummary for quick assessment"
+    },
+    {
+      "name": "list-inbox-activity",
+      "description": "Monitor inbox activity over time",
+      "text": "To monitor inbox activity:\n1. Use getServerTime tool\n2. Calculate timestamp N hours ago\n3. Use searchConversations with inboxId and createdAfter\n4. Analyze results for activity patterns and status breakdown"
+    }
+  ],
+  "keywords": [
+    "help-scout",
+    "customer-support",
+    "mcp",
+    "helpscout",
+    "support",
+    "conversations"
+  ],
+  "license": "MIT"
+}
