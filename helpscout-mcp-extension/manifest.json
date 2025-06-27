@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Connect Claude to your Help Scout data for intelligent customer support analysis",
   "long_description": "Enterprise-grade Help Scout integration for AI assistants.\n\n**Core Features:**\n• Advanced conversation search with query syntax\n• Multi-status search across active/pending/closed conversations\n• Boolean search with OR/AND logic across multiple fields\n• Complete thread message retrieval with context\n• Conversation summaries with customer and staff messages\n• Inbox discovery and server time utilities\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional PII redaction for data privacy\n• Comprehensive audit logging\n• Rate limiting with automatic retry",
   "author": {
