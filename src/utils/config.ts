@@ -17,6 +17,13 @@ export interface Config {
   security: {
     allowPii: boolean;
   };
+  connectionPool: {
+    maxSockets: number;
+    maxFreeSockets: number;
+    timeout: number;
+    keepAlive: boolean;
+    keepAliveMsecs: number;
+  };
 }
 
 export const config: Config = {
@@ -33,6 +40,13 @@ export const config: Config = {
   },
   security: {
     allowPii: process.env.ALLOW_PII === 'true',
+  },
+  connectionPool: {
+    maxSockets: parseInt(process.env.HTTP_MAX_SOCKETS || '50', 10),
+    maxFreeSockets: parseInt(process.env.HTTP_MAX_FREE_SOCKETS || '10', 10),
+    timeout: parseInt(process.env.HTTP_SOCKET_TIMEOUT || '30000', 10),
+    keepAlive: process.env.HTTP_KEEP_ALIVE !== 'false', // Default to true
+    keepAliveMsecs: parseInt(process.env.HTTP_KEEP_ALIVE_MSECS || '1000', 10),
   },
 };
 

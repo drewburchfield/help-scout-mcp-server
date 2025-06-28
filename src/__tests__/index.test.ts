@@ -368,6 +368,55 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
     });
   });
 
+  describe('Error Handler Branch Coverage', () => {
+    it('should handle server stop errors gracefully', async () => {
+      const { logger } = require('../utils/logger.js');
+      const server = new HelpScoutMCPServer();
+      
+      // Mock server.close to throw an error
+      mockServer.close.mockRejectedValueOnce(new Error('Failed to close server'));
+      
+      // The stop method should handle errors gracefully
+      await server.stop(); // Should not throw
+      
+      expect(logger.error).toHaveBeenCalledWith('Error stopping server', { 
+        error: 'Failed to close server' 
+      });
+    });
+
+    it('should handle missing environment configuration gracefully', async () => {
+      const { validateConfig } = require('../utils/config.js');
+      const { logger } = require('../utils/logger.js');
+      
+      // Mock missing required environment variables
+      const configError = new Error('Missing required environment variables');
+      validateConfig.mockImplementationOnce(() => { throw configError; });
+
+      const server = new HelpScoutMCPServer();
+      
+      await expect(server.start()).rejects.toThrow('process.exit() was called');
+      expect(logger.error).toHaveBeenCalledWith('Failed to start server', 
+        expect.objectContaining({ error: 'Missing required environment variables' })
+      );
+    });
+
+    it('should cover successful start path', async () => {
+      const { validateConfig } = require('../utils/config.js');
+      const { helpScoutClient } = require('../utils/helpscout-client.js');
+      const { logger } = require('../utils/logger.js');
+      
+      // Ensure mocks are working properly
+      validateConfig.mockImplementationOnce(() => {});
+      helpScoutClient.testConnection.mockResolvedValueOnce(true);
+      
+      const server = new HelpScoutMCPServer();
+      await server.start();
+      
+      expect(logger.info).toHaveBeenCalledWith('Help Scout MCP Server started successfully');
+      expect(process.stdin.resume).toHaveBeenCalled();
+    });
+  });
+
   describe('CLI Auto-Start Logic - FIXED!', () => {
     it('should NOT auto-start during tests', () => {
       // Since we're in a test environment, the main() function should not execute

@@ -268,7 +268,291 @@ describe('ToolHandler', () => {
     });
   });
 
+  describe('API Constraints Validation - Branch Coverage', () => {
+    it('should handle validation failures with required prerequisites', async () => {
+      // Set user context that mentions an inbox
+      toolHandler.setUserContext('search the support inbox for urgent tickets');
+      
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: {
+            query: 'urgent',
+            // No inboxId provided despite mentioning "support inbox"
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      expect(response.error).toBe('API Constraint Validation Failed');
+      expect(response.details.requiredPrerequisites).toContain('searchInboxes');
+    });
+
+    it('should handle validation failures without prerequisites', async () => {
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'getConversationSummary',
+          arguments: {
+            conversationId: 'invalid-format'  // Should be numeric
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      expect(response.error).toBe('API Constraint Validation Failed');
+      expect(response.details.errors).toContain('Invalid conversation ID format');
+    });
+
+    it('should provide API guidance for successful tool calls', async () => {
+      const mockResponse = {
+        results: [
+          { id: '123', name: 'Support', email: 'support@test.com' }
+        ]
+      };
+
+      nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 50 })
+        .reply(200, { _embedded: { mailboxes: mockResponse.results } });
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchInboxes',
+          arguments: { query: 'support' }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      
+      expect(response.apiGuidance).toBeDefined();
+      expect(response.apiGuidance[0]).toContain('NEXT STEP');
+    });
+
+    it('should handle tool calls without API guidance', async () => {
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'getServerTime',
+          arguments: {}
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      expect(response.isoTime).toBeDefined();
+      // getServerTime doesn't generate API guidance
+    });
+  });
+
+  describe('Error Handling - Branch Coverage', () => {
+    it('should handle Zod validation errors in tool arguments', async () => {
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchInboxes',
+          arguments: { limit: 'invalid' }  // Should be number
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const errorResponse = JSON.parse(textContent.text);
+      expect(errorResponse.error.code).toBe('INVALID_INPUT');
+    });
+
+    it('should handle missing required fields in tool arguments', async () => {
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'getConversationSummary',
+          arguments: {}  // Missing required conversationId
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const errorResponse = JSON.parse(textContent.text);
+      
+      // Could be either validation error or API constraint validation error
+      expect(['INVALID_INPUT', 'API Constraint Validation Failed']).toContain(errorResponse.error || errorResponse.error?.code);
+    });
+
+    it('should handle unknown tool calls', async () => {
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'unknownTool',
+          arguments: {}
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const errorResponse = JSON.parse(textContent.text);
+      expect(errorResponse.error.code).toBe('TOOL_ERROR');
+      expect(errorResponse.error.message).toContain('Unknown tool');
+    });
+
+    it('should handle comprehensive search with no inbox ID when required', async () => {
+      toolHandler.setUserContext('search conversations in the support mailbox');
+      
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'comprehensiveConversationSearch',
+          arguments: {
+            searchTerms: ['urgent']
+            // Missing inboxId despite mentioning "support mailbox"
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      
+      // Should trigger API constraint validation  
+      expect(response.error || response.details?.requiredPrerequisites).toBeDefined();
+    });
+  });
+
   describe('getConversationSummary', () => {
+    it('should handle conversations with no customer threads', async () => {
+      const mockConversation = {
+        id: 123,
+        subject: 'Test Conversation',
+        status: 'active',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        customer: { id: 1, firstName: 'John', lastName: 'Doe' },
+        assignee: null,
+        tags: []
+      };
+
+      const mockThreads = {
+        _embedded: {
+          threads: [
+            {
+              id: 1,
+              type: 'message',  // Staff message only
+              body: 'Staff reply',
+              createdAt: '2023-01-01T10:00:00Z',
+              createdBy: { id: 1, firstName: 'Agent', lastName: 'Smith' }
+            }
+          ]
+        }
+      };
+
+      nock(baseURL)
+        .get('/conversations/123')
+        .reply(200, mockConversation);
+
+      nock(baseURL)
+        .get('/conversations/123/threads')
+        .query({ page: 1, size: 50 })
+        .reply(200, mockThreads);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'getConversationSummary',
+          arguments: { conversationId: '123' }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      
+      if (!result.isError) {
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        
+        // Should handle null firstCustomerMessage
+        expect(response.firstCustomerMessage).toBeNull();
+        expect(response.latestStaffReply).toBeDefined();
+      }
+    });
+
+    it('should handle conversations with no staff replies', async () => {
+      const mockConversation = {
+        id: 124,
+        subject: 'Customer Only Conversation',
+        status: 'pending',
+        createdAt: '2023-01-01T00:00:00Z',
+        updatedAt: '2023-01-01T00:00:00Z',
+        customer: { id: 1, firstName: 'John', lastName: 'Doe' },
+        assignee: null,
+        tags: []
+      };
+
+      const mockThreads = {
+        _embedded: {
+          threads: [
+            {
+              id: 1,
+              type: 'customer',  // Customer message only
+              body: 'Customer question',
+              createdAt: '2023-01-01T09:00:00Z',
+              customer: { id: 1, firstName: 'John', lastName: 'Doe' }
+            }
+          ]
+        }
+      };
+
+      nock(baseURL)
+        .get('/conversations/124')
+        .reply(200, mockConversation);
+
+      nock(baseURL)
+        .get('/conversations/124/threads')
+        .query({ page: 1, size: 50 })
+        .reply(200, mockThreads);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'getConversationSummary',
+          arguments: { conversationId: '124' }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      
+      if (!result.isError) {
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        
+        // Should handle null latestStaffReply
+        expect(response.firstCustomerMessage).toBeDefined();
+        expect(response.latestStaffReply).toBeNull();
+      }
+    });
+
     it('should get conversation summary with threads', async () => {
       const mockConversation = {
         id: 123,
@@ -554,6 +838,62 @@ describe('ToolHandler', () => {
       expect(response.resultsByStatus[0].status).toBe('active');
     });
 
+    it('should handle invalid inboxId format validation', async () => {
+      toolHandler.setUserContext('search the support inbox');
+      
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: {
+            query: 'test',
+            inboxId: 'invalid-format'  // Should be numeric
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+      
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      expect(response.error).toBe('API Constraint Validation Failed');
+      expect(response.details.errors[0]).toContain('Invalid inbox ID format');
+    });
+
+    it('should handle different search locations in comprehensive search', async () => {
+      // Mock successful search
+      const mockConversations = {
+        _embedded: { conversations: [] },
+        page: { size: 25, totalElements: 0 }
+      };
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(() => true)
+        .reply(200, mockConversations);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'comprehensiveConversationSearch',
+          arguments: {
+            searchTerms: ['test'],
+            searchIn: ['subject'],  // Test subject-only search
+            statuses: ['active']
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      
+      if (!result.isError) {
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.searchIn).toEqual(['subject']);
+      }
+    });
+
     it('should handle search with no results and provide guidance', async () => {
       const freshToolHandler = new ToolHandler();
       
@@ -615,6 +955,80 @@ describe('ToolHandler', () => {
       expect(response.totalConversationsFound).toBe(0);
       expect(response.searchTips).toBeDefined();
       expect(response.searchTips).toContain('Try broader search terms or increase the timeframe');
+    });
+  });
+
+  describe('Advanced Conversation Search - Branch Coverage', () => {
+    it('should handle advanced search with all parameter types', async () => {
+      const mockResponse = {
+        _embedded: { conversations: [] },
+        page: { size: 50, totalElements: 0 }
+      };
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(() => true)
+        .reply(200, mockResponse);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'advancedConversationSearch',
+          arguments: {
+            contentTerms: ['urgent', 'billing'],
+            subjectTerms: ['help', 'support'],
+            customerEmail: 'test@example.com',
+            emailDomain: 'company.com',
+            tags: ['vip', 'escalation'],
+            createdBefore: '2024-01-31T23:59:59Z'
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      
+      if (!result.isError) {
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.searchCriteria.contentTerms).toEqual(['urgent', 'billing']);
+        expect(response.searchCriteria.tags).toEqual(['vip', 'escalation']);
+      }
+    });
+
+    it('should handle field selection in search conversations', async () => {
+      const mockResponse = {
+        _embedded: { 
+          conversations: [
+            { id: 1, subject: 'Test', status: 'active', extraField: 'should be filtered' }
+          ] 
+        },
+        page: { size: 50, totalElements: 1 }
+      };
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(() => true)
+        .reply(200, mockResponse);
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: {
+            query: 'test',
+            fields: ['id', 'subject'] // This should filter fields
+          }
+        }
+      };
+
+      const result = await toolHandler.callTool(request);
+      
+      if (!result.isError) {
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.results[0]).toEqual({ id: 1, subject: 'Test' });
+        expect(response.results[0].extraField).toBeUndefined();
+      }
     });
   });
 

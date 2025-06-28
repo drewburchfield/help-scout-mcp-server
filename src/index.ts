@@ -142,7 +142,12 @@ export class HelpScoutMCPServer {
 
   async stop(): Promise<void> {
     try {
+      // Close the MCP server
       await this.server.close();
+      
+      // Close HTTP connection pool
+      await helpScoutClient.closePool();
+      
       logger.info('Help Scout MCP Server stopped');
     } catch (error) {
       logger.error('Error stopping server', { 
