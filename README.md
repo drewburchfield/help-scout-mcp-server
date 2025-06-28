@@ -53,21 +53,20 @@ npx help-scout-mcp-server --client-id="your-client-id" --client-secret="your-cli
 
 ## Getting Your API Credentials
 
-### 🎯 **Recommended: OAuth2 Client Credentials (Help Scout Approved)**
+### 🎯 **Recommended: OAuth2 Client Credentials**
 
 1. Go to **Help Scout** → **My Apps** → **Create Private App**
 2. Fill in app details and select required scopes
 3. Copy your **Client ID** and **Client Secret**
-4. Use these credentials in your configuration
+4. Use in configuration:
+   - `HELPSCOUT_API_KEY=your-client-id`
+   - `HELPSCOUT_APP_SECRET=your-client-secret`
 
-### 🔐 Alternative: Personal Access Token
+### 🔐 **Alternative: Personal Access Token**
 
-For development or personal use only:
 1. Go to **Help Scout** → **Your Profile** → **API Keys**  
 2. Create a new **Personal Access Token**
-3. Use format: `HELPSCOUT_API_KEY=Bearer your-token-here`
-
-> **Note:** OAuth2 Client Credentials are the recommended production approach by Help Scout.
+3. Use in configuration: `HELPSCOUT_API_KEY=Bearer your-token-here`
 
 ## Features
 
@@ -181,7 +180,7 @@ git clone https://github.com/drewburchfield/help-scout-mcp-server.git
 cd help-scout-mcp-server
 npm install && npm run build
 
-# Create .env file with your credentials
+# Create .env file with your credentials (OAuth2)
 echo "HELPSCOUT_API_KEY=your-client-id" > .env
 echo "HELPSCOUT_APP_SECRET=your-client-secret" >> .env
 
