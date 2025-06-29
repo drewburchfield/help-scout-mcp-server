@@ -246,7 +246,7 @@ export class HelpScoutClient {
 
   private async authenticate(): Promise<void> {
     try {
-      // Check if we have a Personal Access Token (newer approach)
+      // Check for Personal Access Token first (most explicit)
       if (config.helpscout.apiKey && config.helpscout.apiKey.startsWith('Bearer ')) {
         this.accessToken = config.helpscout.apiKey.replace('Bearer ', '');
         this.tokenExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
@@ -254,22 +254,30 @@ export class HelpScoutClient {
         return;
       }
 
-      // Legacy OAuth2 client credentials flow
-      const appSecret = process.env.HELPSCOUT_APP_SECRET;
-      if (!appSecret) {
-        throw new Error('HELPSCOUT_APP_SECRET required for OAuth2 authentication');
+      // Check for OAuth2 credentials (new explicit naming takes precedence)
+      const clientId = config.helpscout.clientId;
+      const clientSecret = config.helpscout.clientSecret;
+      
+      if (!clientId || !clientSecret) {
+        throw new Error(
+          'OAuth2 authentication requires both client ID and secret. ' +
+          'Set HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET, or ' +
+          'use legacy HELPSCOUT_API_KEY and HELPSCOUT_APP_SECRET'
+        );
       }
 
       const response = await axios.post('https://api.helpscout.net/v2/oauth2/token', {
         grant_type: 'client_credentials',
-        client_id: config.helpscout.apiKey,
-        client_secret: appSecret,
+        client_id: clientId,
+        client_secret: clientSecret,
       });
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer
       
-      logger.info('Authenticated with Help Scout API using OAuth2');
+      logger.info('Authenticated with Help Scout API using OAuth2', {
+        usingNewNaming: process.env.HELPSCOUT_CLIENT_ID ? true : false
+      });
     } catch (error) {
       logger.error('Authentication failed', { error: error instanceof Error ? error.message : String(error) });
       throw new Error('Failed to authenticate with Help Scout API');

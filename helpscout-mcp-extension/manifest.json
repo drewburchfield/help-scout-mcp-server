@@ -24,6 +24,8 @@
         "${__dirname}/build/server/index.js"
       ],
       "env": {
+        "HELPSCOUT_CLIENT_ID": "${user_config.client_id}",
+        "HELPSCOUT_CLIENT_SECRET": "${user_config.app_secret}",
         "HELPSCOUT_API_KEY": "${user_config.client_id}",
         "HELPSCOUT_APP_SECRET": "${user_config.app_secret}",
         "HELPSCOUT_BASE_URL": "${user_config.base_url}",

@@ -29,8 +29,8 @@ Add this to your Claude Desktop config file:
       "command": "npx",
       "args": ["help-scout-mcp-server"],
       "env": {
-        "HELPSCOUT_API_KEY": "your-client-id",
-        "HELPSCOUT_APP_SECRET": "your-client-secret"
+        "HELPSCOUT_CLIENT_ID": "your-client-id",
+        "HELPSCOUT_CLIENT_SECRET": "your-client-secret"
       }
     }
   }
@@ -40,8 +40,8 @@ Add this to your Claude Desktop config file:
 ### 🐳 Option 3: Docker
 
 ```bash
-docker run -e HELPSCOUT_API_KEY="your-client-id" \
-  -e HELPSCOUT_APP_SECRET="your-client-secret" \
+docker run -e HELPSCOUT_CLIENT_ID="your-client-id" \
+  -e HELPSCOUT_CLIENT_SECRET="your-client-secret" \
   drewburchfield/help-scout-mcp-server
 ```
 
@@ -59,8 +59,8 @@ npx help-scout-mcp-server --client-id="your-client-id" --client-secret="your-cli
 2. Fill in app details and select required scopes
 3. Copy your **Client ID** and **Client Secret**
 4. Use in configuration:
-   - `HELPSCOUT_API_KEY=your-client-id`
-   - `HELPSCOUT_APP_SECRET=your-client-secret`
+   - `HELPSCOUT_CLIENT_ID=your-client-id`
+   - `HELPSCOUT_CLIENT_SECRET=your-client-secret`
 
 ### 🔐 **Alternative: Personal Access Token**
 
@@ -142,10 +142,27 @@ searchConversations({
 
 ## Configuration Options
 
+### Authentication (OAuth2 - Recommended)
+
+**New clearer naming (preferred):**
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HELPSCOUT_API_KEY` | OAuth2 Client ID or Personal Access Token (format: `Bearer token`) | Required |
-| `HELPSCOUT_APP_SECRET` | OAuth2 Client Secret (required for OAuth2) | Optional |
+| `HELPSCOUT_CLIENT_ID` | OAuth2 Client ID from Help Scout My Apps | Required |
+| `HELPSCOUT_CLIENT_SECRET` | OAuth2 Client Secret from Help Scout My Apps | Required |
+
+**Legacy naming (still supported):**
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HELPSCOUT_API_KEY` | OAuth2 Client ID (when used with APP_SECRET) | Required |
+| `HELPSCOUT_APP_SECRET` | OAuth2 Client Secret | Required |
+
+### Authentication (Personal Access Token)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HELPSCOUT_API_KEY` | Personal Access Token (format: `Bearer your-token`) | Required |
+
+### Other Configuration
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
 | `ALLOW_PII` | Include message content in responses | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
@@ -181,8 +198,8 @@ cd help-scout-mcp-server
 npm install && npm run build
 
 # Create .env file with your credentials (OAuth2)
-echo "HELPSCOUT_API_KEY=your-client-id" > .env
-echo "HELPSCOUT_APP_SECRET=your-client-secret" >> .env
+echo "HELPSCOUT_CLIENT_ID=your-client-id" > .env
+echo "HELPSCOUT_CLIENT_SECRET=your-client-secret" >> .env
 
 # Start the server
 npm start

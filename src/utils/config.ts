@@ -1,10 +1,15 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Only load .env in non-test environments
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config();
+}
 
 export interface Config {
   helpscout: {
-    apiKey: string;
+    apiKey: string;         // For backwards compatibility and Personal Access Tokens
+    clientId?: string;      // New: explicit OAuth2 client ID
+    clientSecret?: string;  // New: explicit OAuth2 client secret
     baseUrl: string;
   };
   cache: {
@@ -28,7 +33,10 @@ export interface Config {
 
 export const config: Config = {
   helpscout: {
+    // Priority: For OAuth2, HELPSCOUT_CLIENT_ID takes precedence over HELPSCOUT_API_KEY
     apiKey: process.env.HELPSCOUT_API_KEY || '',
+    clientId: process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || '',
+    clientSecret: process.env.HELPSCOUT_CLIENT_SECRET || process.env.HELPSCOUT_APP_SECRET || '',
     baseUrl: process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/',
   },
   cache: {
@@ -51,7 +59,14 @@ export const config: Config = {
 };
 
 export function validateConfig(): void {
-  if (!config.helpscout.apiKey) {
-    throw new Error('HELPSCOUT_API_KEY environment variable is required');
+  const hasOAuth2 = (config.helpscout.clientId && config.helpscout.clientSecret);
+  const hasPersonalToken = config.helpscout.apiKey && config.helpscout.apiKey.startsWith('Bearer ');
+  
+  if (!hasOAuth2 && !hasPersonalToken) {
+    throw new Error(
+      'Authentication required. Provide either:\n' +
+      '1. HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET for OAuth2, or\n' +
+      '2. HELPSCOUT_API_KEY with a Personal Access Token (starting with "Bearer ")'
+    );
   }
 }

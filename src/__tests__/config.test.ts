@@ -32,22 +32,23 @@ describe('Config Validation', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
-    it('should throw error when API key is missing', async () => {
+    it('should throw error when authentication is missing', async () => {
       process.env.HELPSCOUT_API_KEY = '';
 
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      expect(() => validateConfig()).toThrow(/HELPSCOUT_API_KEY/);
+      expect(() => validateConfig()).toThrow(/Authentication required/);
     });
 
-    it('should pass when API key is provided (OAuth2 validation happens in client)', async () => {
-      process.env.HELPSCOUT_API_KEY = 'client-id';
+    it('should throw error when only API key is provided without app secret (non-bearer token)', async () => {
+      process.env.HELPSCOUT_API_KEY = 'client-id'; // Not a Bearer token
       delete process.env.HELPSCOUT_APP_SECRET;
+      delete process.env.HELPSCOUT_CLIENT_SECRET;
 
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      // validateConfig only checks for API key, OAuth2 validation happens in HelpScoutClient
-      expect(() => validateConfig()).not.toThrow();
+      // Now validateConfig checks for complete OAuth2 credentials
+      expect(() => validateConfig()).toThrow(/Authentication required/);
     });
 
     it('should use default base URL when not provided', async () => {

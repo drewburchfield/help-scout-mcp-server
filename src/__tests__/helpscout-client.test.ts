@@ -29,6 +29,8 @@ jest.mock('../utils/config.js', () => ({
   config: {
     helpscout: {
       get apiKey() { return process.env.HELPSCOUT_API_KEY || ''; },
+      get clientId() { return process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || ''; },
+      get clientSecret() { return process.env.HELPSCOUT_CLIENT_SECRET || process.env.HELPSCOUT_APP_SECRET || ''; },
       get baseUrl() { return process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/'; },
     },
     cache: {
@@ -66,6 +68,7 @@ describe('HelpScoutClient', () => {
     // Clear any environment variables from previous tests
     delete process.env.HELPSCOUT_API_KEY;
     delete process.env.HELPSCOUT_CLIENT_ID;
+    delete process.env.HELPSCOUT_CLIENT_SECRET;
     delete process.env.HELPSCOUT_APP_SECRET;
   });
 
