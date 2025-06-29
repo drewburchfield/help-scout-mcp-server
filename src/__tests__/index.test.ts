@@ -15,6 +15,7 @@ jest.mock('../utils/logger.js', () => ({
 jest.mock('../utils/helpscout-client.js', () => ({
   helpScoutClient: {
     testConnection: jest.fn(() => Promise.resolve(true)),
+    closePool: jest.fn(() => Promise.resolve()),
   },
 }));
 
@@ -194,10 +195,12 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
 
     it('should stop gracefully', async () => {
       const { logger } = require('../utils/logger.js');
+      const { helpScoutClient } = require('../utils/helpscout-client.js');
 
       await server.stop();
 
       expect(mockServer.close).toHaveBeenCalled();
+      expect(helpScoutClient.closePool).toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith('Help Scout MCP Server stopped');
     });
 
