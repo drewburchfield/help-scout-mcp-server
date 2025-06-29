@@ -43,13 +43,12 @@ docker run -e HELPSCOUT_CLIENT_ID="your-client-id" \
   drewburchfield/help-scout-mcp-server
 ```
 
-### 💻 Option 4: NPM Global Install
+### 💻 Option 4: Command Line
 
 ```bash
-npm install -g help-scout-mcp-server
-export HELPSCOUT_CLIENT_ID="your-client-id"
-export HELPSCOUT_CLIENT_SECRET="your-client-secret"
-help-scout-mcp-server
+HELPSCOUT_CLIENT_ID="your-client-id" \
+HELPSCOUT_CLIENT_SECRET="your-client-secret" \
+npx help-scout-mcp-server
 ```
 
 ## Getting Your API Credentials
