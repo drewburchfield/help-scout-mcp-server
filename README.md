@@ -17,7 +17,7 @@
 - [🔍 Troubleshooting](#troubleshooting)
 - [🤝 Contributing](#contributing)
 
-## 🎉 What's New in v1.2.0
+## 🎉 What's New in v1.2.1
 
 - **🎯 DXT Extension**: One-click installation for Claude Desktop
 - **🔧 Clear Environment Variables**: `HELPSCOUT_CLIENT_ID` and `HELPSCOUT_CLIENT_SECRET` 
