@@ -20,8 +20,6 @@
 
 ### 📋 Option 2: Claude Desktop (Manual Config)
 
-Add this to your Claude Desktop config file:
-
 ```json
 {
   "mcpServers": {
@@ -45,10 +43,13 @@ docker run -e HELPSCOUT_CLIENT_ID="your-client-id" \
   drewburchfield/help-scout-mcp-server
 ```
 
-### 💻 Option 4: Command Line
+### 💻 Option 4: NPM Global Install
 
 ```bash
-npx help-scout-mcp-server --client-id="your-client-id" --client-secret="your-client-secret"
+npm install -g help-scout-mcp-server
+export HELPSCOUT_CLIENT_ID="your-client-id"
+export HELPSCOUT_CLIENT_SECRET="your-client-secret"
+help-scout-mcp-server
 ```
 
 ## Getting Your API Credentials
@@ -142,31 +143,16 @@ searchConversations({
 
 ## Configuration Options
 
-### Authentication (OAuth2 - Recommended)
-
-**New clearer naming (preferred):**
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HELPSCOUT_CLIENT_ID` | OAuth2 Client ID from Help Scout My Apps | Required |
 | `HELPSCOUT_CLIENT_SECRET` | OAuth2 Client Secret from Help Scout My Apps | Required |
-
-**Legacy naming (still supported):**
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HELPSCOUT_API_KEY` | OAuth2 Client ID (when used with APP_SECRET) | Required |
-| `HELPSCOUT_APP_SECRET` | OAuth2 Client Secret | Required |
-
-### Authentication (Personal Access Token)
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HELPSCOUT_API_KEY` | Personal Access Token (format: `Bearer your-token`) | Required |
-
-### Other Configuration
+| `HELPSCOUT_API_KEY` | Personal Access Token (format: `Bearer token`) | Alternative to OAuth2 |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
 | `ALLOW_PII` | Include message content in responses | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |
+
 
 ## Compatibility
 

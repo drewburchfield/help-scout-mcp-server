@@ -12,7 +12,7 @@ describe('Authentication Configuration', () => {
         env[key] = originalEnv[key];
       }
       return env;
-    }, {} as NodeJS.ProcessEnv);
+    }, {} as typeof process.env);
   });
 
   afterEach(() => {
