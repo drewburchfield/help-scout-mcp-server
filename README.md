@@ -5,7 +5,35 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://typescriptlang.org/)
 
-> **Official Help Scout MCP Server** - Connect Claude and other AI assistants to your Help Scout data with enterprise-grade security and advanced search capabilities.
+> **Help Scout MCP Server** - Connect Claude and other AI assistants to your Help Scout data with enterprise-grade security and advanced search capabilities.
+
+## 📖 Table of Contents
+
+- [🎉 What's New](#-whats-new-in-v120)
+- [⚡ Quick Start](#quick-start) 
+- [🔑 API Credentials](#getting-your-api-credentials)
+- [🛠️ Tools & Capabilities](#tools--capabilities)
+- [⚙️ Configuration](#configuration-options)
+- [🔍 Troubleshooting](#troubleshooting)
+- [🤝 Contributing](#contributing)
+
+## 🎉 What's New in v1.2.0
+
+- **🎯 DXT Extension**: One-click installation for Claude Desktop
+- **🔧 Clear Environment Variables**: `HELPSCOUT_CLIENT_ID` and `HELPSCOUT_CLIENT_SECRET` 
+- **⚡ Connection Pooling**: Improved performance with HTTP connection reuse
+- **🛡️ Enhanced Security**: Comprehensive input validation and API constraints
+- **🔄 Dependency Injection**: Cleaner architecture with ServiceContainer
+- **🧪 Comprehensive Testing**: 69%+ branch coverage with reliable tests
+
+## Prerequisites
+
+- **Node.js 18+** (for command line usage)
+- **Help Scout Account** with API access
+- **OAuth2 App** or **Personal Access Token** from Help Scout
+- **Claude Desktop** (for DXT installation) or any MCP-compatible client
+
+> **Note**: The DXT extension includes Node.js, so no local installation needed for Claude Desktop users.
 
 ## Quick Start
 
@@ -189,6 +217,112 @@ echo "HELPSCOUT_CLIENT_SECRET=your-client-secret" >> .env
 # Start the server
 npm start
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+**Authentication Failed**
+```bash
+# Verify your credentials
+echo $HELPSCOUT_CLIENT_ID
+echo $HELPSCOUT_CLIENT_SECRET
+
+# Test with curl
+curl -X POST https://api.helpscout.net/v2/oauth2/token \
+  -d "grant_type=client_credentials&client_id=$HELPSCOUT_CLIENT_ID&client_secret=$HELPSCOUT_CLIENT_SECRET"
+```
+
+**Connection Timeouts**
+- Check your network connection to `api.helpscout.net`
+- Verify no firewall blocking HTTPS traffic
+- Consider increasing `HTTP_SOCKET_TIMEOUT` environment variable
+
+**Rate Limiting**
+- The server automatically handles rate limits with exponential backoff
+- Reduce concurrent requests if you see frequent 429 errors
+- Monitor logs for retry patterns
+
+**Empty Search Results**
+- Verify inbox permissions with your API credentials
+- Check conversation exists and you have access
+- Try broader search terms or different time ranges
+
+### Debug Mode
+
+Enable debug logging to troubleshoot issues:
+
+```bash
+LOG_LEVEL=debug npx help-scout-mcp-server
+```
+
+### Getting Help
+
+If you're still having issues:
+1. Check [existing issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
+2. Enable debug logging and share relevant logs
+3. Include your configuration (without credentials!)
+
+## Contributing
+
+We welcome contributions! Here's how to get started:
+
+### 🚀 Quick Development Setup
+
+```bash
+git clone https://github.com/drewburchfield/help-scout-mcp-server.git
+cd help-scout-mcp-server
+npm install
+```
+
+### 🔧 Development Workflow
+
+```bash
+# Run tests
+npm test
+
+# Type checking
+npm run type-check
+
+# Linting
+npm run lint
+
+# Build for development
+npm run build
+
+# Start development server
+npm run dev
+```
+
+### 📋 Before Submitting
+
+- ✅ All tests pass (`npm test`)
+- ✅ Type checking passes (`npm run type-check`) 
+- ✅ Linting passes (`npm run lint`)
+- ✅ Add tests for new features
+- ✅ Update documentation if needed
+
+### 🐛 Bug Reports
+
+When reporting bugs, please include:
+- Help Scout MCP Server version
+- Node.js version
+- Authentication method (OAuth2/Personal Access Token)
+- Error messages and logs
+- Steps to reproduce
+
+### 💡 Feature Requests
+
+We'd love to hear your ideas! Please open an issue describing:
+- The problem you're trying to solve
+- Your proposed solution
+- Any alternative approaches you've considered
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/drewburchfield/help-scout-mcp-server/discussions)
+- **NPM Package**: [help-scout-mcp-server](https://www.npmjs.com/package/help-scout-mcp-server)
 
 ## License
 
