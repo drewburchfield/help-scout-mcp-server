@@ -490,26 +490,15 @@ export class HelpScoutClient {
   async closePool(): Promise<void> {
     logger.info('Closing HTTP connection pool');
     
-    return new Promise((resolve) => {
-      let closedCount = 0;
-      const totalAgents = 2;
-
-      const onClose = () => {
-        closedCount++;
-        if (closedCount === totalAgents) {
-          logger.info('All HTTP connections closed');
-          resolve();
-        }
-      };
-
-      // Close HTTP agent
-      this.httpAgent.destroy();
-      onClose();
-
-      // Close HTTPS agent  
-      this.httpsAgent.destroy();
-      onClose();
-    });
+    // Agent.destroy() is synchronous and immediately closes connections
+    // so we don't need to wait for async callbacks
+    this.httpAgent.destroy();
+    this.httpsAgent.destroy();
+    
+    // Give a small delay to ensure connections are cleaned up
+    await this.sleep(100);
+    
+    logger.info('All HTTP connections closed');
   }
 
   /**
