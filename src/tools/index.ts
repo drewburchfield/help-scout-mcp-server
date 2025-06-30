@@ -1,8 +1,9 @@
 import { Tool, CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { PaginatedResponse } from '../utils/helpscout-client.js';
+import { PaginatedResponse, helpScoutClient } from '../utils/helpscout-client.js';
 import { createMcpToolError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
-import { Injectable, ServiceContainer } from '../utils/service-container.js';
+import { logger } from '../utils/logger.js';
+import { config } from '../utils/config.js';
 import { z } from 'zod';
 
 /**
@@ -55,12 +56,12 @@ import {
   MultiStatusConversationSearchInputSchema,
 } from '../schema/types.js';
 
-export class ToolHandler extends Injectable {
+export class ToolHandler {
   private callHistory: string[] = [];
   private currentUserQuery?: string;
 
-  constructor(container?: ServiceContainer) {
-    super(container);
+  constructor() {
+    // Direct imports, no DI needed
   }
 
   /**
@@ -350,7 +351,7 @@ export class ToolHandler extends Injectable {
     const requestId = Math.random().toString(36).substring(7);
     const startTime = Date.now();
 
-    const { logger } = this.services.resolve(['logger']);
+    // Using direct import
     
     logger.info('Tool call started', {
       requestId,
@@ -472,7 +473,7 @@ export class ToolHandler extends Injectable {
 
   private async searchInboxes(args: unknown): Promise<CallToolResult> {
     const input = SearchInboxesInputSchema.parse(args);
-    const { helpScoutClient } = this.services.resolve(['helpScoutClient']);
+    // Using direct import
     
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
       page: 1,
@@ -513,7 +514,7 @@ export class ToolHandler extends Injectable {
 
   private async searchConversations(args: unknown): Promise<CallToolResult> {
     const input = SearchConversationsInputSchema.parse(args);
-    const { helpScoutClient, logger } = this.services.resolve(['helpScoutClient', 'logger']);
+    // Using direct imports
     
     const queryParams: Record<string, unknown> = {
       page: 1,
@@ -596,7 +597,7 @@ export class ToolHandler extends Injectable {
 
   private async getConversationSummary(args: unknown): Promise<CallToolResult> {
     const input = GetConversationSummaryInputSchema.parse(args);
-    const { helpScoutClient, config } = this.services.resolve(['helpScoutClient', 'config']);
+    // Using direct imports
     
     // Get conversation details
     const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
@@ -656,7 +657,7 @@ export class ToolHandler extends Injectable {
 
   private async getThreads(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsInputSchema.parse(args);
-    const { helpScoutClient, config } = this.services.resolve(['helpScoutClient', 'config']);
+    // Using direct imports
     
     const response = await helpScoutClient.get<PaginatedResponse<Thread>>(
       `/conversations/${input.conversationId}/threads`,
@@ -708,7 +709,7 @@ export class ToolHandler extends Injectable {
 
   private async listAllInboxes(args: unknown): Promise<CallToolResult> {
     const input = args as { limit?: number };
-    const { helpScoutClient } = this.services.resolve(['helpScoutClient']);
+    // Using direct import
     const limit = input.limit || 100;
     
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
@@ -744,7 +745,7 @@ export class ToolHandler extends Injectable {
 
   private async advancedConversationSearch(args: unknown): Promise<CallToolResult> {
     const input = AdvancedConversationSearchInputSchema.parse(args);
-    const { helpScoutClient } = this.services.resolve(['helpScoutClient']);
+    // Using direct import
 
     // Build HelpScout query syntax
     const queryParts: string[] = [];
@@ -914,7 +915,7 @@ export class ToolHandler extends Injectable {
     searchQuery: string;
   }) {
     const { input, createdAfter, searchQuery } = context;
-    const { logger } = this.services.resolve(['logger']);
+    // Using direct import
     const allResults: Array<{
       status: string;
       totalCount: number;
@@ -962,7 +963,7 @@ export class ToolHandler extends Injectable {
     inboxId?: string;
     createdBefore?: string;
   }) {
-    const { helpScoutClient } = this.services.resolve(['helpScoutClient']);
+    // Using direct import
     const queryParams: Record<string, unknown> = {
       page: 1,
       size: params.limitPerStatus,
