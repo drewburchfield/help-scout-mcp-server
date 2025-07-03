@@ -60,3 +60,22 @@ temp/
 
 # Docker
 .dockerignore
+
+# Development notes and scratch files
+CLAUDE.md
+*.draft.md
+scratch/
+notes/
+TODO.md
+NOTES.md
+PRD.md
+WORKFLOW.md
+
+# Development environment configs that might be modified locally
+.env.development
+.env.development.local
+
+# Development artifacts and results
+test-results/
+benchmark-results/
+perf-reports/
