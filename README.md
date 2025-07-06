@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/drewburchfield-help-scout-mcp-server-badge.png)](https://mseep.ai/app/drewburchfield-help-scout-mcp-server)
+
 # Help Scout MCP Server
 
 [![npm version](https://badge.fury.io/js/help-scout-mcp-server.svg)](https://badge.fury.io/js/help-scout-mcp-server)
