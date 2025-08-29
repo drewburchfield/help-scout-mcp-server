@@ -2,10 +2,10 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
-    tags: [ 'v*' ]
+    branches: [ main ]        # Only main triggers CI/CD
+    tags: [ 'v*' ]           # Tags trigger Docker builds
   pull_request:
-    branches: [ main ]
+    branches: [ main ]        # PRs to main get tested
 
 permissions:
   contents: write
