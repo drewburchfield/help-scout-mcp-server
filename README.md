@@ -17,14 +17,15 @@
 - [🔍 Troubleshooting](#troubleshooting)
 - [🤝 Contributing](#contributing)
 
-## 🎉 What's New in v1.2.1
+## 🎉 What's New in v1.3.0
 
-- **🎯 DXT Extension**: One-click installation for Claude Desktop
-- **🔧 Clear Environment Variables**: `HELPSCOUT_CLIENT_ID` and `HELPSCOUT_CLIENT_SECRET` 
-- **⚡ Connection Pooling**: Improved performance with HTTP connection reuse
-- **🛡️ Enhanced Security**: Comprehensive input validation and API constraints
-- **🔄 Dependency Injection**: Cleaner architecture with ServiceContainer
-- **🧪 Comprehensive Testing**: 69%+ branch coverage with reliable tests
+- **🆙 MCP SDK v1.17.4**: Latest Model Context Protocol SDK with enhanced compatibility  
+- **🎯 DXT Format Compliance**: Fixed manifest format to follow official Anthropic specification
+- **📝 Enhanced Tool Guidance**: Clear distinction between listing (`searchConversations`) vs content-based searches (`comprehensiveConversationSearch`)
+- **🔧 Improved Search UX**: Better tool descriptions prevent empty search term confusion
+- **🛠️ Enhanced Version Management**: Automated version bump script for all 6 version-sensitive files
+- **✅ Test Reliability**: Fixed async test handling and improved timeout management
+- **🔒 Production Ready**: Complete release workflow with DXT building and GitHub releases
 
 ## Prerequisites
 
@@ -110,8 +111,8 @@ npx help-scout-mcp-server
 
 | Tool | Description | Best For |
 |------|-------------|----------|
-| `comprehensiveConversationSearch` | **⭐ Recommended** - Searches across all conversation statuses automatically | Finding conversations without knowing exact status |
-| `searchConversations` | Basic search with Help Scout query syntax | Targeted searches with specific filters |
+| `searchConversations` | **⭐ For Listing** - Can omit query to list ALL recent conversations | "Show me recent tickets", browsing conversations |
+| `comprehensiveConversationSearch` | **🔍 For Content Search** - Requires search terms, searches all statuses | "Find tickets about billing issues", content-based searches |
 | `advancedConversationSearch` | Boolean queries with content/subject/email filtering | Complex search requirements |
 | `searchInboxes` | Find inboxes by name | Discovering available inboxes |
 
@@ -123,18 +124,33 @@ npx help-scout-mcp-server
 | `getThreads` | Complete conversation message history | Full context analysis |
 | `getServerTime` | Current server timestamp | Time-relative searches |
 
-### Resources
+### Resources (Dynamic Discovery)
 
 - `helpscout://inboxes` - List all accessible inboxes
 - `helpscout://conversations` - Search conversations with filters  
 - `helpscout://threads` - Get thread messages for a conversation
 - `helpscout://clock` - Current server timestamp
 
+> **📝 Note**: Resources are discovered dynamically at runtime through MCP protocol, not declared in the DXT manifest.
+
 ## Search Examples
 
-### Recommended: Multi-Status Search
+> **📝 Key Distinction**: Use `searchConversations` (without query) for **listing** conversations, use `comprehensiveConversationSearch` (with search terms) for **finding** specific content.
+
+### Listing Recent Conversations
 ```javascript
-// Best approach - automatically searches active, pending, and closed
+// Best for "show me recent tickets" - omit query parameter
+searchConversations({
+  status: "active",
+  limit: 25,
+  sort: "createdAt",
+  order: "desc"
+})
+```
+
+### Content-Based Search
+```javascript
+// Best for "find tickets about X" - requires search terms
 comprehensiveConversationSearch({
   searchTerms: ["urgent", "billing"],
   timeframeDays: 60,
@@ -244,6 +260,8 @@ curl -X POST https://api.helpscout.net/v2/oauth2/token \
 - Monitor logs for retry patterns
 
 **Empty Search Results**
+- **Wrong tool choice**: Use `searchConversations` (no query) for listing, `comprehensiveConversationSearch` for content search
+- **Empty search terms**: Don't use empty strings `[""]` with comprehensiveConversationSearch
 - Verify inbox permissions with your API credentials
 - Check conversation exists and you have access
 - Try broader search terms or different time ranges

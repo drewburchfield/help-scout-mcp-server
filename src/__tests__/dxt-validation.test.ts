@@ -23,7 +23,8 @@ describe('DXT Extension Validation', () => {
 
   describe('Manifest Validation', () => {
     it('should have required DXT fields', () => {
-      expect(manifest.manifest_version).toBe('0.1');
+      // Using dxt_version format per current @anthropic-ai/dxt CLI v0.2.6
+      expect(manifest.dxt_version).toBe('0.1');
       expect(manifest.name).toBe('help-scout-mcp-server');
       expect(manifest.display_name).toBe('Help Scout MCP Server');
       expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);

@@ -100,13 +100,13 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'STEP 2: Search conversations after obtaining inbox ID. WARNING: Always get inboxId from searchInboxes first if user mentions an inbox name. IMPORTANT: Specify status (active/pending/closed/spam) for better results, or use comprehensiveConversationSearch for multi-status searching.',
+        description: 'STEP 2: Search conversations after obtaining inbox ID. WARNING: Always get inboxId from searchInboxes first if user mentions an inbox name. IMPORTANT: Specify status (active/pending/closed/spam) for better results, or use comprehensiveConversationSearch for multi-status searching. NOTE: Can be used WITHOUT query parameter to list ALL conversations matching other filters (ideal for "show recent tickets" requests).',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'HelpScout query syntax for content search. Examples: (body:"keyword"), (subject:"text"), (email:"user@domain.com"), (tag:"tagname"), (customerIds:123), complex: (body:"urgent" OR subject:"support")',
+              description: 'OPTIONAL: HelpScout query syntax for content search. OMIT this parameter to list ALL conversations. Examples: (body:"keyword"), (subject:"text"), (email:"user@domain.com"), (tag:"tagname"), (customerIds:123), complex: (body:"urgent" OR subject:"support"). Use cases: OMIT for "show recent tickets", INCLUDE for "find tickets about billing".',
             },
             inboxId: {
               type: 'string',
@@ -285,14 +285,14 @@ export class ToolHandler {
       },
       {
         name: 'comprehensiveConversationSearch',
-        description: 'RECOMMENDED FOR GENERAL SEARCHES: Searches across multiple statuses simultaneously, solving the common issue where searches return no results. WORKFLOW: 1) If user mentions an inbox name, call searchInboxes FIRST to get the ID. 2) Then use this tool with the inbox ID. This tool automatically searches active, pending, and closed conversations.',
+        description: 'CONTENT-BASED SEARCH ONLY: Requires actual search terms to find specific conversations by content. NOT for listing all recent conversations. Use searchConversations (without query) for listing. Searches across multiple statuses simultaneously. WORKFLOW: 1) If user mentions an inbox name, call searchInboxes FIRST to get the ID. 2) Then use this tool with actual search terms.',
         inputSchema: {
           type: 'object',
           properties: {
             searchTerms: {
               type: 'array',
               items: { type: 'string' },
-              description: 'Search terms to find in conversations (will be combined with OR logic)',
+              description: 'REQUIRED: Actual search terms to find in conversations (will be combined with OR logic). Examples: ["billing", "refund"], ["urgent"], ["login issue"]. DO NOT use empty strings.',
               minItems: 1,
             },
             inboxId: {
