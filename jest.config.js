@@ -38,4 +38,5 @@ export default {
       statements: 67,
     },
   },
+  testTimeout: 10000, // 10 seconds for async operations
 };

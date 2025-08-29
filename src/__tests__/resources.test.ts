@@ -26,8 +26,10 @@ describe('ResourceHandler', () => {
     resourceHandler = new ResourceHandler();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     nock.cleanAll();
+    // Clean up any pending promises or timers
+    await new Promise(resolve => setImmediate(resolve));
   });
 
   describe('listResources', () => {

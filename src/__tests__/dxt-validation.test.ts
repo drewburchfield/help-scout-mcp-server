@@ -23,7 +23,7 @@ describe('DXT Extension Validation', () => {
 
   describe('Manifest Validation', () => {
     it('should have required DXT fields', () => {
-      expect(manifest.dxt_version).toBe('0.1');
+      expect(manifest.manifest_version).toBe('0.1');
       expect(manifest.name).toBe('help-scout-mcp-server');
       expect(manifest.display_name).toBe('Help Scout MCP Server');
       expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
@@ -57,8 +57,8 @@ describe('DXT Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 7 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(7);
+    it('should have all 8 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(8);
       
       const expectedTools = [
         'searchInboxes',
@@ -67,7 +67,8 @@ describe('DXT Extension Validation', () => {
         'getThreads',
         'getServerTime',
         'advancedConversationSearch',
-        'comprehensiveConversationSearch'
+        'comprehensiveConversationSearch',
+        'listAllInboxes'
       ];
 
       const toolNames = manifest.tools.map((tool: any) => tool.name);
@@ -76,20 +77,10 @@ describe('DXT Extension Validation', () => {
       });
     });
 
-    it('should have all 4 MCP resources declared', () => {
-      expect(manifest.resources).toHaveLength(4);
-      
-      const expectedResources = [
-        'helpscout://inboxes',
-        'helpscout://conversations',
-        'helpscout://threads',
-        'helpscout://clock'
-      ];
-
-      const resourceUris = manifest.resources.map((resource: any) => resource.uri);
-      expectedResources.forEach(uri => {
-        expect(resourceUris).toContain(uri);
-      });
+    it('should not declare resources (resources are dynamic in MCP)', () => {
+      // According to DXT spec, resources are not included in manifest because 
+      // MCP resources are inherently dynamic - discovered at runtime
+      expect(manifest.resources).toBeUndefined();
     });
 
     it('should have 3 MCP prompts declared', () => {

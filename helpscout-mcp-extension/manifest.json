@@ -1,5 +1,5 @@
 {
-  "dxt_version": "0.1",
+  "manifest_version": "0.1",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
   "version": "1.2.1",
@@ -42,7 +42,6 @@
       "type": "string",
       "title": "Help Scout Client ID",
       "description": "Your OAuth2 Client ID from Help Scout My Apps",
-      "placeholder": "your-client-id-here",
       "sensitive": true,
       "required": true
     },
@@ -50,7 +49,6 @@
       "type": "string",
       "title": "Help Scout Client Secret",
       "description": "Your OAuth2 Client Secret from Help Scout My Apps",
-      "placeholder": "your-client-secret-here",
       "sensitive": true,
       "required": true
     },
@@ -73,12 +71,6 @@
       "title": "Log Level",
       "description": "Logging verbosity level",
       "default": "info",
-      "enum": [
-        "error",
-        "warn",
-        "info",
-        "debug"
-      ],
       "required": false
     },
     "cache_ttl": {
@@ -122,26 +114,12 @@
       "description": "Advanced conversation search with complex boolean queries and customer organization support"
     },
     {
-      "name": "comprehensiveConversationSearch",
+      "name": "comprehensiveConversationSearch", 
       "description": "Search conversations across multiple statuses simultaneously - automatically searches active, pending, and closed conversations"
-    }
-  ],
-  "resources": [
-    {
-      "uri": "helpscout://inboxes",
-      "description": "List all accessible Help Scout inboxes"
     },
     {
-      "uri": "helpscout://conversations",
-      "description": "Search conversations with filters"
-    },
-    {
-      "uri": "helpscout://threads",
-      "description": "Get thread messages for a conversation"
-    },
-    {
-      "uri": "helpscout://clock",
-      "description": "Current server timestamp"
+      "name": "listAllInboxes",
+      "description": "List all accessible inboxes with their IDs - quick helper for seeing available inboxes"
     }
   ],
   "prompts": [

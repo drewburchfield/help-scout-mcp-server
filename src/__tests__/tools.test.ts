@@ -27,8 +27,10 @@ describe('ToolHandler', () => {
     toolHandler = new ToolHandler();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     nock.cleanAll();
+    // Clean up any pending promises or timers
+    await new Promise(resolve => setImmediate(resolve));
   });
 
   describe('listTools', () => {

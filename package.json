@@ -31,9 +31,9 @@
     "version:major": "node scripts/bump-version.cjs major",
     "prepublishOnly": "npm run clean && npm run build",
     "prepack": "npm run build",
-    "dxt:build": "node scripts/build-dxt.js",
-    "dxt:pack": "npm run dxt:build && cd helpscout-mcp-extension && npx @anthropic-ai/dxt pack",
-    "build:all": "npm run build && npm run dxt:build"
+    "mcpb:build": "node scripts/build-dxt.js",
+    "mcpb:pack": "npm run mcpb:build && cd helpscout-mcp-extension && npx @anthropic-ai/dxt pack",
+    "build:all": "npm run build && npm run mcpb:build"
   },
   "keywords": [
     "mcp",
@@ -62,14 +62,14 @@
     "url": "https://github.com/drewburchfield/help-scout-mcp-server/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.5.0",
+    "@modelcontextprotocol/sdk": "^1.17.4",
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
     "lru-cache": "^10.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@anthropic-ai/dxt": "^0.1.0",
+    "@anthropic-ai/dxt": "^0.2.6",
     "@types/jest": "^29.5.8",
     "@types/nock": "^10.0.3",
     "@types/node": "^20.10.4",
