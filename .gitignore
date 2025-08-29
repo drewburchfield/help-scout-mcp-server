@@ -57,6 +57,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+helpscout-mcp-extension/temp-extract/
 
 # Docker
 .dockerignore
