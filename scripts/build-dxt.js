@@ -28,8 +28,8 @@ function copyDirectory(src, dest) {
   }
 }
 
-async function buildDXT() {
-  console.log('🏗️  Building DXT extension...');
+async function buildMCPB() {
+  console.log('🏗️  Building MCPB extension...');
   
   // Read version from package.json
   const packageJsonPath = path.join(__dirname, '../package.json');
@@ -105,7 +105,7 @@ async function buildDXT() {
   if (fs.existsSync(iconPath)) {
     fs.copyFileSync(iconPath, path.join(buildDir, 'icon.png'));
   } else {
-    console.warn('⚠️  Warning: icon.png not found. DXT will use a default icon.');
+    console.warn('⚠️  Warning: icon.png not found. MCPB will use a default icon.');
   }
   
   // Create .gitignore in build directory
@@ -114,15 +114,15 @@ async function buildDXT() {
     'node_modules/\n*.log\n'
   );
   
-  console.log('✅ DXT build completed successfully!');
+  console.log('✅ MCPB build completed successfully!');
   console.log(`📍 Build directory: ${buildDir}`);
   console.log('\n🎯 Next steps:');
   console.log('1. cd helpscout-mcp-extension');
   console.log('2. npx @anthropic-ai/dxt pack');
-  console.log('3. The .dxt file will be created in the current directory');
+  console.log('3. The .mcpb file will be created in the current directory');
 }
 
-buildDXT().catch(error => {
+buildMCPB().catch(error => {
   console.error('❌ Build failed:', error);
   process.exit(1);
 });
