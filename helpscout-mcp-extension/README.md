@@ -17,10 +17,10 @@ From the project root directory:
 
 ```bash
 # Build the DXT extension
-npm run dxt:build
+npm run mcpb:build
 
 # Build and pack the DXT file
-npm run dxt:pack
+npm run mcpb:pack
 ```
 
 This will:
@@ -56,6 +56,6 @@ The build process:
 
 To test locally before publishing:
 ```bash
-npm run dxt:pack
+npm run mcpb:pack
 # Install the generated .dxt file in Claude Desktop
 ```

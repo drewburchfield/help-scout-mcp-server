@@ -11,7 +11,7 @@ describe('DXT Extension Validation', () => {
   beforeAll(() => {
     // Ensure DXT is built before running tests
     if (!fs.existsSync(buildDir)) {
-      throw new Error('DXT build directory not found. Run `npm run dxt:build` first.');
+      throw new Error('DXT build directory not found. Run `npm run mcpb:build` first.');
     }
     
     if (!fs.existsSync(manifestPath)) {
