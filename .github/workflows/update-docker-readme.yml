@@ -1,0 +1,23 @@
+name: Update Docker Hub README
+
+on:
+  workflow_dispatch:    # Manual trigger only
+  
+permissions:
+  contents: read
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Update Docker Hub description
+      uses: peter-evans/dockerhub-description@v4
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        repository: ${{ secrets.DOCKERHUB_USERNAME }}/help-scout-mcp-server
+        short-description: "Help Scout MCP Server v1.3.0 - Enhanced tool guidance, MCP SDK v1.17.4, DXT format compliance"
+        readme-filepath: ./README.md
