@@ -128,6 +128,10 @@
     {
       "name": "listAllInboxes",
       "description": "List all accessible inboxes with their IDs - quick helper for seeing available inboxes"
+    },
+    {
+      "name": "structuredConversationFilter",
+      "description": "Structural filtering by assignedTo, folderId, customerIds, conversationNumber, or advanced sorting - use after discovering IDs from content search"
     }
   ],
   "prompts": [

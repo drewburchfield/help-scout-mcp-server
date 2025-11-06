@@ -54,6 +54,7 @@ import {
   GetConversationSummaryInputSchema,
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
+  StructuredConversationFilterInputSchema,
 } from '../schema/types.js';
 
 export class ToolHandler {
@@ -344,6 +345,29 @@ export class ToolHandler {
           required: ['searchTerms'],
         },
       },
+      {
+        name: 'structuredConversationFilter',
+        description: 'STRUCTURAL FILTERING - Use ONLY when you need these UNIQUE fields: 1) assignedTo (user ID from previous_results[].assignee.id), 2) folderId (from Help Scout UI), 3) customerIds (from previous_results[].customer.id), 4) conversationNumber (ticket #12345), 5) sortBy waitingSince/customerName/customerEmail. For content search, use comprehensiveConversationSearch first.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            assignedTo: { type: 'number', description: 'User ID from previous_results[].assignee.id. Use -1 for unassigned.' },
+            folderId: { type: 'number', description: 'Folder ID from Help Scout UI (not in API responses)' },
+            customerIds: { type: 'array', items: { type: 'number' }, description: 'Customer IDs from previous_results[].customer.id' },
+            conversationNumber: { type: 'number', description: 'Ticket number from previous_results[].number or user reference' },
+            status: { type: 'string', enum: ['active', 'pending', 'closed', 'spam', 'all'], default: 'all' },
+            inboxId: { type: 'string', description: 'Inbox ID to combine with filters' },
+            tag: { type: 'string', description: 'Tag name to combine with filters' },
+            createdAfter: { type: 'string', format: 'date-time' },
+            createdBefore: { type: 'string', format: 'date-time' },
+            modifiedSince: { type: 'string', format: 'date-time', description: 'Filter by last modified (different from created)' },
+            sortBy: { type: 'string', enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject'], default: 'createdAt', description: 'waitingSince/customerName/customerEmail are unique to this tool' },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
+            cursor: { type: 'string' },
+          },
+        },
+      },
     ];
   }
 
@@ -426,6 +450,9 @@ export class ToolHandler {
           break;
         case 'comprehensiveConversationSearch':
           result = await this.comprehensiveConversationSearch(request.params.arguments || {});
+          break;
+        case 'structuredConversationFilter':
+          result = await this.structuredConversationFilter(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1064,6 +1091,65 @@ export class ToolHandler {
       ].filter(Boolean) : (!effectiveInboxId ? [
         'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
       ] : undefined),
+    };
+  }
+
+  private async structuredConversationFilter(args: unknown): Promise<CallToolResult> {
+    const input = StructuredConversationFilterInputSchema.parse(args);
+
+    const queryParams: Record<string, unknown> = {
+      page: 1,
+      size: input.limit,
+      sortField: input.sortBy,
+      sortOrder: input.sortOrder,
+    };
+
+    // Apply unique structural filters
+    if (input.assignedTo !== undefined) queryParams.assigned_to = input.assignedTo;
+    if (input.folderId !== undefined) queryParams.folder = input.folderId;
+    if (input.conversationNumber !== undefined) queryParams.number = input.conversationNumber;
+
+    // Apply customerIds via query syntax if provided
+    if (input.customerIds && input.customerIds.length > 0) {
+      queryParams.query = `(${input.customerIds.map(id => `customerIds:${id}`).join(' OR ')})`;
+    }
+
+    // Apply combination filters
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+    if (effectiveInboxId) queryParams.mailbox = effectiveInboxId;
+    if (input.status && input.status !== 'all') queryParams.status = input.status;
+    if (input.tag) queryParams.tag = input.tag;
+    if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
+    if (input.modifiedSince) queryParams.modifiedSince = input.modifiedSince;
+
+    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
+    let conversations = response._embedded?.conversations || [];
+
+    // Client-side createdBefore filtering
+    if (input.createdBefore) {
+      const beforeDate = new Date(input.createdBefore);
+      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: conversations,
+          filterApplied: {
+            filterType: 'structural',
+            assignedTo: input.assignedTo,
+            folderId: input.folderId,
+            customerIds: input.customerIds,
+            conversationNumber: input.conversationNumber,
+            uniqueSorting: ['waitingSince', 'customerName', 'customerEmail'].includes(input.sortBy) ? input.sortBy : undefined,
+          },
+          inboxScope: effectiveInboxId ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`) : 'ALL inboxes',
+          pagination: response.page,
+          nextCursor: response._links?.next?.href,
+          note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
+        }, null, 2),
+      }],
     };
   }
 }

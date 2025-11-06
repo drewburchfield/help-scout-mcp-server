@@ -135,6 +135,26 @@ export const MultiStatusConversationSearchInputSchema = z.object({
   includeVariations: z.boolean().default(true),
 });
 
+export const StructuredConversationFilterInputSchema = z.object({
+  assignedTo: z.number().optional(),
+  folderId: z.number().optional(),
+  customerIds: z.array(z.number()).optional(),
+  conversationNumber: z.number().optional(),
+  status: z.enum(['active', 'pending', 'closed', 'spam', 'all']).default('all'),
+  inboxId: z.string().optional(),
+  tag: z.string().optional(),
+  createdAfter: z.string().optional(),
+  createdBefore: z.string().optional(),
+  modifiedSince: z.string().optional(),
+  sortBy: z.enum(['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  limit: z.number().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+}).refine(
+  (data) => !!(data.assignedTo !== undefined || data.folderId !== undefined || data.customerIds !== undefined || data.conversationNumber !== undefined || (data.sortBy && ['waitingSince', 'customerName', 'customerEmail'].includes(data.sortBy))),
+  { message: 'Must use at least one unique field: assignedTo, folderId, customerIds, conversationNumber, or unique sorting. For content search, use comprehensiveConversationSearch.' }
+);
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
