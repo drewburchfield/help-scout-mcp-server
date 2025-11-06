@@ -12,8 +12,9 @@ describe('Config Validation', () => {
   });
 
   describe('validateConfig', () => {
-    it('should pass with valid Personal Access Token configuration', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer valid-token-here';
+    it('should pass with valid OAuth2 configuration', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'valid-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'valid-client-secret';
       process.env.HELPSCOUT_BASE_URL = 'https://api.helpscout.net/v2/';
 
       // Clear module cache and re-import to get fresh config
@@ -37,22 +38,22 @@ describe('Config Validation', () => {
 
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      expect(() => validateConfig()).toThrow(/Authentication required/);
+      expect(() => validateConfig()).toThrow(/OAuth2 authentication required/);
     });
 
-    it('should throw error when only API key is provided without app secret (non-bearer token)', async () => {
-      process.env.HELPSCOUT_API_KEY = 'client-id'; // Not a Bearer token
+    it('should throw error when only API key is provided without app secret', async () => {
+      process.env.HELPSCOUT_API_KEY = 'client-id';
       delete process.env.HELPSCOUT_APP_SECRET;
       delete process.env.HELPSCOUT_CLIENT_SECRET;
 
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      // Now validateConfig checks for complete OAuth2 credentials
-      expect(() => validateConfig()).toThrow(/Authentication required/);
+      expect(() => validateConfig()).toThrow(/OAuth2 authentication required/);
     });
 
     it('should use default base URL when not provided', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer token';
+      process.env.HELPSCOUT_CLIENT_ID = 'client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
       delete process.env.HELPSCOUT_BASE_URL;
 
       jest.resetModules();
@@ -61,7 +62,8 @@ describe('Config Validation', () => {
     });
 
     it('should handle boolean environment variables correctly', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer token';
+      process.env.HELPSCOUT_CLIENT_ID = 'client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
       process.env.ALLOW_PII = 'true';
       process.env.CACHE_TTL_SECONDS = '600';
       process.env.LOG_LEVEL = 'debug';
@@ -72,7 +74,8 @@ describe('Config Validation', () => {
     });
 
     it('should handle invalid boolean values gracefully', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer token';
+      process.env.HELPSCOUT_CLIENT_ID = 'client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
       process.env.ALLOW_PII = 'invalid-boolean';
 
       jest.resetModules();

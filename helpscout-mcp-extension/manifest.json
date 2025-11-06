@@ -29,6 +29,7 @@
         "HELPSCOUT_CLIENT_SECRET": "${user_config.app_secret}",
         "HELPSCOUT_API_KEY": "${user_config.client_id}",
         "HELPSCOUT_APP_SECRET": "${user_config.app_secret}",
+        "HELPSCOUT_DEFAULT_INBOX_ID": "${user_config.default_inbox_id}",
         "HELPSCOUT_BASE_URL": "${user_config.base_url}",
         "ALLOW_PII": "${user_config.allow_pii}",
         "LOG_LEVEL": "${user_config.log_level}",
@@ -51,6 +52,13 @@
       "description": "Your OAuth2 Client Secret from Help Scout My Apps",
       "sensitive": true,
       "required": true
+    },
+    "default_inbox_id": {
+      "type": "string",
+      "title": "Default Inbox ID (Optional)",
+      "description": "Default inbox for scoped searches - improves LLM context. Get inbox IDs using listAllInboxes tool. Leave empty to search all inboxes.",
+      "default": "",
+      "required": false
     },
     "base_url": {
       "type": "string",

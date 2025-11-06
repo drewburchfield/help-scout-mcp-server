@@ -82,17 +82,27 @@ describe('HelpScoutClient', () => {
   });
 
   describe('authentication', () => {
-    it('should use Personal Access Token when provided', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer test-token-123';
+    it('should authenticate with OAuth2 Client Credentials', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
       process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
-      
+
+      // Mock OAuth2 token endpoint - match any body
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          expires_in: 7200,
+        });
+
       const client = new HelpScoutClient();
-      
-      // Test that authentication logic correctly detects Bearer token
+
+      // Test OAuth2 authentication
       await (client as any).authenticate();
-      
-      expect((client as any).accessToken).toBe('test-token-123');
+
+      expect((client as any).accessToken).toBe('mock-access-token');
       expect((client as any).tokenExpiresAt).toBeGreaterThan(Date.now());
+      expect(authScope.isDone()).toBe(true);
     });
 
     it.skip('should handle OAuth2 flow when app secret is provided', async () => {
@@ -116,17 +126,26 @@ describe('HelpScoutClient', () => {
     });
 
     it('should handle 401 unauthorized errors', async () => {
-      // Use Bearer token mode (no OAuth needed)
-      process.env.HELPSCOUT_API_KEY = 'Bearer test-token-401';
-      
-      // Mock a 401 response directly
+      // Setup OAuth2 credentials
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+
+      // Mock OAuth2 token endpoint
+      nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-token-401',
+          expires_in: 7200,
+        });
+
+      // Mock a 401 response on the actual API call
       nock(baseURL)
         .get('/mailboxes')
-        .matchHeader('authorization', 'Bearer test-token-401')
+        .matchHeader('authorization', 'Bearer mock-token-401')
         .reply(401, { message: 'Unauthorized' });
 
       const client = new HelpScoutClient();
-      
+
       await expect(client.get('/mailboxes')).rejects.toMatchObject({
         code: 'UNAUTHORIZED',
         message: 'Help Scout authentication failed. Please check your API credentials.'

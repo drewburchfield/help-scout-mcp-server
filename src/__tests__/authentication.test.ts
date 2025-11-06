@@ -76,18 +76,10 @@ describe('Authentication Configuration', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
-    it('should pass with Personal Access Token', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer personal-access-token';
-
-      jest.resetModules();
-      const { validateConfig } = await import('../utils/config.js');
-      expect(() => validateConfig()).not.toThrow();
-    });
-
     it('should throw error when no authentication is provided', async () => {
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      expect(() => validateConfig()).toThrow(/Authentication required/);
+      expect(() => validateConfig()).toThrow(/OAuth2 authentication required/);
     });
 
     it('should throw error when only client ID is provided', async () => {
@@ -95,7 +87,7 @@ describe('Authentication Configuration', () => {
 
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      expect(() => validateConfig()).toThrow(/Authentication required/);
+      expect(() => validateConfig()).toThrow(/OAuth2 authentication required/);
     });
 
     it('should throw error when only client secret is provided', async () => {
@@ -103,18 +95,15 @@ describe('Authentication Configuration', () => {
 
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      expect(() => validateConfig()).toThrow(/Authentication required/);
+      expect(() => validateConfig()).toThrow(/OAuth2 authentication required/);
     });
 
-    it('should throw helpful error message with both naming options', async () => {
+    it('should throw helpful error message mentioning OAuth2 credentials', async () => {
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
-      
-      expect(() => validateConfig()).toThrow(
-        expect.objectContaining({
-          message: expect.stringContaining('HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET')
-        })
-      );
+
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_CLIENT_ID/);
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_CLIENT_SECRET/);
     });
   });
 
@@ -131,18 +120,17 @@ describe('Authentication Configuration', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
-    it('should handle API key as both Personal Access Token and OAuth2', async () => {
-      // When API key is a Bearer token, it should be treated as Personal Access Token
-      process.env.HELPSCOUT_API_KEY = 'Bearer personal-token';
+    it('should handle OAuth2 credentials when API key is also set', async () => {
+      // OAuth2 credentials should work regardless of API key value
+      process.env.HELPSCOUT_API_KEY = 'old-client-id';
       process.env.HELPSCOUT_CLIENT_ID = 'oauth-client-id';
       process.env.HELPSCOUT_CLIENT_SECRET = 'oauth-secret';
 
       jest.resetModules();
       const { config, validateConfig } = await import('../utils/config.js');
-      
-      // Should pass validation due to Personal Access Token
+
+      // Should pass validation due to OAuth2 credentials
       expect(() => validateConfig()).not.toThrow();
-      expect(config.helpscout.apiKey).toBe('Bearer personal-token');
       expect(config.helpscout.clientId).toBe('oauth-client-id');
       expect(config.helpscout.clientSecret).toBe('oauth-secret');
     });

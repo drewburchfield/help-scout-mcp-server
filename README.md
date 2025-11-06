@@ -31,7 +31,7 @@
 
 - **Node.js 18+** (for command line usage)
 - **Help Scout Account** with API access
-- **OAuth2 App** or **Personal Access Token** from Help Scout
+- **OAuth2 App** from Help Scout (Client ID and Client Secret)
 - **Claude Desktop** (for DXT installation) or any MCP-compatible client
 
 > **Note**: The DXT extension includes Node.js, so no local installation needed for Claude Desktop users.
@@ -82,20 +82,17 @@ npx help-scout-mcp-server
 
 ## Getting Your API Credentials
 
-### 🎯 **Recommended: OAuth2 Client Credentials**
+### 🎯 **OAuth2 Client Credentials** (Only Supported Method)
 
 1. Go to **Help Scout** → **My Apps** → **Create Private App**
-2. Fill in app details and select required scopes
+2. Fill in app details and select required scopes:
+   - At minimum: **Read** access to Mailboxes and Conversations
 3. Copy your **Client ID** and **Client Secret**
 4. Use in configuration:
    - `HELPSCOUT_CLIENT_ID=your-client-id`
    - `HELPSCOUT_CLIENT_SECRET=your-client-secret`
 
-### 🔐 **Alternative: Personal Access Token**
-
-1. Go to **Help Scout** → **Your Profile** → **API Keys**  
-2. Create a new **Personal Access Token**
-3. Use in configuration: `HELPSCOUT_API_KEY=Bearer your-token-here`
+> **Note**: Help Scout API uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
 
 ## Features
 
@@ -190,7 +187,7 @@ searchConversations({
 |----------|-------------|---------|
 | `HELPSCOUT_CLIENT_ID` | OAuth2 Client ID from Help Scout My Apps | Required |
 | `HELPSCOUT_CLIENT_SECRET` | OAuth2 Client Secret from Help Scout My Apps | Required |
-| `HELPSCOUT_API_KEY` | Personal Access Token (format: `Bearer token`) | Alternative to OAuth2 |
+| `HELPSCOUT_DEFAULT_INBOX_ID` | Default inbox ID for scoped searches (improves LLM context) | None (searches all inboxes) |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
 | `ALLOW_PII` | Include message content in responses | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
@@ -213,9 +210,10 @@ searchConversations({
 ## Security & Privacy
 
 - **🔒 PII Protection**: Message content redacted by default
-- **🛡️ Secure Authentication**: OAuth2 Client Credentials or Personal Access Token with automatic refresh
+- **🛡️ Secure Authentication**: OAuth2 Client Credentials with automatic token refresh
 - **📝 Audit Logging**: Comprehensive request tracking and error logging
 - **⚡ Rate Limiting**: Built-in retry logic with exponential backoff
+- **🎯 Smart Inbox Scoping**: Optional default inbox configuration for improved LLM context
 - **🏢 Enterprise Ready**: SOC2 compliant deployment options
 
 ## Development
@@ -325,7 +323,7 @@ npm run dev
 When reporting bugs, please include:
 - Help Scout MCP Server version
 - Node.js version
-- Authentication method (OAuth2/Personal Access Token)
+- OAuth2 Client ID (not the secret!)
 - Error messages and logs
 - Steps to reproduce
 

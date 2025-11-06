@@ -515,7 +515,7 @@ export class ToolHandler {
   private async searchConversations(args: unknown): Promise<CallToolResult> {
     const input = SearchConversationsInputSchema.parse(args);
     // Using direct imports
-    
+
     const queryParams: Record<string, unknown> = {
       page: 1,
       size: input.limit,
@@ -528,7 +528,12 @@ export class ToolHandler {
       queryParams.query = input.query;
     }
 
-    if (input.inboxId) queryParams.mailbox = input.inboxId;
+    // Apply inbox scoping: explicit inboxId > default > all inboxes
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+    if (effectiveInboxId) {
+      queryParams.mailbox = effectiveInboxId;
+    }
+
     if (input.tag) queryParams.tag = input.tag;
     if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
 
@@ -574,14 +579,20 @@ export class ToolHandler {
       searchInfo: {
         query: input.query,
         status: queryParams.status || 'all',
+        inboxScope: effectiveInboxId
+          ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
+          : 'ALL inboxes',
         appliedDefaults: !input.status && (input.query || input.tag) ? ['status: active'] : undefined,
         searchGuidance: conversations.length === 0 ? [
           'If no results found, try:',
           '1. Use comprehensiveConversationSearch for multi-status search',
           '2. Try different status values: active, pending, closed, spam',
           '3. Broaden search terms or extend time range',
-          '4. Check if inbox ID is correct'
-        ] : undefined,
+          '4. Check if inbox ID is correct',
+          !effectiveInboxId ? '5. Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
+        ].filter(Boolean) : (!effectiveInboxId ? [
+          'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
+        ] : undefined),
       },
     };
 
@@ -794,12 +805,17 @@ export class ToolHandler {
       queryParams.query = queryString;
     }
 
-    if (input.inboxId) queryParams.mailbox = input.inboxId;
+    // Apply inbox scoping: explicit inboxId > default > all inboxes
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+    if (effectiveInboxId) {
+      queryParams.mailbox = effectiveInboxId;
+    }
+
     if (input.status) queryParams.status = input.status;
     if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
 
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-    
+
     let conversations = response._embedded?.conversations || [];
 
     // Apply additional client-side filtering
@@ -815,6 +831,9 @@ export class ToolHandler {
           text: JSON.stringify({
             results: conversations,
             searchQuery: queryString,
+            inboxScope: effectiveInboxId
+              ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
+              : 'ALL inboxes',
             searchCriteria: {
               contentTerms: input.contentTerms,
               subjectTerms: input.subjectTerms,
@@ -824,6 +843,7 @@ export class ToolHandler {
             },
             pagination: response.page,
             nextCursor: response._links?.next?.href,
+            note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
           }, null, 2),
         },
       ],
@@ -864,11 +884,14 @@ export class ToolHandler {
   private buildComprehensiveSearchContext(input: z.infer<typeof MultiStatusConversationSearchInputSchema>) {
     const createdAfter = input.createdAfter || this.calculateTimeRange(input.timeframeDays);
     const searchQuery = this.buildSearchQuery(input.searchTerms, input.searchIn);
-    
+    // Apply inbox scoping: explicit inboxId > default > all inboxes
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+
     return {
       input,
       createdAfter,
       searchQuery,
+      effectiveInboxId,
     };
   }
 
@@ -913,8 +936,9 @@ export class ToolHandler {
     input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
     createdAfter: string;
     searchQuery: string;
+    effectiveInboxId?: string;
   }) {
-    const { input, createdAfter, searchQuery } = context;
+    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
     // Using direct import
     const allResults: Array<{
       status: string;
@@ -930,7 +954,7 @@ export class ToolHandler {
           searchQuery,
           createdAfter,
           limitPerStatus: input.limitPerStatus,
-          inboxId: input.inboxId,
+          inboxId: effectiveInboxId,
           createdBefore: input.createdBefore,
         });
         allResults.push(result);
@@ -939,7 +963,7 @@ export class ToolHandler {
           status,
           error: error instanceof Error ? error.message : String(error),
         });
-        
+
         allResults.push({
           status,
           totalCount: 0,
@@ -1009,9 +1033,10 @@ export class ToolHandler {
       input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
       createdAfter: string;
       searchQuery: string;
+      effectiveInboxId?: string;
     }
   ) {
-    const { input, createdAfter, searchQuery } = context;
+    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
     const totalConversations = allResults.reduce((sum, result) => sum + result.conversations.length, 0);
     const totalAvailable = allResults.reduce((sum, result) => sum + result.totalCount, 0);
 
@@ -1019,6 +1044,9 @@ export class ToolHandler {
       searchTerms: input.searchTerms,
       searchQuery,
       searchIn: input.searchIn,
+      inboxScope: effectiveInboxId
+        ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
+        : 'ALL inboxes',
       timeframe: {
         createdAfter,
         createdBefore: input.createdBefore,
@@ -1031,8 +1059,11 @@ export class ToolHandler {
         'Try broader search terms or increase the timeframe',
         'Check if the inbox ID is correct',
         'Consider searching without status restrictions first',
-        'Verify that conversations exist for the specified criteria'
-      ] : undefined,
+        'Verify that conversations exist for the specified criteria',
+        !effectiveInboxId ? 'Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
+      ].filter(Boolean) : (!effectiveInboxId ? [
+        'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
+      ] : undefined),
     };
   }
 }
