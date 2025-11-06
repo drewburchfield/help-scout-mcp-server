@@ -23,6 +23,7 @@
     "security": "semgrep --config .semgrep.yml .",
     "security:ci": "semgrep ci",
     "test": "jest",
+    "test:mcp": "node test-mcp-client.cjs",
     "test:docker": "node test-docker.cjs",
     "test:docker:ci": "node test-docker-ci.cjs",
     "clean": "rimraf dist",
