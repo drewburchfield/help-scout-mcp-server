@@ -61,6 +61,21 @@ export const config: Config = {
 };
 
 export function validateConfig(): void {
+  // Check if user is trying to use deprecated Personal Access Token
+  if (process.env.HELPSCOUT_API_KEY?.startsWith('Bearer ')) {
+    throw new Error(
+      'Personal Access Tokens are no longer supported.\n\n' +
+      'Help Scout API now requires OAuth2 Client Credentials.\n' +
+      'Please migrate your configuration:\n\n' +
+      '  OLD (deprecated):\n' +
+      '    HELPSCOUT_API_KEY=Bearer your-token\n\n' +
+      '  NEW (required):\n' +
+      '    HELPSCOUT_CLIENT_ID=your-client-id\n' +
+      '    HELPSCOUT_CLIENT_SECRET=your-client-secret\n\n' +
+      'Get OAuth2 credentials: Help Scout → My Apps → Create Private App'
+    );
+  }
+
   const hasOAuth2 = (config.helpscout.clientId && config.helpscout.clientSecret);
 
   if (!hasOAuth2) {
@@ -72,6 +87,15 @@ export function validateConfig(): void {
       'Get these from: Help Scout → My Apps → Create Private App\n\n' +
       'Optional configuration:\n' +
       '  - HELPSCOUT_DEFAULT_INBOX_ID: Default inbox for scoped searches (improves LLM context)'
+    );
+  }
+
+  // Enforce HTTPS for API base URL to prevent credential exposure
+  if (config.helpscout.baseUrl && !config.helpscout.baseUrl.startsWith('https://')) {
+    throw new Error(
+      'Security Error: HELPSCOUT_BASE_URL must use HTTPS to protect credentials in transit.\n' +
+      `Current value: ${config.helpscout.baseUrl}\n` +
+      'Please use: https://api.helpscout.net/v2/'
     );
   }
 }

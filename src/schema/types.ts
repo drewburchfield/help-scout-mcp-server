@@ -136,10 +136,10 @@ export const MultiStatusConversationSearchInputSchema = z.object({
 });
 
 export const StructuredConversationFilterInputSchema = z.object({
-  assignedTo: z.number().optional(),
-  folderId: z.number().optional(),
-  customerIds: z.array(z.number()).optional(),
-  conversationNumber: z.number().optional(),
+  assignedTo: z.number().int().min(-1).describe('User ID (-1 for unassigned)').optional(),
+  folderId: z.number().int().min(0).describe('Folder ID must be positive').optional(),
+  customerIds: z.array(z.number().int().min(0)).max(100).describe('Max 100 customer IDs').optional(),
+  conversationNumber: z.number().int().min(1).describe('Conversation number must be positive').optional(),
   status: z.enum(['active', 'pending', 'closed', 'spam', 'all']).default('all'),
   inboxId: z.string().optional(),
   tag: z.string().optional(),

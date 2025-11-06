@@ -66,6 +66,15 @@ export class ToolHandler {
   }
 
   /**
+   * Escape special characters in Help Scout query syntax to prevent injection
+   * Help Scout uses double quotes for exact phrases, so we need to escape them
+   */
+  private escapeQueryTerm(term: string): string {
+    // Escape backslashes first, then double quotes
+    return term.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  /**
    * Set the current user query for context-aware validation
    */
   setUserContext(userQuery: string): void {
@@ -580,10 +589,22 @@ export class ToolHandler {
     
     let conversations = response._embedded?.conversations || [];
 
-    // Apply additional filtering
+    // Apply client-side createdBefore filtering
+    // NOTE: Help Scout API doesn't support createdBefore natively, so this filters after fetching
+    // This means pagination counts may not reflect filtered totals
+    let clientSideFiltered = false;
     if (input.createdBefore) {
       const beforeDate = new Date(input.createdBefore);
+      const originalCount = conversations.length;
       conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+      clientSideFiltered = originalCount !== conversations.length;
+
+      if (clientSideFiltered) {
+        logger.warn('Client-side createdBefore filtering applied - pagination totals may not reflect filtered results', {
+          originalCount,
+          filteredCount: conversations.length,
+        });
+      }
     }
 
     // Apply field selection if specified
@@ -610,6 +631,7 @@ export class ToolHandler {
           ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
           : 'ALL inboxes',
         appliedDefaults: !input.status && (input.query || input.tag) ? ['status: active'] : undefined,
+        clientSideFiltering: clientSideFiltered ? 'createdBefore filter applied after API fetch - pagination totals may not reflect filtered count' : undefined,
         searchGuidance: conversations.length === 0 ? [
           'If no results found, try:',
           '1. Use comprehensiveConversationSearch for multi-status search',
@@ -788,32 +810,32 @@ export class ToolHandler {
     // Build HelpScout query syntax
     const queryParts: string[] = [];
 
-    // Content/body search
+    // Content/body search (with injection protection)
     if (input.contentTerms && input.contentTerms.length > 0) {
-      const bodyQueries = input.contentTerms.map(term => `body:"${term}"`);
+      const bodyQueries = input.contentTerms.map(term => `body:"${this.escapeQueryTerm(term)}"`);
       queryParts.push(`(${bodyQueries.join(' OR ')})`);
     }
 
-    // Subject search
+    // Subject search (with injection protection)
     if (input.subjectTerms && input.subjectTerms.length > 0) {
-      const subjectQueries = input.subjectTerms.map(term => `subject:"${term}"`);
+      const subjectQueries = input.subjectTerms.map(term => `subject:"${this.escapeQueryTerm(term)}"`);
       queryParts.push(`(${subjectQueries.join(' OR ')})`);
     }
 
-    // Email searches
+    // Email searches (with injection protection)
     if (input.customerEmail) {
-      queryParts.push(`email:"${input.customerEmail}"`);
+      queryParts.push(`email:"${this.escapeQueryTerm(input.customerEmail)}"`);
     }
 
-    // Handle email domain search (HelpScout supports domain-only searches)
+    // Handle email domain search (with injection protection)
     if (input.emailDomain) {
       const domain = input.emailDomain.replace('@', ''); // Remove @ if present
-      queryParts.push(`email:"${domain}"`);
+      queryParts.push(`email:"${this.escapeQueryTerm(domain)}"`);
     }
 
-    // Tag search
+    // Tag search (with injection protection)
     if (input.tags && input.tags.length > 0) {
-      const tagQueries = input.tags.map(tag => `tag:"${tag}"`);
+      const tagQueries = input.tags.map(tag => `tag:"${this.escapeQueryTerm(tag)}"`);
       queryParts.push(`(${tagQueries.join(' OR ')})`);
     }
 
@@ -845,10 +867,13 @@ export class ToolHandler {
 
     let conversations = response._embedded?.conversations || [];
 
-    // Apply additional client-side filtering
+    // Apply client-side createdBefore filtering (Help Scout API limitation)
+    let clientSideFiltered = false;
     if (input.createdBefore) {
       const beforeDate = new Date(input.createdBefore);
+      const originalCount = conversations.length;
       conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+      clientSideFiltered = originalCount !== conversations.length;
     }
 
     return {
@@ -870,6 +895,7 @@ export class ToolHandler {
             },
             pagination: response.page,
             nextCursor: response._links?.next?.href,
+            clientSideFiltering: clientSideFiltered ? 'createdBefore applied post-fetch - pagination may be incomplete' : undefined,
             note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
           }, null, 2),
         },
@@ -932,27 +958,28 @@ export class ToolHandler {
   }
 
   /**
-   * Build Help Scout search query from terms and search locations
+   * Build Help Scout search query from terms and search locations (with injection protection)
    */
   private buildSearchQuery(terms: string[], searchIn: string[]): string {
     const queries: string[] = [];
-    
+
     for (const term of terms) {
       const termQueries: string[] = [];
-      
+      const escapedTerm = this.escapeQueryTerm(term);
+
       if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BODY) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`body:"${term}"`);
+        termQueries.push(`body:"${escapedTerm}"`);
       }
-      
+
       if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.SUBJECT) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`subject:"${term}"`);
+        termQueries.push(`subject:"${escapedTerm}"`);
       }
-      
+
       if (termQueries.length > 0) {
         queries.push(`(${termQueries.join(' OR ')})`);
       }
     }
-    
+
     return queries.join(' OR ');
   }
 
@@ -1125,10 +1152,13 @@ export class ToolHandler {
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
     let conversations = response._embedded?.conversations || [];
 
-    // Client-side createdBefore filtering
+    // Client-side createdBefore filtering (Help Scout API limitation)
+    let clientSideFiltered = false;
     if (input.createdBefore) {
       const beforeDate = new Date(input.createdBefore);
+      const originalCount = conversations.length;
       conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+      clientSideFiltered = originalCount !== conversations.length;
     }
 
     return {
@@ -1147,6 +1177,7 @@ export class ToolHandler {
           inboxScope: effectiveInboxId ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`) : 'ALL inboxes',
           pagination: response.page,
           nextCursor: response._links?.next?.href,
+          clientSideFiltering: clientSideFiltered ? 'createdBefore applied post-fetch - pagination may be incomplete' : undefined,
           note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
         }, null, 2),
       }],
