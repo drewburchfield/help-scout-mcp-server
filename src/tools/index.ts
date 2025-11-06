@@ -110,7 +110,7 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'STEP 2: Search conversations after obtaining inbox ID. WARNING: Always get inboxId from searchInboxes first if user mentions an inbox name. IMPORTANT: Specify status (active/pending/closed/spam) for better results, or use comprehensiveConversationSearch for multi-status searching. NOTE: Can be used WITHOUT query parameter to list ALL conversations matching other filters (ideal for "show recent tickets" requests).',
+        description: 'List or filter conversations by status and time range. USE FOR: "show recent tickets", "list closed conversations", "active tickets from last week". This is the SIMPLEST search - great for time-based listing without content keywords. Can search by status (active/pending/closed), date range, inbox, or tags. For keyword search across content, use comprehensiveConversationSearch instead.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -237,7 +237,7 @@ export class ToolHandler {
       },
       {
         name: 'advancedConversationSearch',
-        description: 'Advanced conversation search with complex boolean queries and customer organization support',
+        description: 'Search with COMPLEX FILTERS (email domains, tags, boolean logic). USE FOR: "conversations from @company.com", "urgent AND billing tags", "specific customer email". Supports: email domain filtering, tag combinations, content+subject separate terms. For simple keyword search, use comprehensiveConversationSearch. For structural IDs, use structuredConversationFilter.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -295,7 +295,7 @@ export class ToolHandler {
       },
       {
         name: 'comprehensiveConversationSearch',
-        description: 'CONTENT-BASED SEARCH ONLY: Requires actual search terms to find specific conversations by content. NOT for listing all recent conversations. Use searchConversations (without query) for listing. Searches across multiple statuses simultaneously. WORKFLOW: 1) If user mentions an inbox name, call searchInboxes FIRST to get the ID. 2) Then use this tool with actual search terms.',
+        description: 'Search by KEYWORDS in conversation content (subject + body). USE FOR: "find billing issues", "conversations about refunds", "tickets mentioning bug XYZ". Searches across active+pending+closed statuses automatically. REQUIRES search terms (keywords you want to find). For listing without keywords (like "recent tickets"), use searchConversations instead. This is your PRIMARY content search tool.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -356,7 +356,7 @@ export class ToolHandler {
       },
       {
         name: 'structuredConversationFilter',
-        description: 'STRUCTURAL FILTERING - Use ONLY when you need these UNIQUE fields: 1) assignedTo (user ID from previous_results[].assignee.id), 2) folderId (from Help Scout UI), 3) customerIds (from previous_results[].customer.id), 4) conversationNumber (ticket #12345), 5) sortBy waitingSince/customerName/customerEmail. For content search, use comprehensiveConversationSearch first.',
+        description: 'Filter by DISCOVERED IDs (assignee, customer, folder) or LOOKUP BY TICKET NUMBER. USE FOR: "show ticket #42839" (direct lookup), "rep John\'s assigned queue" (after discovering John\'s ID), "customers 123,456,789 history" (after discovering IDs), "sort by SLA wait time". REQUIRES: IDs from previous search OR ticket number from user. DO NOT use for first/primary searches - use comprehensiveConversationSearch or searchConversations instead.',
         inputSchema: {
           type: 'object',
           properties: {

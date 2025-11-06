@@ -106,12 +106,20 @@ npx help-scout-mcp-server
 
 ### Core Search Tools
 
+**🎯 Quick Guide: Which tool should I use?**
+- **Listing tickets:** `searchConversations` - No keywords needed, great for "show recent/closed/active tickets"
+- **Finding by keyword:** `comprehensiveConversationSearch` - Searches content for specific words
+- **Lookup ticket #:** `structuredConversationFilter` - Direct ticket number lookup
+- **Complex filters:** `advancedConversationSearch` - Email domains, tag combinations
+
 | Tool | Description | Best For |
 |------|-------------|----------|
-| `searchConversations` | **⭐ For Listing** - Can omit query to list ALL recent conversations | "Show me recent tickets", browsing conversations |
-| `comprehensiveConversationSearch` | **🔍 For Content Search** - Requires search terms, searches all statuses | "Find tickets about billing issues", content-based searches |
-| `advancedConversationSearch` | Boolean queries with content/subject/email filtering | Complex search requirements |
+| `searchConversations` | **⭐ TIME/STATUS FILTERING** - List conversations by date, status, inbox | "Recent tickets", "closed last week", "active conversations" |
+| `comprehensiveConversationSearch` | **🔍 KEYWORD SEARCH** - Find conversations containing specific words | "Find billing issues", "tickets about bug XYZ" |
+| `structuredConversationFilter` | **🎯 ID/NUMBER LOOKUP** - Filter by discovered IDs or ticket number | "Show ticket #42839", "Rep John's queue" (after finding John's ID) |
+| `advancedConversationSearch` | **🔬 COMPLEX BOOLEAN** - Email domains, tag combos, separated content/subject | "All @acme.com conversations", "urgent AND billing tags" |
 | `searchInboxes` | Find inboxes by name | Discovering available inboxes |
+| `listAllInboxes` | List all inboxes with IDs | Quick inbox discovery |
 
 ### Analysis & Retrieval Tools
 
