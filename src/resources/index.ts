@@ -1,10 +1,10 @@
-import { Resource } from '@modelcontextprotocol/sdk/types.js';
+import { TextResourceContents, Resource } from '@modelcontextprotocol/sdk/types.js';
 import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js';
 import { Inbox, Conversation, Thread, ServerTime } from '../schema/types.js';
 import { logger } from '../utils/logger.js';
 
 export class ResourceHandler {
-  async handleResource(uri: string): Promise<Resource> {
+  async handleResource(uri: string): Promise<TextResourceContents> {
     const url = new URL(uri);
     const protocol = url.protocol.slice(0, -1); // Remove trailing colon
     
@@ -31,7 +31,7 @@ export class ResourceHandler {
     }
   }
 
-  private async getInboxesResource(params: Record<string, string>): Promise<Resource> {
+  private async getInboxesResource(params: Record<string, string>): Promise<TextResourceContents> {
     try {
       const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
         page: parseInt(params.page || '1', 10),
@@ -42,8 +42,6 @@ export class ResourceHandler {
 
       return {
         uri: 'helpscout://inboxes',
-        name: 'Help Scout Inboxes',
-        description: 'All inboxes the user has access to',
         mimeType: 'application/json',
         text: JSON.stringify({
           inboxes,
@@ -57,7 +55,7 @@ export class ResourceHandler {
     }
   }
 
-  private async getConversationsResource(params: Record<string, string>): Promise<Resource> {
+  private async getConversationsResource(params: Record<string, string>): Promise<TextResourceContents> {
     try {
       const queryParams: Record<string, unknown> = {
         page: parseInt(params.page || '1', 10),
@@ -75,8 +73,6 @@ export class ResourceHandler {
 
       return {
         uri: 'helpscout://conversations',
-        name: 'Help Scout Conversations',
-        description: 'Conversations matching the specified filters',
         mimeType: 'application/json',
         text: JSON.stringify({
           conversations,
@@ -90,7 +86,7 @@ export class ResourceHandler {
     }
   }
 
-  private async getThreadsResource(params: Record<string, string>): Promise<Resource> {
+  private async getThreadsResource(params: Record<string, string>): Promise<TextResourceContents> {
     const conversationId = params.conversationId;
     if (!conversationId) {
       throw new Error('conversationId parameter is required for threads resource');
@@ -106,8 +102,6 @@ export class ResourceHandler {
 
       return {
         uri: `helpscout://threads?conversationId=${conversationId}`,
-        name: 'Help Scout Thread Messages',
-        description: `All messages in conversation ${conversationId}`,
         mimeType: 'application/json',
         text: JSON.stringify({
           conversationId,
@@ -125,7 +119,7 @@ export class ResourceHandler {
     }
   }
 
-  private getClockResource(): Resource {
+  private getClockResource(): TextResourceContents {
     const now = new Date();
     const serverTime: ServerTime = {
       isoTime: now.toISOString(),
@@ -134,8 +128,6 @@ export class ResourceHandler {
 
     return {
       uri: 'helpscout://clock',
-      name: 'Server Time',
-      description: 'Current server timestamp for time-relative queries',
       mimeType: 'application/json',
       text: JSON.stringify(serverTime, null, 2),
     };
