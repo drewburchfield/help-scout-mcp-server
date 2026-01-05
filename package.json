@@ -49,17 +49,17 @@
     "nodejs"
   ],
   "author": {
-    "name": "Drew Burchfield",
-    "url": "https://github.com/drewburchfield"
+    "name": "verkoopjezaak (fork)",
+    "url": "https://github.com/verkoopjezaak"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drewburchfield/help-scout-mcp-server.git"
+    "url": "git+https://github.com/verkoopjezaak/help-scout-mcp-server.git"
   },
-  "homepage": "https://github.com/drewburchfield/help-scout-mcp-server#readme",
+  "homepage": "https://github.com/verkoopjezaak/help-scout-mcp-server#readme",
   "bugs": {
-    "url": "https://github.com/drewburchfield/help-scout-mcp-server/issues"
+    "url": "https://github.com/verkoopjezaak/help-scout-mcp-server/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",

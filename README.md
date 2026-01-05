@@ -1,7 +1,7 @@
 # Help Scout MCP Server
 
 [![npm version](https://badge.fury.io/js/help-scout-mcp-server.svg)](https://badge.fury.io/js/help-scout-mcp-server)
-[![Docker](https://img.shields.io/docker/v/drewburchfield/help-scout-mcp-server?logo=docker&label=docker)](https://hub.docker.com/r/drewburchfield/help-scout-mcp-server)
+[![Docker](https://img.shields.io/docker/v/verkoopjezaak/help-scout-mcp-server?logo=docker&label=docker)](https://hub.docker.com/r/verkoopjezaak/help-scout-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://typescriptlang.org/)
 
@@ -42,7 +42,7 @@
 
 **Easiest setup using [DXT (Desktop Extensions)](https://docs.anthropic.com/en/docs/build-with-claude/computer-use#desktop-extensions) - no configuration needed:**
 
-1. Download the latest [`.dxt` file from releases](https://github.com/drewburchfield/help-scout-mcp-server/releases)
+1. Download the latest [`.dxt` file from releases](https://github.com/verkoopjezaak/help-scout-mcp-server/releases)
 2. Double-click to install in Claude Desktop
 3. Enter your Help Scout OAuth2 Client ID and Client Secret when prompted
 4. Start using immediately!
@@ -69,7 +69,7 @@
 ```bash
 docker run -e HELPSCOUT_CLIENT_ID="your-client-id" \
   -e HELPSCOUT_CLIENT_SECRET="your-client-secret" \
-  drewburchfield/help-scout-mcp-server
+  verkoopjezaak/help-scout-mcp-server
 ```
 
 ### 💻 Option 4: Command Line
@@ -222,7 +222,7 @@ searchConversations({
 
 ```bash
 # Quick start
-git clone https://github.com/drewburchfield/help-scout-mcp-server.git
+git clone https://github.com/verkoopjezaak/help-scout-mcp-server.git
 cd help-scout-mcp-server
 npm install && npm run build
 
@@ -277,7 +277,7 @@ LOG_LEVEL=debug npx help-scout-mcp-server
 ### Getting Help
 
 If you're still having issues:
-1. Check [existing issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
+1. Check [existing issues](https://github.com/verkoopjezaak/help-scout-mcp-server/issues)
 2. Enable debug logging and share relevant logs
 3. Include your configuration (without credentials!)
 
@@ -288,7 +288,7 @@ We welcome contributions! Here's how to get started:
 ### 🚀 Quick Development Setup
 
 ```bash
-git clone https://github.com/drewburchfield/help-scout-mcp-server.git
+git clone https://github.com/verkoopjezaak/help-scout-mcp-server.git
 cd help-scout-mcp-server
 npm install
 ```
@@ -338,8 +338,8 @@ We'd love to hear your ideas! Please open an issue describing:
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/drewburchfield/help-scout-mcp-server/discussions)
+- **Issues**: [GitHub Issues](https://github.com/verkoopjezaak/help-scout-mcp-server/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/verkoopjezaak/help-scout-mcp-server/discussions)
 - **NPM Package**: [help-scout-mcp-server](https://www.npmjs.com/package/help-scout-mcp-server)
 
 ## License
@@ -348,4 +348,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Need help?** [Open an issue](https://github.com/drewburchfield/help-scout-mcp-server/issues) or check our [documentation](https://github.com/drewburchfield/help-scout-mcp-server/wiki).
+**Need help?** [Open an issue](https://github.com/verkoopjezaak/help-scout-mcp-server/issues) or check our [documentation](https://github.com/verkoopjezaak/help-scout-mcp-server/wiki).

@@ -1,6 +1,5 @@
-# DXT build artifacts
+# DXT build artifacts (except the final .dxt file for releases)
 build/
-*.dxt
 
 # Logs
 *.log

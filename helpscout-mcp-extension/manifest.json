@@ -6,14 +6,14 @@
   "description": "Connect Claude to your Help Scout data for intelligent customer support analysis",
   "long_description": "Enterprise-grade Help Scout integration for AI assistants.\n\n**Core Features:**\n• Advanced conversation search with query syntax\n• Multi-status search across active/pending/closed conversations\n• Boolean search with OR/AND logic across multiple fields\n• Complete thread message retrieval with context\n• Conversation summaries with customer and staff messages\n• Inbox discovery and server time utilities\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional PII redaction for data privacy\n• Comprehensive audit logging\n• Rate limiting with automatic retry",
   "author": {
-    "name": "Drew Burchfield",
-    "url": "https://github.com/drewburchfield"
+    "name": "verkoopjezaak (fork)",
+    "url": "https://github.com/verkoopjezaak"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/drewburchfield/help-scout-mcp-server"
+    "url": "https://github.com/verkoopjezaak/help-scout-mcp-server"
   },
-  "documentation": "https://github.com/drewburchfield/help-scout-mcp-server#readme",
+  "documentation": "https://github.com/verkoopjezaak/help-scout-mcp-server#readme",
   "icon": "icon.svg",
   "screenshots": [],
   "server": {

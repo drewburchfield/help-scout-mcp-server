@@ -56,4 +56,4 @@ ENTRYPOINT ["node", "dist/index.js"]
 LABEL name="help-scout-mcp-server" \
       description="Help Scout MCP server for searching inboxes, conversations, and threads" \
       version="1.3.0" \
-      maintainer="Drew Burchfield"
+      maintainer="verkoopjezaak (fork)"

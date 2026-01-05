@@ -78,7 +78,7 @@ jobs:
           org.opencontainers.image.title=Help Scout MCP Server
           org.opencontainers.image.description=Model Context Protocol server for Help Scout - enables AI assistants to search conversations, customers, and support data
           org.opencontainers.image.version=${{ steps.package.outputs.version }}
-          org.opencontainers.image.vendor=Drew Burchfield
+          org.opencontainers.image.vendor=verkoopjezaak
           org.opencontainers.image.licenses=MIT
           org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}#readme

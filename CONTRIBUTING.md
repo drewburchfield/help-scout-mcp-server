@@ -6,7 +6,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 1. **Fork and clone the repository**
 ```bash
-git clone https://github.com/drewburchfield/help-scout-mcp-server.git
+git clone https://github.com/verkoopjezaak/help-scout-mcp-server.git
 cd help-scout-mcp-server
 ```
 
