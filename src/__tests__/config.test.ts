@@ -84,7 +84,8 @@ describe('Config Validation', () => {
     });
 
     it('should handle invalid numeric values gracefully', async () => {
-      process.env.HELPSCOUT_API_KEY = 'Bearer token';
+      process.env.HELPSCOUT_CLIENT_ID = 'client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
       process.env.CACHE_TTL_SECONDS = 'not-a-number';
 
       jest.resetModules();
