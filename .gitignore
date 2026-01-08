@@ -80,3 +80,7 @@ WORKFLOW.md
 test-results/
 benchmark-results/
 perf-reports/
+
+# Script state files (may contain sensitive data)
+scripts/.import-progress.json
+scripts/*.state.json
