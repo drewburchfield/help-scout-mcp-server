@@ -37,7 +37,7 @@ export const config: Config = {
     // OAuth2 authentication (Client Credentials flow)
     apiKey: process.env.HELPSCOUT_API_KEY || '', // Deprecated, kept for backwards compatibility
     clientId: process.env.HELPSCOUT_APP_ID || process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || '',
-    clientSecret: process.env.HELPSCOUT_CLIENT_SECRET || process.env.HELPSCOUT_APP_SECRET || '',
+    clientSecret: process.env.HELPSCOUT_APP_SECRET || process.env.HELPSCOUT_CLIENT_SECRET || '',
     baseUrl: process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/',
     defaultInboxId: process.env.HELPSCOUT_DEFAULT_INBOX_ID,
   },
@@ -72,8 +72,8 @@ export function validateConfig(): void {
       '  OLD (deprecated):\n' +
       '    HELPSCOUT_API_KEY=Bearer your-token\n\n' +
       '  NEW (required):\n' +
-      '    HELPSCOUT_CLIENT_ID=your-client-id\n' +
-      '    HELPSCOUT_CLIENT_SECRET=your-client-secret\n\n' +
+      '    HELPSCOUT_APP_ID=your-app-id\n' +
+      '    HELPSCOUT_APP_SECRET=your-app-secret\n\n' +
       'Get OAuth2 credentials: Help Scout → My Apps → Create Private App'
     );
   }
@@ -84,8 +84,8 @@ export function validateConfig(): void {
     throw new Error(
       'OAuth2 authentication required. Help Scout API only supports OAuth2 Client Credentials flow.\n' +
       'Please provide:\n' +
-      '  - HELPSCOUT_CLIENT_ID: Your OAuth2 Client ID\n' +
-      '  - HELPSCOUT_CLIENT_SECRET: Your OAuth2 Client Secret\n\n' +
+      '  - HELPSCOUT_APP_ID: Your App ID from Help Scout\n' +
+      '  - HELPSCOUT_APP_SECRET: Your App Secret from Help Scout\n\n' +
       'Get these from: Help Scout → My Apps → Create Private App\n\n' +
       'Optional configuration:\n' +
       '  - HELPSCOUT_DEFAULT_INBOX_ID: Default inbox for scoped searches (improves LLM context)'
