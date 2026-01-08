@@ -2,7 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { describe, it, expect, beforeAll } from '@jest/globals';
 
-describe('DXT Extension Validation', () => {
+// DXT tests validate the extension build - require it to exist unless explicitly skipped
+// Set SKIP_DXT_TESTS=true in CI if not building the DXT extension
+const SKIP_DXT_TESTS = process.env.SKIP_DXT_TESTS === 'true';
+
+const describeIfNotSkipped = SKIP_DXT_TESTS ? describe.skip : describe;
+
+describeIfNotSkipped('DXT Extension Validation', () => {
   const dxtDir = path.join(process.cwd(), 'helpscout-mcp-extension');
   const manifestPath = path.join(dxtDir, 'manifest.json');
   const buildDir = path.join(dxtDir, 'build');
@@ -13,7 +19,7 @@ describe('DXT Extension Validation', () => {
     if (!fs.existsSync(buildDir)) {
       throw new Error('DXT build directory not found. Run `npm run mcpb:build` first.');
     }
-    
+
     if (!fs.existsSync(manifestPath)) {
       throw new Error('DXT manifest.json not found.');
     }
@@ -58,18 +64,19 @@ describe('DXT Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 8 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(8);
-      
+    it('should have all 9 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(9);
+
       const expectedTools = [
         'searchInboxes',
-        'searchConversations', 
+        'searchConversations',
         'getConversationSummary',
         'getThreads',
         'getServerTime',
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
-        'listAllInboxes'
+        'listAllInboxes',
+        'structuredConversationFilter'
       ];
 
       const toolNames = manifest.tools.map((tool: any) => tool.name);

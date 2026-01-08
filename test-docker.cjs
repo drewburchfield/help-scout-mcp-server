@@ -3,21 +3,53 @@
 /**
  * Docker Integration Test
  * Tests Docker build, run, and MCP functionality end-to-end
+ * Loads credentials from .env file
  */
 
 const { spawn } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+
+// Load environment variables from .env file
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) {
+    console.error('❌ .env file not found. Please create one from .env.example');
+    console.error('   Copy .env.example to .env and add your Help Scout credentials');
+    process.exit(1);
+  }
+
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  const envVars = {};
+
+  envContent.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valueParts] = trimmed.split('=');
+      if (key && valueParts.length > 0) {
+        envVars[key.trim()] = valueParts.join('=').trim();
+      }
+    }
+  });
+
+  return envVars;
+}
 
 // Test configuration
 const IMAGE_NAME = 'help-scout-mcp-server:test';
 const TEST_TIMEOUT = 30000; // 30 seconds
 
+// Load environment variables from .env file
+const envFromFile = loadEnvFile();
+
 // Environment variables for the container
 const ENV_VARS = [
-  'HELPSCOUT_API_KEY=your-helpscout-api-key-here',
-  'HELPSCOUT_APP_SECRET=your-helpscout-app-secret-here',
-  'HELPSCOUT_BASE_URL=https://api.helpscout.net/v2/',
-  'LOG_LEVEL=info'
+  `HELPSCOUT_CLIENT_ID=${envFromFile.HELPSCOUT_CLIENT_ID || ''}`,
+  `HELPSCOUT_CLIENT_SECRET=${envFromFile.HELPSCOUT_CLIENT_SECRET || ''}`,
+  `HELPSCOUT_DEFAULT_INBOX_ID=${envFromFile.HELPSCOUT_DEFAULT_INBOX_ID || ''}`,
+  `HELPSCOUT_BASE_URL=${envFromFile.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/'}`,
+  `LOG_LEVEL=${envFromFile.LOG_LEVEL || 'info'}`,
+  `ALLOW_PII=${envFromFile.ALLOW_PII || 'false'}`
 ];
 
 // MCP test messages

@@ -118,7 +118,7 @@ async function buildMCPB() {
   console.log(`📍 Build directory: ${buildDir}`);
   console.log('\n🎯 Next steps:');
   console.log('1. cd helpscout-mcp-extension');
-  console.log('2. npx @anthropic-ai/dxt pack');
+  console.log('2. npx @anthropic-ai/mcpb pack');
   console.log('3. The .mcpb file will be created in the current directory');
 }
 

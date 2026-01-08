@@ -54,6 +54,7 @@ import {
   GetConversationSummaryInputSchema,
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
+  StructuredConversationFilterInputSchema,
 } from '../schema/types.js';
 
 export class ToolHandler {
@@ -62,6 +63,15 @@ export class ToolHandler {
 
   constructor() {
     // Direct imports, no DI needed
+  }
+
+  /**
+   * Escape special characters in Help Scout query syntax to prevent injection
+   * Help Scout uses double quotes for exact phrases, so we need to escape them
+   */
+  private escapeQueryTerm(term: string): string {
+    // Escape backslashes first, then double quotes
+    return term.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
   /**
@@ -100,7 +110,7 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'STEP 2: Search conversations after obtaining inbox ID. WARNING: Always get inboxId from searchInboxes first if user mentions an inbox name. IMPORTANT: Specify status (active/pending/closed/spam) for better results, or use comprehensiveConversationSearch for multi-status searching. NOTE: Can be used WITHOUT query parameter to list ALL conversations matching other filters (ideal for "show recent tickets" requests).',
+        description: 'List or filter conversations by status and time range. USE FOR: "show recent tickets", "list closed conversations", "active tickets from last week". This is the SIMPLEST search - great for time-based listing without content keywords. Can search by status (active/pending/closed), date range, inbox, or tags. For keyword search across content, use comprehensiveConversationSearch instead.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -227,7 +237,7 @@ export class ToolHandler {
       },
       {
         name: 'advancedConversationSearch',
-        description: 'Advanced conversation search with complex boolean queries and customer organization support',
+        description: 'Search with COMPLEX FILTERS (email domains, tags, boolean logic). USE FOR: "conversations from @company.com", "urgent AND billing tags", "specific customer email". Supports: email domain filtering, tag combinations, content+subject separate terms. For simple keyword search, use comprehensiveConversationSearch. For structural IDs, use structuredConversationFilter.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -285,7 +295,7 @@ export class ToolHandler {
       },
       {
         name: 'comprehensiveConversationSearch',
-        description: 'CONTENT-BASED SEARCH ONLY: Requires actual search terms to find specific conversations by content. NOT for listing all recent conversations. Use searchConversations (without query) for listing. Searches across multiple statuses simultaneously. WORKFLOW: 1) If user mentions an inbox name, call searchInboxes FIRST to get the ID. 2) Then use this tool with actual search terms.',
+        description: 'Search by KEYWORDS in conversation content (subject + body). USE FOR: "find billing issues", "conversations about refunds", "tickets mentioning bug XYZ". Searches across active+pending+closed statuses automatically. REQUIRES search terms (keywords you want to find). For listing without keywords (like "recent tickets"), use searchConversations instead. This is your PRIMARY content search tool.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -342,6 +352,29 @@ export class ToolHandler {
             },
           },
           required: ['searchTerms'],
+        },
+      },
+      {
+        name: 'structuredConversationFilter',
+        description: 'Filter by DISCOVERED IDs (assignee, customer, folder) or LOOKUP BY TICKET NUMBER. USE FOR: "show ticket #42839" (direct lookup), "rep John\'s assigned queue" (after discovering John\'s ID), "customers 123,456,789 history" (after discovering IDs), "sort by SLA wait time". REQUIRES: IDs from previous search OR ticket number from user. DO NOT use for first/primary searches - use comprehensiveConversationSearch or searchConversations instead.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            assignedTo: { type: 'number', description: 'User ID from previous_results[].assignee.id. Use -1 for unassigned.' },
+            folderId: { type: 'number', description: 'Folder ID from Help Scout UI (not in API responses)' },
+            customerIds: { type: 'array', items: { type: 'number' }, description: 'Customer IDs from previous_results[].customer.id' },
+            conversationNumber: { type: 'number', description: 'Ticket number from previous_results[].number or user reference' },
+            status: { type: 'string', enum: ['active', 'pending', 'closed', 'spam', 'all'], default: 'all' },
+            inboxId: { type: 'string', description: 'Inbox ID to combine with filters' },
+            tag: { type: 'string', description: 'Tag name to combine with filters' },
+            createdAfter: { type: 'string', format: 'date-time' },
+            createdBefore: { type: 'string', format: 'date-time' },
+            modifiedSince: { type: 'string', format: 'date-time', description: 'Filter by last modified (different from created)' },
+            sortBy: { type: 'string', enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject'], default: 'createdAt', description: 'waitingSince/customerName/customerEmail are unique to this tool' },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
+            cursor: { type: 'string' },
+          },
         },
       },
     ];
@@ -426,6 +459,9 @@ export class ToolHandler {
           break;
         case 'comprehensiveConversationSearch':
           result = await this.comprehensiveConversationSearch(request.params.arguments || {});
+          break;
+        case 'structuredConversationFilter':
+          result = await this.structuredConversationFilter(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -515,7 +551,7 @@ export class ToolHandler {
   private async searchConversations(args: unknown): Promise<CallToolResult> {
     const input = SearchConversationsInputSchema.parse(args);
     // Using direct imports
-    
+
     const queryParams: Record<string, unknown> = {
       page: 1,
       size: input.limit,
@@ -528,7 +564,12 @@ export class ToolHandler {
       queryParams.query = input.query;
     }
 
-    if (input.inboxId) queryParams.mailbox = input.inboxId;
+    // Apply inbox scoping: explicit inboxId > default > all inboxes
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+    if (effectiveInboxId) {
+      queryParams.mailbox = effectiveInboxId;
+    }
+
     if (input.tag) queryParams.tag = input.tag;
     if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
 
@@ -548,10 +589,22 @@ export class ToolHandler {
     
     let conversations = response._embedded?.conversations || [];
 
-    // Apply additional filtering
+    // Apply client-side createdBefore filtering
+    // NOTE: Help Scout API doesn't support createdBefore natively, so this filters after fetching
+    // This means pagination counts may not reflect filtered totals
+    let clientSideFiltered = false;
     if (input.createdBefore) {
       const beforeDate = new Date(input.createdBefore);
+      const originalCount = conversations.length;
       conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+      clientSideFiltered = originalCount !== conversations.length;
+
+      if (clientSideFiltered) {
+        logger.warn('Client-side createdBefore filtering applied - pagination totals may not reflect filtered results', {
+          originalCount,
+          filteredCount: conversations.length,
+        });
+      }
     }
 
     // Apply field selection if specified
@@ -574,14 +627,21 @@ export class ToolHandler {
       searchInfo: {
         query: input.query,
         status: queryParams.status || 'all',
+        inboxScope: effectiveInboxId
+          ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
+          : 'ALL inboxes',
         appliedDefaults: !input.status && (input.query || input.tag) ? ['status: active'] : undefined,
+        clientSideFiltering: clientSideFiltered ? 'createdBefore filter applied after API fetch - pagination totals may not reflect filtered count' : undefined,
         searchGuidance: conversations.length === 0 ? [
           'If no results found, try:',
           '1. Use comprehensiveConversationSearch for multi-status search',
           '2. Try different status values: active, pending, closed, spam',
           '3. Broaden search terms or extend time range',
-          '4. Check if inbox ID is correct'
-        ] : undefined,
+          '4. Check if inbox ID is correct',
+          !effectiveInboxId ? '5. Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
+        ].filter(Boolean) : (!effectiveInboxId ? [
+          'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
+        ] : undefined),
       },
     };
 
@@ -633,13 +693,13 @@ export class ToolHandler {
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
-        body: config.security.allowPii ? firstCustomerMessage.body : '[REDACTED]',
+        body: config.security.allowPii ? firstCustomerMessage.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
         createdAt: firstCustomerMessage.createdAt,
         customer: firstCustomerMessage.customer,
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
-        body: config.security.allowPii ? latestStaffReply.body : '[REDACTED]',
+        body: config.security.allowPii ? latestStaffReply.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
         createdAt: latestStaffReply.createdAt,
         createdBy: latestStaffReply.createdBy,
       } : null,
@@ -672,7 +732,7 @@ export class ToolHandler {
     // Redact PII if configured
     const processedThreads = threads.map(thread => ({
       ...thread,
-      body: config.security.allowPii ? thread.body : '[REDACTED]',
+      body: config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
     }));
 
     return {
@@ -711,7 +771,7 @@ export class ToolHandler {
     const input = args as { limit?: number };
     // Using direct import
     const limit = input.limit || 100;
-    
+
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
       page: 1,
       size: limit,
@@ -750,32 +810,32 @@ export class ToolHandler {
     // Build HelpScout query syntax
     const queryParts: string[] = [];
 
-    // Content/body search
+    // Content/body search (with injection protection)
     if (input.contentTerms && input.contentTerms.length > 0) {
-      const bodyQueries = input.contentTerms.map(term => `body:"${term}"`);
+      const bodyQueries = input.contentTerms.map(term => `body:"${this.escapeQueryTerm(term)}"`);
       queryParts.push(`(${bodyQueries.join(' OR ')})`);
     }
 
-    // Subject search
+    // Subject search (with injection protection)
     if (input.subjectTerms && input.subjectTerms.length > 0) {
-      const subjectQueries = input.subjectTerms.map(term => `subject:"${term}"`);
+      const subjectQueries = input.subjectTerms.map(term => `subject:"${this.escapeQueryTerm(term)}"`);
       queryParts.push(`(${subjectQueries.join(' OR ')})`);
     }
 
-    // Email searches
+    // Email searches (with injection protection)
     if (input.customerEmail) {
-      queryParts.push(`email:"${input.customerEmail}"`);
+      queryParts.push(`email:"${this.escapeQueryTerm(input.customerEmail)}"`);
     }
 
-    // Handle email domain search (HelpScout supports domain-only searches)
+    // Handle email domain search (with injection protection)
     if (input.emailDomain) {
       const domain = input.emailDomain.replace('@', ''); // Remove @ if present
-      queryParts.push(`email:"${domain}"`);
+      queryParts.push(`email:"${this.escapeQueryTerm(domain)}"`);
     }
 
-    // Tag search
+    // Tag search (with injection protection)
     if (input.tags && input.tags.length > 0) {
-      const tagQueries = input.tags.map(tag => `tag:"${tag}"`);
+      const tagQueries = input.tags.map(tag => `tag:"${this.escapeQueryTerm(tag)}"`);
       queryParts.push(`(${tagQueries.join(' OR ')})`);
     }
 
@@ -794,18 +854,26 @@ export class ToolHandler {
       queryParams.query = queryString;
     }
 
-    if (input.inboxId) queryParams.mailbox = input.inboxId;
+    // Apply inbox scoping: explicit inboxId > default > all inboxes
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+    if (effectiveInboxId) {
+      queryParams.mailbox = effectiveInboxId;
+    }
+
     if (input.status) queryParams.status = input.status;
     if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
 
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-    
+
     let conversations = response._embedded?.conversations || [];
 
-    // Apply additional client-side filtering
+    // Apply client-side createdBefore filtering (Help Scout API limitation)
+    let clientSideFiltered = false;
     if (input.createdBefore) {
       const beforeDate = new Date(input.createdBefore);
+      const originalCount = conversations.length;
       conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+      clientSideFiltered = originalCount !== conversations.length;
     }
 
     return {
@@ -815,6 +883,9 @@ export class ToolHandler {
           text: JSON.stringify({
             results: conversations,
             searchQuery: queryString,
+            inboxScope: effectiveInboxId
+              ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
+              : 'ALL inboxes',
             searchCriteria: {
               contentTerms: input.contentTerms,
               subjectTerms: input.subjectTerms,
@@ -824,6 +895,8 @@ export class ToolHandler {
             },
             pagination: response.page,
             nextCursor: response._links?.next?.href,
+            clientSideFiltering: clientSideFiltered ? 'createdBefore applied post-fetch - pagination may be incomplete' : undefined,
+            note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
           }, null, 2),
         },
       ],
@@ -864,45 +937,51 @@ export class ToolHandler {
   private buildComprehensiveSearchContext(input: z.infer<typeof MultiStatusConversationSearchInputSchema>) {
     const createdAfter = input.createdAfter || this.calculateTimeRange(input.timeframeDays);
     const searchQuery = this.buildSearchQuery(input.searchTerms, input.searchIn);
-    
+    // Apply inbox scoping: explicit inboxId > default > all inboxes
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+
     return {
       input,
       createdAfter,
       searchQuery,
+      effectiveInboxId,
     };
   }
 
   /**
    * Calculate time range for search
+   * Note: Help Scout API requires ISO 8601 format WITHOUT milliseconds
    */
   private calculateTimeRange(timeframeDays: number): string {
     const timeRange = new Date();
     timeRange.setDate(timeRange.getDate() - timeframeDays);
-    return timeRange.toISOString();
+    // Strip milliseconds - Help Scout rejects dates with .xxx format
+    return timeRange.toISOString().replace(/\.\d{3}Z$/, 'Z');
   }
 
   /**
-   * Build Help Scout search query from terms and search locations
+   * Build Help Scout search query from terms and search locations (with injection protection)
    */
   private buildSearchQuery(terms: string[], searchIn: string[]): string {
     const queries: string[] = [];
-    
+
     for (const term of terms) {
       const termQueries: string[] = [];
-      
+      const escapedTerm = this.escapeQueryTerm(term);
+
       if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BODY) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`body:"${term}"`);
+        termQueries.push(`body:"${escapedTerm}"`);
       }
-      
+
       if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.SUBJECT) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`subject:"${term}"`);
+        termQueries.push(`subject:"${escapedTerm}"`);
       }
-      
+
       if (termQueries.length > 0) {
         queries.push(`(${termQueries.join(' OR ')})`);
       }
     }
-    
+
     return queries.join(' OR ');
   }
 
@@ -913,8 +992,9 @@ export class ToolHandler {
     input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
     createdAfter: string;
     searchQuery: string;
+    effectiveInboxId?: string;
   }) {
-    const { input, createdAfter, searchQuery } = context;
+    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
     // Using direct import
     const allResults: Array<{
       status: string;
@@ -930,7 +1010,7 @@ export class ToolHandler {
           searchQuery,
           createdAfter,
           limitPerStatus: input.limitPerStatus,
-          inboxId: input.inboxId,
+          inboxId: effectiveInboxId,
           createdBefore: input.createdBefore,
         });
         allResults.push(result);
@@ -939,7 +1019,7 @@ export class ToolHandler {
           status,
           error: error instanceof Error ? error.message : String(error),
         });
-        
+
         allResults.push({
           status,
           totalCount: 0,
@@ -1009,9 +1089,10 @@ export class ToolHandler {
       input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
       createdAfter: string;
       searchQuery: string;
+      effectiveInboxId?: string;
     }
   ) {
-    const { input, createdAfter, searchQuery } = context;
+    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
     const totalConversations = allResults.reduce((sum, result) => sum + result.conversations.length, 0);
     const totalAvailable = allResults.reduce((sum, result) => sum + result.totalCount, 0);
 
@@ -1019,6 +1100,9 @@ export class ToolHandler {
       searchTerms: input.searchTerms,
       searchQuery,
       searchIn: input.searchIn,
+      inboxScope: effectiveInboxId
+        ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
+        : 'ALL inboxes',
       timeframe: {
         createdAfter,
         createdBefore: input.createdBefore,
@@ -1031,8 +1115,74 @@ export class ToolHandler {
         'Try broader search terms or increase the timeframe',
         'Check if the inbox ID is correct',
         'Consider searching without status restrictions first',
-        'Verify that conversations exist for the specified criteria'
-      ] : undefined,
+        'Verify that conversations exist for the specified criteria',
+        !effectiveInboxId ? 'Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
+      ].filter(Boolean) : (!effectiveInboxId ? [
+        'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
+      ] : undefined),
+    };
+  }
+
+  private async structuredConversationFilter(args: unknown): Promise<CallToolResult> {
+    const input = StructuredConversationFilterInputSchema.parse(args);
+
+    const queryParams: Record<string, unknown> = {
+      page: 1,
+      size: input.limit,
+      sortField: input.sortBy,
+      sortOrder: input.sortOrder,
+    };
+
+    // Apply unique structural filters
+    if (input.assignedTo !== undefined) queryParams.assigned_to = input.assignedTo;
+    if (input.folderId !== undefined) queryParams.folder = input.folderId;
+    if (input.conversationNumber !== undefined) queryParams.number = input.conversationNumber;
+
+    // Apply customerIds via query syntax if provided
+    if (input.customerIds && input.customerIds.length > 0) {
+      queryParams.query = `(${input.customerIds.map(id => `customerIds:${id}`).join(' OR ')})`;
+    }
+
+    // Apply combination filters
+    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
+    if (effectiveInboxId) queryParams.mailbox = effectiveInboxId;
+    if (input.status && input.status !== 'all') queryParams.status = input.status;
+    if (input.tag) queryParams.tag = input.tag;
+    if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
+    if (input.modifiedSince) queryParams.modifiedSince = input.modifiedSince;
+
+    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
+    let conversations = response._embedded?.conversations || [];
+
+    // Client-side createdBefore filtering (Help Scout API limitation)
+    let clientSideFiltered = false;
+    if (input.createdBefore) {
+      const beforeDate = new Date(input.createdBefore);
+      const originalCount = conversations.length;
+      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+      clientSideFiltered = originalCount !== conversations.length;
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: conversations,
+          filterApplied: {
+            filterType: 'structural',
+            assignedTo: input.assignedTo,
+            folderId: input.folderId,
+            customerIds: input.customerIds,
+            conversationNumber: input.conversationNumber,
+            uniqueSorting: ['waitingSince', 'customerName', 'customerEmail'].includes(input.sortBy) ? input.sortBy : undefined,
+          },
+          inboxScope: effectiveInboxId ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`) : 'ALL inboxes',
+          pagination: response.page,
+          nextCursor: response._links?.next?.href,
+          clientSideFiltering: clientSideFiltered ? 'createdBefore applied post-fetch - pagination may be incomplete' : undefined,
+          note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
+        }, null, 2),
+      }],
     };
   }
 }

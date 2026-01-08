@@ -1,6 +1,7 @@
-# DXT build artifacts
+# MCPB build artifacts (formerly DXT)
 build/
 *.dxt
+*.mcpb
 
 # Logs
 *.log

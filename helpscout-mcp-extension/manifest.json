@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
-  "version": "1.3.0",
+  "version": "1.5.0",
   "description": "Connect Claude to your Help Scout data for intelligent customer support analysis",
   "long_description": "Enterprise-grade Help Scout integration for AI assistants.\n\n**Core Features:**\n• Advanced conversation search with query syntax\n• Multi-status search across active/pending/closed conversations\n• Boolean search with OR/AND logic across multiple fields\n• Complete thread message retrieval with context\n• Conversation summaries with customer and staff messages\n• Inbox discovery and server time utilities\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional PII redaction for data privacy\n• Comprehensive audit logging\n• Rate limiting with automatic retry",
   "author": {
@@ -29,6 +29,7 @@
         "HELPSCOUT_CLIENT_SECRET": "${user_config.app_secret}",
         "HELPSCOUT_API_KEY": "${user_config.client_id}",
         "HELPSCOUT_APP_SECRET": "${user_config.app_secret}",
+        "HELPSCOUT_DEFAULT_INBOX_ID": "${user_config.default_inbox_id}",
         "HELPSCOUT_BASE_URL": "${user_config.base_url}",
         "ALLOW_PII": "${user_config.allow_pii}",
         "LOG_LEVEL": "${user_config.log_level}",
@@ -51,6 +52,13 @@
       "description": "Your OAuth2 Client Secret from Help Scout My Apps",
       "sensitive": true,
       "required": true
+    },
+    "default_inbox_id": {
+      "type": "string",
+      "title": "Default Inbox ID (Optional)",
+      "description": "Default inbox for scoped searches - improves LLM context. Get inbox IDs using listAllInboxes tool. Leave empty to search all inboxes.",
+      "default": "",
+      "required": false
     },
     "base_url": {
       "type": "string",
@@ -120,6 +128,10 @@
     {
       "name": "listAllInboxes",
       "description": "List all accessible inboxes with their IDs - quick helper for seeing available inboxes"
+    },
+    {
+      "name": "structuredConversationFilter",
+      "description": "Structural filtering by assignedTo, folderId, customerIds, conversationNumber, or advanced sorting - use after discovering IDs from content search"
     }
   ],
   "prompts": [

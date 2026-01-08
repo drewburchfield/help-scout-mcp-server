@@ -392,7 +392,7 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 2. Calculate the timestamp ${hours} hours ago from the current time.
    - Subtract ${hours} hours from the current timestamp
    - Example: If current time is "2025-06-11T15:04:00Z" and hours is 24, 
-     then ${hours} hours ago would be "${new Date(new Date().getTime() - hours * 60 * 60 * 1000).toISOString()}"
+     then ${hours} hours ago would be "${new Date(new Date().getTime() - hours * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z')}"
 
 3. Search for conversations in the specified inbox using the "searchConversations" tool:
    \`\`\`json

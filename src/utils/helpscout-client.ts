@@ -65,6 +65,7 @@ export class HelpScoutClient {
   private client: AxiosInstance;
   private accessToken: string | null = null;
   private tokenExpiresAt: number = 0;
+  private authenticationPromise: Promise<void> | null = null;
   private httpAgent: HttpAgent;
   private httpsAgent: HttpsAgent;
   private defaultRetryConfig: RetryConfig = {
@@ -237,32 +238,34 @@ export class HelpScoutClient {
   }
 
   private async ensureAuthenticated(): Promise<void> {
+    // Check if token is still valid
     if (this.accessToken && Date.now() < this.tokenExpiresAt) {
       return;
     }
 
-    await this.authenticate();
+    // If authentication is already in progress, wait for it
+    if (this.authenticationPromise) {
+      return this.authenticationPromise;
+    }
+
+    // Start authentication and cache the promise to prevent concurrent auth requests
+    this.authenticationPromise = this.authenticate().finally(() => {
+      this.authenticationPromise = null;
+    });
+
+    return this.authenticationPromise;
   }
 
   private async authenticate(): Promise<void> {
     try {
-      // Check for Personal Access Token first (most explicit)
-      if (config.helpscout.apiKey && config.helpscout.apiKey.startsWith('Bearer ')) {
-        this.accessToken = config.helpscout.apiKey.replace('Bearer ', '');
-        this.tokenExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours
-        logger.info('Using Personal Access Token for Help Scout API');
-        return;
-      }
-
-      // Check for OAuth2 credentials (new explicit naming takes precedence)
+      // OAuth2 Client Credentials flow (only supported method)
       const clientId = config.helpscout.clientId;
       const clientSecret = config.helpscout.clientSecret;
-      
+
       if (!clientId || !clientSecret) {
         throw new Error(
-          'OAuth2 authentication requires both client ID and secret. ' +
-          'Set HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET, or ' +
-          'use legacy HELPSCOUT_API_KEY and HELPSCOUT_APP_SECRET'
+          'OAuth2 authentication required. Help Scout API only supports OAuth2 Client Credentials flow.\n' +
+          'Set HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET (or use legacy HELPSCOUT_API_KEY and HELPSCOUT_APP_SECRET)'
         );
       }
 
@@ -274,13 +277,11 @@ export class HelpScoutClient {
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer
-      
-      logger.info('Authenticated with Help Scout API using OAuth2', {
-        usingNewNaming: process.env.HELPSCOUT_CLIENT_ID ? true : false
-      });
+
+      logger.info('Authenticated with Help Scout API using OAuth2 Client Credentials');
     } catch (error) {
-      logger.error('Authentication failed', { error: error instanceof Error ? error.message : String(error) });
-      throw new Error('Failed to authenticate with Help Scout API');
+      logger.error('OAuth2 authentication failed', { error: error instanceof Error ? error.message : String(error) });
+      throw new Error('Failed to authenticate with Help Scout API. Check your OAuth2 credentials.');
     }
   }
 
@@ -289,6 +290,14 @@ export class HelpScoutClient {
     const url = error.config?.url;
     const method = error.config?.method?.toUpperCase();
 
+    // Log internal details but don't expose in API response
+    logger.error('API request failed', {
+      requestId,
+      url,
+      method,
+      status: error.response?.status,
+    });
+
     if (error.response?.status === 401) {
       this.accessToken = null; // Force re-authentication
       return {
@@ -296,9 +305,7 @@ export class HelpScoutClient {
         message: 'Help Scout authentication failed. Please check your API credentials.',
         details: {
           requestId,
-          url,
-          method,
-          suggestion: 'Verify HELPSCOUT_API_KEY is valid and has proper permissions',
+          suggestion: 'Verify HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are valid',
         },
       };
     }
@@ -309,9 +316,7 @@ export class HelpScoutClient {
         message: 'Access forbidden. Insufficient permissions for this Help Scout resource.',
         details: {
           requestId,
-          url,
-          method,
-          suggestion: 'Check if your API key has access to this mailbox or resource',
+          suggestion: 'Check if your OAuth2 app has access to this mailbox or resource',
         },
       };
     }
@@ -322,8 +327,6 @@ export class HelpScoutClient {
         message: 'Help Scout resource not found. The requested conversation, mailbox, or thread does not exist.',
         details: {
           requestId,
-          url,
-          method,
           suggestion: 'Verify the ID is correct and the resource exists',
         },
       };
@@ -337,8 +340,6 @@ export class HelpScoutClient {
         retryAfter,
         details: {
           requestId,
-          url,
-          method,
           suggestion: 'Reduce request frequency or implement request batching',
         },
       };
@@ -351,8 +352,6 @@ export class HelpScoutClient {
         message: `Help Scout API validation error: ${responseData.message || 'Invalid request data'}`,
         details: {
           requestId,
-          url,
-          method,
           validationErrors: responseData.errors || responseData,
           suggestion: 'Check the request parameters match Help Scout API requirements',
         },
@@ -366,8 +365,6 @@ export class HelpScoutClient {
         message: `Help Scout API client error: ${responseData.message || 'Invalid request'}`,
         details: {
           requestId,
-          url,
-          method,
           statusCode: error.response.status,
           apiResponse: responseData,
         },
@@ -380,8 +377,6 @@ export class HelpScoutClient {
         message: 'Help Scout API request timed out. The service may be experiencing high load.',
         details: {
           requestId,
-          url,
-          method,
           errorCode: error.code,
           suggestion: 'Request will be automatically retried with exponential backoff',
         },
@@ -394,8 +389,6 @@ export class HelpScoutClient {
         message: `Help Scout API server error (${error.response.status}). The service is temporarily unavailable.`,
         details: {
           requestId,
-          url,
-          method,
           statusCode: error.response.status,
           suggestion: 'Request will be automatically retried with exponential backoff',
         },
@@ -407,8 +400,6 @@ export class HelpScoutClient {
       message: `Help Scout API error: ${error.message || 'Unknown upstream service error'}`,
       details: {
         requestId,
-        url,
-        method,
         errorCode: error.code,
         suggestion: 'Check your network connection and Help Scout service status',
       },
