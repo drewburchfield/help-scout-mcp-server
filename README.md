@@ -9,7 +9,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-v140)
+- [What's New](#whats-new-in-v150)
 - [Quick Start](#quick-start)
 - [API Credentials](#getting-your-api-credentials)
 - [Tools & Capabilities](#tools--capabilities)
@@ -17,7 +17,7 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
-## What's New in v1.4.0
+## What's New in v1.5.0
 
 - **MCP SDK v1.25.2**: Latest Model Context Protocol SDK with enhanced compatibility
 - **New Tool**: `structuredConversationFilter` for ID-based refinement and ticket number lookup
