@@ -87,12 +87,23 @@ npx help-scout-mcp-server
 1. Go to **Help Scout** → **My Apps** → **Create Private App**
 2. Fill in app details and select required scopes:
    - At minimum: **Read** access to Mailboxes and Conversations
-3. Copy your **Client ID** and **Client Secret**
-4. Use in configuration:
-   - `HELPSCOUT_CLIENT_ID=your-client-id`
-   - `HELPSCOUT_CLIENT_SECRET=your-client-secret`
+3. Copy your credentials from the Help Scout UI
+4. Use in configuration as shown below
 
 > **Note**: Help Scout API uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
+
+### 📝 Credential Terminology
+
+Environment variables match Help Scout's UI exactly:
+
+| Help Scout UI | Environment Variable | Description |
+|---------------|---------------------|-------------|
+| **App ID** | `HELPSCOUT_APP_ID` | Your OAuth2 client identifier |
+| **App Secret** | `HELPSCOUT_APP_SECRET` | Your OAuth2 client secret |
+
+**Alternative variable names** (also supported):
+- `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` (OAuth2 standard naming)
+- `HELPSCOUT_API_KEY` (legacy)
 
 ## Features
 
@@ -193,13 +204,15 @@ searchConversations({
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HELPSCOUT_CLIENT_ID` | OAuth2 Client ID from Help Scout My Apps | Required |
-| `HELPSCOUT_CLIENT_SECRET` | OAuth2 Client Secret from Help Scout My Apps | Required |
+| `HELPSCOUT_APP_ID` | App ID from Help Scout My Apps | Required |
+| `HELPSCOUT_APP_SECRET` | App Secret from Help Scout My Apps | Required |
 | `HELPSCOUT_DEFAULT_INBOX_ID` | Default inbox ID for scoped searches (improves LLM context) | None (searches all inboxes) |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
-| `ALLOW_PII` | Include message content in responses | `false` |
+| `REDACT_MESSAGE_CONTENT` | Hide message bodies in responses | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |
+
+*Legacy variables `HELPSCOUT_CLIENT_ID`, `HELPSCOUT_CLIENT_SECRET`, and `ALLOW_PII` still supported for backwards compatibility.*
 
 
 ## Compatibility
@@ -217,7 +230,7 @@ searchConversations({
 
 ## Security & Privacy
 
-- **🔒 PII Protection**: Message content redacted by default
+- **🔒 Content Redaction**: Optional message body hiding (set `REDACT_MESSAGE_CONTENT=true`)
 - **🛡️ Secure Authentication**: OAuth2 Client Credentials with automatic token refresh
 - **📝 Audit Logging**: Comprehensive request tracking and error logging
 - **⚡ Rate Limiting**: Built-in retry logic with exponential backoff
@@ -232,9 +245,9 @@ git clone https://github.com/drewburchfield/help-scout-mcp-server.git
 cd help-scout-mcp-server
 npm install && npm run build
 
-# Create .env file with your credentials (OAuth2)
-echo "HELPSCOUT_CLIENT_ID=your-client-id" > .env
-echo "HELPSCOUT_CLIENT_SECRET=your-client-secret" >> .env
+# Create .env file with your credentials (from Help Scout My Apps)
+echo "HELPSCOUT_APP_ID=your-app-id" > .env
+echo "HELPSCOUT_APP_SECRET=your-app-secret" >> .env
 
 # Start the server
 npm start

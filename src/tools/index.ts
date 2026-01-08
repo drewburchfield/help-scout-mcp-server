@@ -693,13 +693,13 @@ export class ToolHandler {
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
-        body: config.security.allowPii ? firstCustomerMessage.body : '[REDACTED]',
+        body: config.security.allowPii ? firstCustomerMessage.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
         createdAt: firstCustomerMessage.createdAt,
         customer: firstCustomerMessage.customer,
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
-        body: config.security.allowPii ? latestStaffReply.body : '[REDACTED]',
+        body: config.security.allowPii ? latestStaffReply.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
         createdAt: latestStaffReply.createdAt,
         createdBy: latestStaffReply.createdBy,
       } : null,
@@ -732,7 +732,7 @@ export class ToolHandler {
     // Redact PII if configured
     const processedThreads = threads.map(thread => ({
       ...thread,
-      body: config.security.allowPii ? thread.body : '[REDACTED]',
+      body: config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
     }));
 
     return {
@@ -771,7 +771,7 @@ export class ToolHandler {
     const input = args as { limit?: number };
     // Using direct import
     const limit = input.limit || 100;
-    
+
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
       page: 1,
       size: limit,
@@ -950,11 +950,13 @@ export class ToolHandler {
 
   /**
    * Calculate time range for search
+   * Note: Help Scout API requires ISO 8601 format WITHOUT milliseconds
    */
   private calculateTimeRange(timeframeDays: number): string {
     const timeRange = new Date();
     timeRange.setDate(timeRange.getDate() - timeframeDays);
-    return timeRange.toISOString();
+    // Strip milliseconds - Help Scout rejects dates with .xxx format
+    return timeRange.toISOString().replace(/\.\d{3}Z$/, 'Z');
   }
 
   /**

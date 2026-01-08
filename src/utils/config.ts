@@ -36,7 +36,7 @@ export const config: Config = {
   helpscout: {
     // OAuth2 authentication (Client Credentials flow)
     apiKey: process.env.HELPSCOUT_API_KEY || '', // Deprecated, kept for backwards compatibility
-    clientId: process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || '',
+    clientId: process.env.HELPSCOUT_APP_ID || process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || '',
     clientSecret: process.env.HELPSCOUT_CLIENT_SECRET || process.env.HELPSCOUT_APP_SECRET || '',
     baseUrl: process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/',
     defaultInboxId: process.env.HELPSCOUT_DEFAULT_INBOX_ID,
@@ -49,7 +49,9 @@ export const config: Config = {
     level: process.env.LOG_LEVEL || 'info',
   },
   security: {
-    allowPii: process.env.ALLOW_PII === 'true',
+    // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies
+    // ALLOW_PII=true is backwards compat (always shows content)
+    allowPii: process.env.REDACT_MESSAGE_CONTENT !== 'true' || process.env.ALLOW_PII === 'true',
   },
   connectionPool: {
     maxSockets: parseInt(process.env.HTTP_MAX_SOCKETS || '50', 10),
