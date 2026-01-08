@@ -1,5 +1,5 @@
 {
-  "dxt_version": "0.1",
+  "manifest_version": "0.3",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
   "version": "1.5.0",
@@ -14,7 +14,7 @@
     "url": "https://github.com/drewburchfield/help-scout-mcp-server"
   },
   "documentation": "https://github.com/drewburchfield/help-scout-mcp-server#readme",
-  "icon": "icon.svg",
+  "icon": "icon.png",
   "screenshots": [],
   "server": {
     "type": "node",
@@ -25,13 +25,11 @@
         "${__dirname}/build/server/index.js"
       ],
       "env": {
-        "HELPSCOUT_CLIENT_ID": "${user_config.client_id}",
-        "HELPSCOUT_CLIENT_SECRET": "${user_config.app_secret}",
-        "HELPSCOUT_API_KEY": "${user_config.client_id}",
+        "HELPSCOUT_APP_ID": "${user_config.app_id}",
         "HELPSCOUT_APP_SECRET": "${user_config.app_secret}",
         "HELPSCOUT_DEFAULT_INBOX_ID": "${user_config.default_inbox_id}",
         "HELPSCOUT_BASE_URL": "${user_config.base_url}",
-        "ALLOW_PII": "${user_config.allow_pii}",
+        "REDACT_MESSAGE_CONTENT": "${user_config.redact_message_content}",
         "LOG_LEVEL": "${user_config.log_level}",
         "CACHE_TTL_SECONDS": "${user_config.cache_ttl}",
         "MAX_CACHE_SIZE": "${user_config.max_cache_size}"
@@ -39,17 +37,17 @@
     }
   },
   "user_config": {
-    "client_id": {
+    "app_id": {
       "type": "string",
-      "title": "Help Scout Client ID",
-      "description": "Your OAuth2 Client ID from Help Scout My Apps",
+      "title": "Help Scout App ID",
+      "description": "Your App ID from Help Scout My Apps",
       "sensitive": true,
       "required": true
     },
     "app_secret": {
       "type": "string",
-      "title": "Help Scout Client Secret",
-      "description": "Your OAuth2 Client Secret from Help Scout My Apps",
+      "title": "Help Scout App Secret",
+      "description": "Your App Secret from Help Scout My Apps",
       "sensitive": true,
       "required": true
     },
@@ -67,10 +65,10 @@
       "default": "https://api.helpscout.net/v2/",
       "required": false
     },
-    "allow_pii": {
+    "redact_message_content": {
       "type": "boolean",
-      "title": "Allow PII",
-      "description": "Allow personally identifiable information in message bodies",
+      "title": "Redact Message Content",
+      "description": "Hide message bodies in responses for privacy",
       "default": false,
       "required": false
     },

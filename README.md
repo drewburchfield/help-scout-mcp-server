@@ -31,18 +31,18 @@
 - **Node.js 18+** (for command line usage)
 - **Help Scout Account** with API access
 - **OAuth2 App** from Help Scout (App ID and App Secret)
-- **Claude Desktop** (for DXT installation) or any MCP-compatible client
+- **Claude Desktop** (for extension installation) or any MCP-compatible client
 
-> **Note**: The DXT extension includes Node.js, so no local installation needed for Claude Desktop users.
+> **Note**: The desktop extension bundles Node.js, so no local installation needed for Claude Desktop users.
 
 ## Quick Start
 
-### Option 1: Claude Desktop (DXT One-Click Install)
+### Option 1: Claude Desktop (One-Click Install)
 
-Easiest setup using [DXT (Desktop Extensions)](https://docs.anthropic.com/en/docs/build-with-claude/computer-use#desktop-extensions) - no configuration needed:
+Easiest setup using [Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions) - no configuration needed:
 
-1. Download the latest [`.dxt` file from releases](https://github.com/drewburchfield/help-scout-mcp-server/releases)
-2. Double-click to install in Claude Desktop
+1. Download the latest [`.mcpb` file from releases](https://github.com/drewburchfield/help-scout-mcp-server/releases)
+2. Double-click to install (or drag into Claude Desktop window)
 3. Enter your Help Scout App ID and App Secret when prompted
 4. Start using immediately
 
@@ -149,7 +149,7 @@ Environment variables match Help Scout's UI exactly:
 - `helpscout://threads` - Get thread messages for a conversation
 - `helpscout://clock` - Current server timestamp
 
-> **Note**: Resources are discovered dynamically at runtime through MCP protocol, not declared in the DXT manifest.
+> **Note**: Resources are discovered dynamically at runtime through MCP protocol, not declared in the extension manifest.
 
 ## Search Examples
 
@@ -226,7 +226,7 @@ Works with any [Model Context Protocol (MCP)](https://modelcontextprotocol.io) c
 - **Command Line**: Claude Code, Codex, Gemini CLI, OpenCode, and other CLI-based MCP clients
 - **Custom Integrations**: Any application implementing the MCP standard
 
-**Quickest Setup**: [Claude Desktop](https://claude.ai/desktop) with one-click DXT installation - no configuration needed.
+**Quickest Setup**: [Claude Desktop](https://claude.ai/desktop) with one-click extension installation - no configuration needed.
 
 *Since this server follows the MCP standard, it automatically works with any current or future MCP-compatible client.*
 
