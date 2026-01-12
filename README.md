@@ -9,7 +9,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-v150)
+- [What's New](#whats-new-in-v160)
 - [Quick Start](#quick-start)
 - [API Credentials](#getting-your-api-credentials)
 - [Tools & Capabilities](#tools--capabilities)
@@ -17,14 +17,29 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
-## What's New in v1.5.0
+## What's New in v1.6.0
 
-- **MCP SDK v1.25.2**: Latest Model Context Protocol SDK with enhanced compatibility
-- **New Tool**: `structuredConversationFilter` for ID-based refinement and ticket number lookup
-- **Security Improvements**: Enhanced input validation and error handling from code review
-- **Tool Discovery**: Clearer descriptions and decision tree for better LLM tool selection
-- **Auth Alignment**: Standardized environment variable naming (`APP_ID`/`APP_SECRET`)
-- **Content Redaction**: Renamed to `REDACT_MESSAGE_CONTENT` for clarity
+- **Inbox Auto-Discovery**: Inboxes automatically discovered on server connect and included in server instructions—no need to call `searchInboxes` first
+- **Multi-Status Search Default**: `searchConversations` now searches all statuses (active, pending, closed) by default when no status specified
+- **Simpler Workflow**: AI agents can use inbox IDs directly from server instructions without a preliminary lookup step
+- **Deprecated Tools**: `searchInboxes` and `listAllInboxes` remain functional but are deprecated (inboxes now in instructions)
+
+### Previous Release (v1.5.0)
+
+- MCP SDK v1.25.2 with enhanced compatibility
+- `structuredConversationFilter` for ID-based refinement and ticket number lookup
+- Enhanced input validation and error handling
+- Standardized environment variable naming (`APP_ID`/`APP_SECRET`)
+
+### Migration from v1.5.0
+
+**For programmatic users:**
+- `HelpScoutMCPServer` now uses an async factory pattern: use `await HelpScoutMCPServer.create()` instead of `new HelpScoutMCPServer()`
+
+**Response format change:**
+- `searchConversations` response now includes `statusesSearched` array instead of `status` string when searching without a specific status filter
+
+**No action required for most users** - the MCP protocol interface remains unchanged.
 
 ## Prerequisites
 
@@ -131,8 +146,8 @@ Environment variables match Help Scout's UI exactly:
 | `comprehensiveConversationSearch` | Keyword search - Find conversations containing specific words | "Find billing issues", "tickets about bug XYZ" |
 | `structuredConversationFilter` | ID/number lookup - Filter by discovered IDs or ticket number | "Show ticket #42839", "Rep John's queue" (after finding John's ID) |
 | `advancedConversationSearch` | Complex boolean - Email domains, tag combos, separated content/subject | "All @acme.com conversations", "urgent AND billing tags" |
-| `searchInboxes` | Find inboxes by name | Discovering available inboxes |
-| `listAllInboxes` | List all inboxes with IDs | Quick inbox discovery |
+| `searchInboxes` | ⚠️ *Deprecated* - Find inboxes by name | Use server instructions instead |
+| `listAllInboxes` | ⚠️ *Deprecated* - List all inboxes with IDs | Use server instructions instead |
 
 ### Analysis & Retrieval Tools
 
@@ -141,6 +156,18 @@ Environment variables match Help Scout's UI exactly:
 | `getConversationSummary` | Customer message + latest staff reply summary | Quick conversation overview |
 | `getThreads` | Complete conversation message history | Full context analysis |
 | `getServerTime` | Current server timestamp | Time-relative searches |
+
+### Inbox Auto-Discovery (v1.6.0+)
+
+When the server connects, it automatically discovers all available inboxes and includes them in the server instructions. AI agents can reference inbox IDs directly without calling lookup tools first.
+
+Example server instructions snippet:
+```
+## Available Inboxes (3 total)
+  - "Support Inbox" (ID: 12345)
+  - "Sales Inquiries" (ID: 67890)
+  - "Billing Questions" (ID: 24680)
+```
 
 ### Resources (Dynamic Discovery)
 
@@ -155,14 +182,21 @@ Environment variables match Help Scout's UI exactly:
 
 > **Key Distinction**: Use `searchConversations` (without query) for **listing** conversations, use `comprehensiveConversationSearch` (with search terms) for **finding** specific content.
 
+> **v1.6.0+**: When no status is specified, searches automatically include all statuses (active, pending, closed).
+
 ### Listing Recent Conversations
 ```javascript
-// Best for "show me recent tickets" - omit query parameter
+// Best for "show me recent tickets" - searches ALL statuses by default
 searchConversations({
-  status: "active",
   limit: 25,
   sort: "createdAt",
   order: "desc"
+})
+
+// To filter to specific status, specify it explicitly
+searchConversations({
+  status: "active",
+  limit: 25
 })
 ```
 
@@ -283,9 +317,12 @@ curl -X POST https://api.helpscout.net/v2/oauth2/token \
 **Empty Search Results**
 - **Wrong tool choice**: Use `searchConversations` (no query) for listing, `comprehensiveConversationSearch` for content search
 - **Empty search terms**: Don't use empty strings `[""]` with comprehensiveConversationSearch
+- **Inbox ID issues**: Use inbox IDs from server instructions (auto-discovered on connect), not guessed values
 - Verify inbox permissions with your API credentials
 - Check conversation exists and you have access
 - Try broader search terms or different time ranges
+
+> **v1.6.0+**: Searches now include all statuses by default. If you're still getting empty results, verify the inbox ID matches one from the server instructions.
 
 ### Debug Mode
 

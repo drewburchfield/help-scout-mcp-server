@@ -119,64 +119,49 @@ export class PromptHandler {
   private async helpScoutBestPractices(): Promise<GetPromptResult> {
     const prompt = `# Help Scout MCP Best Practices Guide
 
-## 🚨 CRITICAL WORKFLOW - Always Follow This Pattern
+## Inbox Discovery - Inboxes Auto-Discovered on Connect
 
-### The Golden Rule: Inbox Name → Inbox ID → Search
+Available inboxes are automatically discovered when the MCP server connects and included in the server instructions. Check the server instructions for the full list of inboxes with their IDs.
 
-When a user mentions ANY inbox by name (e.g., "support inbox", "sales mailbox", "customer service"), you MUST:
+### Using Inbox IDs
 
-1. **FIRST**: Call \`searchInboxes\` to find the inbox ID
-   - Even if the name seems obvious, always look it up
-   - Use empty string "" to list all inboxes if unsure
-   - Example: \`searchInboxes(query: "support")\` or \`searchInboxes(query: "")\`
+When a user mentions an inbox by name:
+1. Match the name to an inbox in the server instructions
+2. Use the corresponding inbox ID directly in your search
+3. If the name is ambiguous (e.g., "support" matches multiple inboxes), ask the user to clarify
 
-2. **THEN**: Use the inbox ID in your conversation search
-   - Never skip the inbox lookup step
-   - Always use the exact ID returned from searchInboxes
-
-### Example Correct Workflow
+### Example Workflow
 
 **User**: "Show me urgent conversations in the support inbox"
 
-**CORRECT Approach**:
+**Approach**:
 \`\`\`
-1. searchInboxes(query: "support")
-   → Returns: [{id: "12345", name: "Support Inbox"}, ...]
-   
-2. comprehensiveConversationSearch({
-     searchTerms: ["urgent"],
-     inboxId: "12345"
-   })
+// Check server instructions for inbox ID (e.g., "Support Inbox" → ID: 12345)
+comprehensiveConversationSearch({
+  searchTerms: ["urgent"],
+  inboxId: "12345"
+})
 \`\`\`
 
-**INCORRECT Approach** (DO NOT DO THIS):
-\`\`\`
-❌ comprehensiveConversationSearch({
-     searchTerms: ["urgent"]
-   })
-   // Missing inbox filter - will search ALL inboxes!
-\`\`\`
-
-## 📋 Common Scenarios and Solutions
+## Common Scenarios and Solutions
 
 ### Scenario 1: User Mentions Multiple Inboxes
 **User**: "Check support and sales inboxes for refund requests"
 
 **Workflow**:
-1. Call searchInboxes(query: "") to list ALL inboxes
-2. Identify the support and sales inbox IDs
-3. Run separate searches for each inbox:
+1. Match inbox names from server instructions
+2. Run separate searches for each inbox:
    - comprehensiveConversationSearch with support inbox ID
    - comprehensiveConversationSearch with sales inbox ID
-4. Combine and present results clearly
+3. Combine and present results clearly
 
 ### Scenario 2: No Results Found
 If a search returns no results:
-1. Verify the inbox ID is correct (re-run searchInboxes if needed)
+1. Verify the inbox ID is correct (check server instructions)
 2. Try broader search terms
 3. Extend the timeframe (default is 60 days)
-4. Check different statuses (active, pending, closed)
-5. Consider that the inbox might be empty or have different naming
+4. Searches now include all statuses by default
+5. Consider that the inbox might be empty
 
 ### Scenario 3: General Search Without Inbox Mention
 **User**: "Find all conversations about billing issues"
@@ -186,39 +171,42 @@ If a search returns no results:
 2. This searches across ALL accessible inboxes
 3. Results will show which inbox each conversation belongs to
 
-## 🛠️ Tool Selection Guide
+## Tool Selection Guide
 
 ### Use \`comprehensiveConversationSearch\` when:
-- You need results across multiple statuses (recommended default)
+- Searching by keywords in conversation content
 - User wants a broad search
-- You're not sure which status to use
 - Initial searches return no results
+- You need simple array input format
 
 ### Use \`searchConversations\` when:
-- You need very specific status filtering
-- You're using advanced HelpScout query syntax
+- You need HelpScout query syntax (body:, subject:, email:, etc.)
 - You need custom sorting or field selection
+- Simple listing without keywords
 
 ### Use \`advancedConversationSearch\` when:
 - You need complex boolean logic
 - Searching by email domain
 - Combining multiple search criteria
 
-## ⚠️ Common Pitfalls to Avoid
+## Status Handling
 
-1. **Never skip the inbox lookup** - Always use searchInboxes first when inbox names are mentioned
-2. **Don't assume inbox IDs** - They're not guessable; you must look them up
-3. **Remember status matters** - Help Scout often returns empty results without status filters
-4. **Use the right tool** - comprehensiveConversationSearch is usually best for general searches
-5. **Check your timeframes** - Default is 60 days; user might need longer
+Both \`searchConversations\` and \`comprehensiveConversationSearch\` now search all statuses (active, pending, closed) by default. You only need to specify a status if you want to filter to a specific one.
 
-## 📊 Multi-Inbox Reporting Pattern
+## Common Pitfalls to Avoid
+
+1. **Use inbox IDs from server instructions** - Don't guess or hallucinate IDs
+2. **Ask for clarification** - If inbox name is ambiguous, ask user which one
+3. **Use the right tool** - comprehensiveConversationSearch for keywords, searchConversations for query syntax
+4. **Check your timeframes** - Default is 60 days; user might need longer
+
+## Multi-Inbox Reporting Pattern
 
 When analyzing across multiple inboxes:
 \`\`\`
-1. searchInboxes(query: "") → Get all inboxes
+1. Reference inbox list from server instructions
 2. For each inbox:
-   - Note the ID and name
+   - Use the inbox ID directly
    - Run comprehensiveConversationSearch with that inboxId
    - Collect results
 3. Present organized summary:
@@ -227,15 +215,13 @@ When analyzing across multiple inboxes:
    - Highlight important patterns
 \`\`\`
 
-## 🔍 Search Tips
+## Search Tips
 
-- **Empty searches are valid**: searchInboxes(query: "") lists ALL inboxes
+- **Inbox IDs are in server instructions** - No need to look them up
 - **Case doesn't matter**: Searches are case-insensitive
 - **Partial matches work**: "sup" will match "Support"
 - **Be specific with timeframes**: Use createdAfter/createdBefore for precision
-- **Combine search terms**: Use arrays in comprehensiveConversationSearch
-
-Remember: When in doubt, start with searchInboxes(query: "") to see all available inboxes!`;
+- **Combine search terms**: Use arrays in comprehensiveConversationSearch`;
 
     return {
       description: 'Essential workflow guide for using Help Scout MCP effectively',
