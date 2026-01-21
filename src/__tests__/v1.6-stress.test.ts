@@ -86,8 +86,6 @@ describe('v1.6.0 Stress Tests', () => {
         }
       });
 
-      const response = JSON.parse((result.content[0] as any).text);
-
       // Should still return partial results
       expect(result).toBeDefined();
     }, 30000);
@@ -230,7 +228,7 @@ describe('v1.6.0 Stress Tests', () => {
 
       const longQuery = '(body:"' + 'a'.repeat(500) + '")';
 
-      ['active', 'pending', 'closed'].forEach(status => {
+      ['active', 'pending', 'closed'].forEach(_status => {
         nock(baseURL)
           .get('/conversations')
           .query(true)
@@ -254,9 +252,9 @@ describe('v1.6.0 Stress Tests', () => {
     it('should handle special characters in query', async () => {
       mockOAuthToken();
 
-      const specialQuery = '(body:"test\'s \"quoted\" <html> & symbols")';
+      const specialQuery = '(body:"test\'s "quoted" <html> & symbols")';
 
-      ['active', 'pending', 'closed'].forEach(status => {
+      ['active', 'pending', 'closed'].forEach(_status => {
         nock(baseURL)
           .get('/conversations')
           .query(true)

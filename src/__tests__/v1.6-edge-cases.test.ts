@@ -81,10 +81,11 @@ describe('v1.6.0 Edge Cases', () => {
         .delayConnection(10000)
         .reply(200, { _embedded: { mailboxes: [] } });
 
-      const { HelpScoutMCPServer } = await import('../index.js');
+      const { HelpScoutMCPServer: ServerClass } = await import('../index.js');
 
       // Should handle timeout gracefully (may take a while)
       // We're testing that it doesn't crash
+      expect(ServerClass).toBeDefined();
     }, 15000);
 
     it('should handle malformed inbox response', async () => {

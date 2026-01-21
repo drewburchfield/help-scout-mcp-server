@@ -419,7 +419,7 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       // Mock inbox discovery to fail
       helpScoutClient.get.mockRejectedValueOnce(new Error('API connection failed'));
 
-      const server = await HelpScoutMCPServer.create();
+      await HelpScoutMCPServer.create();
 
       // Server should still be created with fallback instructions
       expect(logger.warn).toHaveBeenCalledWith(
