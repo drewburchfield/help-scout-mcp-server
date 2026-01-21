@@ -29,7 +29,7 @@ describe('Config Validation', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
-    it('should pass with valid OAuth2 configuration', async () => {
+    it('should pass with legacy OAuth2 naming (HELPSCOUT_API_KEY/APP_SECRET)', async () => {
       process.env.HELPSCOUT_API_KEY = 'client-id';
       process.env.HELPSCOUT_APP_SECRET = 'client-secret';
       process.env.HELPSCOUT_BASE_URL = 'https://api.helpscout.net/v2/';
