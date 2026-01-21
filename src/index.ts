@@ -76,17 +76,30 @@ export class HelpScoutMCPServer {
         `  - "${inbox.name}" (ID: ${inbox.id})`
       ).join('\n');
 
-      const instructions = `Help Scout MCP Server - Read-only access to conversations and threads.
+      const instructions = `Help Scout MCP Server - Search and retrieve customer support conversations.
 
 ## Available Inboxes (${inboxes.length} total)
 ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 
-## Usage Guidelines
-- When user mentions an inbox by name, match it to an inbox above and use its ID
-- If name is ambiguous (e.g., "support" matches multiple), ask user to clarify
-- Search tools default to all statuses (active, pending, closed) unless specified
-- Use comprehensiveConversationSearch for keyword searches
-- Use searchConversations for simple listing/filtering`;
+## Tool Selection Guide
+| Task | Tool |
+|------|------|
+| Find tickets by keyword (billing, refund, bug) | comprehensiveConversationSearch |
+| List recent/filtered tickets | searchConversations |
+| Complex filters (email domain, multiple tags) | advancedConversationSearch |
+| Lookup by ticket number (#12345) | structuredConversationFilter |
+| Get full conversation thread | getThreads |
+| Quick conversation preview | getConversationSummary |
+
+## Workflow Patterns
+- **Ticket investigation**: searchConversations → getConversationSummary → getThreads
+- **Keyword research**: comprehensiveConversationSearch → getThreads for details
+- **Customer history**: advancedConversationSearch with customerEmail → getThreads
+
+## Notes
+- Always use inbox IDs from the list above (not names)
+- All search tools default to active+pending+closed statuses
+- Use getServerTime for date-relative queries`;
 
       logger.info('Inbox discovery successful', { inboxCount: inboxes.length });
       return { instructions, inboxes };

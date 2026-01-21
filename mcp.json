@@ -17,7 +17,8 @@
     "getServerTime",
     "listAllInboxes",
     "advancedConversationSearch",
-    "comprehensiveConversationSearch"
+    "comprehensiveConversationSearch",
+    "structuredConversationFilter"
   ],
   "prompts": [
     "search-last-7-days",

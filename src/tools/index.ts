@@ -85,7 +85,7 @@ export class ToolHandler {
     return [
       {
         name: 'searchInboxes',
-        description: '[DEPRECATED - inboxes now auto-discovered on connect] Lists all available inboxes or filters by name. Inbox IDs are now included in server instructions - use those instead. Only use this tool if you need to refresh inbox list during a long session.',
+        description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -110,17 +110,17 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'List or filter conversations by status and time range. USE FOR: "show recent tickets", "list closed conversations", "active tickets from last week". This is the SIMPLEST search - great for time-based listing without content keywords. Can search by status (active/pending/closed), date range, inbox, or tags. For keyword search across content, use comprehensiveConversationSearch instead.',
+        description: 'List conversations by status, date range, inbox, or tags. Searches all statuses by default. For keyword content search, use comprehensiveConversationSearch.',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'OPTIONAL: HelpScout query syntax for content search. OMIT this parameter to list ALL conversations. Examples: (body:"keyword"), (subject:"text"), (email:"user@domain.com"), (tag:"tagname"), (customerIds:123), complex: (body:"urgent" OR subject:"support"). Use cases: OMIT for "show recent tickets", INCLUDE for "find tickets about billing".',
+              description: 'HelpScout query syntax. Omit to list all. Example: (body:"keyword")',
             },
             inboxId: {
               type: 'string',
-              description: 'Filter by inbox ID. Use inbox ID from server instructions. If unsure which inbox, ask user to clarify.',
+              description: 'Inbox ID from server instructions',
             },
             tag: {
               type: 'string',
@@ -129,7 +129,7 @@ export class ToolHandler {
             status: {
               type: 'string',
               enum: [TOOL_CONSTANTS.STATUSES.ACTIVE, TOOL_CONSTANTS.STATUSES.PENDING, TOOL_CONSTANTS.STATUSES.CLOSED, TOOL_CONSTANTS.STATUSES.SPAM],
-              description: 'Filter by conversation status. Defaults to searching all statuses (active, pending, closed) if not specified. Specify a status to filter to just one.',
+              description: 'Filter by status. Defaults to all (active, pending, closed)',
             },
             createdAfter: {
               type: 'string',
@@ -188,7 +188,7 @@ export class ToolHandler {
       },
       {
         name: 'getThreads',
-        description: 'Get all thread messages for a conversation',
+        description: 'Retrieve full message history for a conversation. Returns all thread messages.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -213,7 +213,7 @@ export class ToolHandler {
       },
       {
         name: 'getServerTime',
-        description: 'Get current server time for time-relative searches',
+        description: 'Get current server timestamp. Use before date-relative searches to calculate time ranges.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -221,7 +221,7 @@ export class ToolHandler {
       },
       {
         name: 'listAllInboxes',
-        description: '[DEPRECATED - inboxes now auto-discovered on connect] Lists ALL available inboxes with their IDs. Inbox IDs are now included in server instructions - use those instead. Only use this tool if you need to refresh inbox list during a long session.',
+        description: 'List all inboxes with IDs. Deprecated: inbox IDs now in server instructions. Only needed mid-session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -237,7 +237,7 @@ export class ToolHandler {
       },
       {
         name: 'advancedConversationSearch',
-        description: 'Search with COMPLEX FILTERS (email domains, tags, boolean logic). USE FOR: "conversations from @company.com", "urgent AND billing tags", "specific customer email". Supports: email domain filtering, tag combinations, content+subject separate terms. For simple keyword search, use comprehensiveConversationSearch. For structural IDs, use structuredConversationFilter.',
+        description: 'Filter conversations by email domain, customer email, or multiple tags. Supports boolean logic for complex queries. For simple keyword search, use comprehensiveConversationSearch.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -295,19 +295,19 @@ export class ToolHandler {
       },
       {
         name: 'comprehensiveConversationSearch',
-        description: 'Search by KEYWORDS in conversation content (subject + body). USE FOR: "find billing issues", "conversations about refunds", "tickets mentioning bug XYZ". Searches across active+pending+closed statuses automatically. REQUIRES search terms (keywords you want to find). For listing without keywords (like "recent tickets"), use searchConversations instead. This is your PRIMARY content search tool.',
+        description: 'Search conversation content by keywords. Searches subject and body across all statuses. Requires searchTerms parameter. For listing without keywords, use searchConversations.',
         inputSchema: {
           type: 'object',
           properties: {
             searchTerms: {
               type: 'array',
               items: { type: 'string' },
-              description: 'REQUIRED: Actual search terms to find in conversations (will be combined with OR logic). Examples: ["billing", "refund"], ["urgent"], ["login issue"]. DO NOT use empty strings.',
+              description: 'Keywords to search for (OR logic). Example: ["billing", "refund"]',
               minItems: 1,
             },
             inboxId: {
               type: 'string',
-              description: 'Filter by specific inbox ID. Use inbox ID from server instructions above.',
+              description: 'Inbox ID from server instructions',
             },
             statuses: {
               type: 'array',
@@ -356,7 +356,7 @@ export class ToolHandler {
       },
       {
         name: 'structuredConversationFilter',
-        description: 'Filter by DISCOVERED IDs (assignee, customer, folder) or LOOKUP BY TICKET NUMBER. USE FOR: "show ticket #42839" (direct lookup), "rep John\'s assigned queue" (after discovering John\'s ID), "customers 123,456,789 history" (after discovering IDs), "sort by SLA wait time". REQUIRES: IDs from previous search OR ticket number from user. DO NOT use for first/primary searches - use comprehensiveConversationSearch or searchConversations instead.',
+        description: 'Lookup conversation by ticket number or filter by assignee/customer/folder IDs. Use after discovering IDs from other searches. For initial searches, use searchConversations or comprehensiveConversationSearch.',
         inputSchema: {
           type: 'object',
           properties: {
