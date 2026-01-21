@@ -1,5 +1,6 @@
 import nock from 'nock';
 import { ResourceHandler } from '../resources/index.js';
+import { cache } from '../utils/cache.js';
 
 describe('ResourceHandler', () => {
   let resourceHandler: ResourceHandler;
@@ -10,8 +11,11 @@ describe('ResourceHandler', () => {
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
-    
+
     nock.cleanAll();
+
+    // Clear cache to prevent cached responses from affecting tests
+    cache.clear();
     
     // Mock OAuth2 authentication endpoint
     nock(baseURL)
