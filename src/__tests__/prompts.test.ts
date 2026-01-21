@@ -131,12 +131,13 @@ describe('PromptHandler', () => {
         expect(result.messages).toHaveLength(1);
         expect(result.messages[0].role).toBe('user');
         expect(result.messages[0].content.type).toBe('text');
-        
+
         const promptText = result.messages[0].content.text;
-        expect(promptText).toContain('Golden Rule');
-        expect(promptText).toContain('searchInboxes');
+        // v1.6.0: Updated best practices to reflect auto-discovery
+        expect(promptText).toContain('Inbox Discovery');
+        expect(promptText).toContain('Auto-Discovered on Connect');
         expect(promptText).toContain('comprehensiveConversationSearch');
-        expect(promptText).toContain('CRITICAL WORKFLOW');
+        expect(promptText).toContain('server instructions');
         expect(promptText).toContain('Common Pitfalls to Avoid');
       });
     });

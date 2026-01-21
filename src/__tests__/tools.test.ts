@@ -1068,11 +1068,11 @@ describe('ToolHandler', () => {
   });
 
   describe('enhanced searchConversations', () => {
-    it('should default to active status when query is provided without status', async () => {
+    it('should search all statuses when query is provided without status', async () => {
       const freshToolHandler = new ToolHandler();
-      
+
       nock.cleanAll();
-      
+
       nock(baseURL)
         .persist()
         .post('/oauth2/token')
@@ -1094,9 +1094,20 @@ describe('ToolHandler', () => {
         }
       };
 
+      // Mock all 3 status searches (active, pending, closed)
       nock(baseURL)
         .get('/conversations')
         .query(params => params.status === 'active' && params.query === '(body:"test")')
+        .reply(200, mockResponse);
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'pending' && params.query === '(body:"test")')
+        .reply(200, mockResponse);
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'closed' && params.query === '(body:"test")')
         .reply(200, mockResponse);
 
       const request: CallToolRequest = {
@@ -1120,8 +1131,8 @@ describe('ToolHandler', () => {
         return;
       }
 
-      expect(response.searchInfo.status).toBe('active');
-      expect(response.searchInfo.appliedDefaults).toEqual(['status: active']);
+      // v1.6.0: Now searches all statuses by default
+      expect(response.searchInfo.statusesSearched).toEqual(['active', 'pending', 'closed']);
       expect(response.searchInfo.searchGuidance).toBeDefined();
     }, 30000); // Extended timeout for retry logic
   });

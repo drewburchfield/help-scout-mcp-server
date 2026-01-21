@@ -85,7 +85,7 @@ export class ToolHandler {
     return [
       {
         name: 'searchInboxes',
-        description: 'STEP 1: Always use this FIRST when searching conversations. Lists all available inboxes or filters by name. CRITICAL: When a user mentions an inbox by name (e.g., "support inbox", "sales mailbox"), you MUST call this tool first to get the inbox ID before searching conversations.',
+        description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -110,17 +110,17 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'List or filter conversations by status and time range. USE FOR: "show recent tickets", "list closed conversations", "active tickets from last week". This is the SIMPLEST search - great for time-based listing without content keywords. Can search by status (active/pending/closed), date range, inbox, or tags. For keyword search across content, use comprehensiveConversationSearch instead.',
+        description: 'List conversations by status, date range, inbox, or tags. Searches all statuses by default. For keyword content search, use comprehensiveConversationSearch.',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'OPTIONAL: HelpScout query syntax for content search. OMIT this parameter to list ALL conversations. Examples: (body:"keyword"), (subject:"text"), (email:"user@domain.com"), (tag:"tagname"), (customerIds:123), complex: (body:"urgent" OR subject:"support"). Use cases: OMIT for "show recent tickets", INCLUDE for "find tickets about billing".',
+              description: 'HelpScout query syntax. Omit to list all. Example: (body:"keyword")',
             },
             inboxId: {
               type: 'string',
-              description: 'Filter by inbox ID. REQUIRED when user mentions a specific inbox. Get this ID by calling searchInboxes first!',
+              description: 'Inbox ID from server instructions',
             },
             tag: {
               type: 'string',
@@ -129,7 +129,7 @@ export class ToolHandler {
             status: {
               type: 'string',
               enum: [TOOL_CONSTANTS.STATUSES.ACTIVE, TOOL_CONSTANTS.STATUSES.PENDING, TOOL_CONSTANTS.STATUSES.CLOSED, TOOL_CONSTANTS.STATUSES.SPAM],
-              description: 'Filter by conversation status. CRITICAL: HelpScout often returns no results without this parameter. For comprehensive search across all statuses, use comprehensiveConversationSearch instead.',
+              description: 'Filter by status. Defaults to all (active, pending, closed)',
             },
             createdAfter: {
               type: 'string',
@@ -188,7 +188,7 @@ export class ToolHandler {
       },
       {
         name: 'getThreads',
-        description: 'Get all thread messages for a conversation',
+        description: 'Retrieve full message history for a conversation. Returns all thread messages.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -213,7 +213,7 @@ export class ToolHandler {
       },
       {
         name: 'getServerTime',
-        description: 'Get current server time for time-relative searches',
+        description: 'Get current server timestamp. Use before date-relative searches to calculate time ranges.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -221,7 +221,7 @@ export class ToolHandler {
       },
       {
         name: 'listAllInboxes',
-        description: 'QUICK HELPER: Lists ALL available inboxes with their IDs. This is equivalent to searchInboxes with empty query but more explicit. Use this when you need to see all inboxes or when starting any inbox-specific search.',
+        description: 'List all inboxes with IDs. Deprecated: inbox IDs now in server instructions. Only needed mid-session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -237,7 +237,7 @@ export class ToolHandler {
       },
       {
         name: 'advancedConversationSearch',
-        description: 'Search with COMPLEX FILTERS (email domains, tags, boolean logic). USE FOR: "conversations from @company.com", "urgent AND billing tags", "specific customer email". Supports: email domain filtering, tag combinations, content+subject separate terms. For simple keyword search, use comprehensiveConversationSearch. For structural IDs, use structuredConversationFilter.',
+        description: 'Filter conversations by email domain, customer email, or multiple tags. Supports boolean logic for complex queries. For simple keyword search, use comprehensiveConversationSearch.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -295,19 +295,19 @@ export class ToolHandler {
       },
       {
         name: 'comprehensiveConversationSearch',
-        description: 'Search by KEYWORDS in conversation content (subject + body). USE FOR: "find billing issues", "conversations about refunds", "tickets mentioning bug XYZ". Searches across active+pending+closed statuses automatically. REQUIRES search terms (keywords you want to find). For listing without keywords (like "recent tickets"), use searchConversations instead. This is your PRIMARY content search tool.',
+        description: 'Search conversation content by keywords. Searches subject and body across all statuses. Requires searchTerms parameter. For listing without keywords, use searchConversations.',
         inputSchema: {
           type: 'object',
           properties: {
             searchTerms: {
               type: 'array',
               items: { type: 'string' },
-              description: 'REQUIRED: Actual search terms to find in conversations (will be combined with OR logic). Examples: ["billing", "refund"], ["urgent"], ["login issue"]. DO NOT use empty strings.',
+              description: 'Keywords to search for (OR logic). Example: ["billing", "refund"]',
               minItems: 1,
             },
             inboxId: {
               type: 'string',
-              description: 'Filter by specific inbox ID. IMPORTANT: If user mentions an inbox by name, you MUST call searchInboxes first to get this ID!',
+              description: 'Inbox ID from server instructions',
             },
             statuses: {
               type: 'array',
@@ -356,7 +356,7 @@ export class ToolHandler {
       },
       {
         name: 'structuredConversationFilter',
-        description: 'Filter by DISCOVERED IDs (assignee, customer, folder) or LOOKUP BY TICKET NUMBER. USE FOR: "show ticket #42839" (direct lookup), "rep John\'s assigned queue" (after discovering John\'s ID), "customers 123,456,789 history" (after discovering IDs), "sort by SLA wait time". REQUIRES: IDs from previous search OR ticket number from user. DO NOT use for first/primary searches - use comprehensiveConversationSearch or searchConversations instead.',
+        description: 'Lookup conversation by ticket number or filter by assignee/customer/folder IDs. Use after discovering IDs from other searches. For initial searches, use searchConversations or comprehensiveConversationSearch.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -552,7 +552,7 @@ export class ToolHandler {
     const input = SearchConversationsInputSchema.parse(args);
     // Using direct imports
 
-    const queryParams: Record<string, unknown> = {
+    const baseParams: Record<string, unknown> = {
       page: 1,
       size: input.limit,
       sortField: input.sort,
@@ -561,33 +561,94 @@ export class ToolHandler {
 
     // Add HelpScout query parameter for content/body search
     if (input.query) {
-      queryParams.query = input.query;
+      baseParams.query = input.query;
     }
 
     // Apply inbox scoping: explicit inboxId > default > all inboxes
     const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
     if (effectiveInboxId) {
-      queryParams.mailbox = effectiveInboxId;
+      baseParams.mailbox = effectiveInboxId;
     }
 
-    if (input.tag) queryParams.tag = input.tag;
-    if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
+    if (input.tag) baseParams.tag = input.tag;
+    if (input.createdAfter) baseParams.modifiedSince = input.createdAfter;
 
-    // Handle status parameter with helpful guidance
+    let conversations: Conversation[] = [];
+    let searchedStatuses: string[];
+    let pagination: unknown = null;
+
     if (input.status) {
-      queryParams.status = input.status;
-    } else if (input.query || input.tag) {
-      // If search criteria are provided but no status, default to 'active' with a warning
-      queryParams.status = 'active';
-      logger.warn('No status specified for conversation search, defaulting to "active". For comprehensive results across all statuses, use comprehensiveConversationSearch tool.', {
-        query: input.query,
-        tag: input.tag,
+      // Explicit status: single API call
+      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
+        ...baseParams,
+        status: input.status,
+      });
+      conversations = response._embedded?.conversations || [];
+      searchedStatuses = [input.status];
+      pagination = response.page;
+    } else {
+      // No status specified: search all statuses in parallel
+      const statuses = ['active', 'pending', 'closed'] as const;
+      searchedStatuses = [...statuses];
+
+      const results = await Promise.allSettled(
+        statuses.map(status =>
+          helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
+            ...baseParams,
+            status,
+          })
+        )
+      );
+
+      // Merge and dedupe by conversation ID, handling partial failures
+      const seenIds = new Set<number>();
+      const failedStatuses: string[] = [];
+
+      for (const [index, result] of results.entries()) {
+        if (result.status === 'fulfilled') {
+          const responseConversations = result.value._embedded?.conversations || [];
+          for (const conv of responseConversations) {
+            if (!seenIds.has(conv.id)) {
+              seenIds.add(conv.id);
+              conversations.push(conv);
+            }
+          }
+        } else {
+          const failedStatus = statuses[index];
+          failedStatuses.push(failedStatus);
+          logger.warn('Failed to search status', {
+            status: failedStatus,
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason)
+          });
+        }
+      }
+
+      // Update searchedStatuses to reflect only successful searches
+      if (failedStatuses.length > 0) {
+        searchedStatuses = statuses.filter(s => !failedStatuses.includes(s));
+      }
+
+      // Sort merged results by createdAt descending (most recent first)
+      conversations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Limit to requested size after merging
+      if (conversations.length > (input.limit || 50)) {
+        conversations = conversations.slice(0, input.limit || 50);
+      }
+
+      // Pagination doesn't apply cleanly to merged results
+      pagination = {
+        totalResults: conversations.length,
+        note: failedStatuses.length > 0
+          ? `Merged results (failed to search: ${failedStatuses.join(', ')})`
+          : 'Merged results from multiple status searches'
+      };
+      logger.info('Multi-status search completed', {
+        statusesSearched: searchedStatuses,
+        failedStatuses: failedStatuses.length > 0 ? failedStatuses : undefined,
+        totalResults: conversations.length
       });
     }
-
-    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-    
-    let conversations = response._embedded?.conversations || [];
 
     // Apply client-side createdBefore filtering
     // NOTE: Help Scout API doesn't support createdBefore natively, so this filters after fetching
@@ -622,23 +683,20 @@ export class ToolHandler {
 
     const results = {
       results: conversations,
-      pagination: response.page,
-      nextCursor: response._links?.next?.href,
+      pagination,
       searchInfo: {
         query: input.query,
-        status: queryParams.status || 'all',
+        statusesSearched: searchedStatuses,
         inboxScope: effectiveInboxId
           ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
           : 'ALL inboxes',
-        appliedDefaults: !input.status && (input.query || input.tag) ? ['status: active'] : undefined,
         clientSideFiltering: clientSideFiltered ? 'createdBefore filter applied after API fetch - pagination totals may not reflect filtered count' : undefined,
         searchGuidance: conversations.length === 0 ? [
           'If no results found, try:',
-          '1. Use comprehensiveConversationSearch for multi-status search',
-          '2. Try different status values: active, pending, closed, spam',
-          '3. Broaden search terms or extend time range',
-          '4. Check if inbox ID is correct',
-          !effectiveInboxId ? '5. Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
+          '1. Broaden search terms or extend time range',
+          '2. Check if inbox ID is correct',
+          '3. Try including spam status explicitly',
+          !effectiveInboxId ? '4. Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
         ].filter(Boolean) : (!effectiveInboxId ? [
           'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
         ] : undefined),
