@@ -432,6 +432,9 @@ describe('PromptHandler', () => {
       });
 
       it('should log prompt requests properly', async () => {
+        // Spy on console.error since logger writes JSON to stderr
+        const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
         const request = {
           method: 'prompts/get',
           params: {
@@ -442,17 +445,22 @@ describe('PromptHandler', () => {
 
         await promptHandler.getPrompt(request);
 
-        expect(mockLogger.info).toHaveBeenCalledWith('Prompt request started', expect.objectContaining({
-          promptName: 'search-last-7-days',
-          arguments: { inboxId: 'test-123' }
-        }));
+        // Check that logging occurred (logger writes JSON to console.error)
+        const calls = consoleSpy.mock.calls.map(call => call[0]);
+        const startLog = calls.find(c => typeof c === 'string' && c.includes('Prompt request started'));
+        const completeLog = calls.find(c => typeof c === 'string' && c.includes('Prompt request completed'));
 
-        expect(mockLogger.info).toHaveBeenCalledWith('Prompt request completed', expect.objectContaining({
-          promptName: 'search-last-7-days'
-        }));
+        expect(startLog).toBeDefined();
+        expect(startLog).toContain('search-last-7-days');
+        expect(completeLog).toBeDefined();
+
+        consoleSpy.mockRestore();
       });
 
       it('should log errors properly', async () => {
+        // Spy on console.error since logger writes JSON to stderr
+        const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
         const request = {
           method: 'prompts/get',
           params: {
@@ -467,10 +475,14 @@ describe('PromptHandler', () => {
           // Expected error
         }
 
-        expect(mockLogger.error).toHaveBeenCalledWith('Prompt request failed', expect.objectContaining({
-          promptName: 'unknown-prompt',
-          error: 'Unknown prompt: unknown-prompt'
-        }));
+        // Check that error logging occurred
+        const calls = consoleSpy.mock.calls.map(call => call[0]);
+        const errorLog = calls.find(c => typeof c === 'string' && c.includes('Prompt request failed'));
+
+        expect(errorLog).toBeDefined();
+        expect(errorLog).toContain('unknown-prompt');
+
+        consoleSpy.mockRestore();
       });
     });
   });

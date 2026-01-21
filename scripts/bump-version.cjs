@@ -78,14 +78,14 @@ function updateMcpJson(newVersion) {
   log(`Updated mcp.json version: ${newVersion}`);
 }
 
-function updateDxtManifest(newVersion) {
+function updateMcpbManifest(newVersion) {
   const manifestPath = path.join(__dirname, '..', 'helpscout-mcp-extension', 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  
+
   manifest.version = newVersion;
-  
+
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-  log(`Updated DXT manifest version: ${newVersion}`);
+  log(`Updated MCPB manifest version: ${newVersion}`);
 }
 
 function createCommit(oldVersion, newVersion, bumpType) {
@@ -97,10 +97,10 @@ function createCommit(oldVersion, newVersion, bumpType) {
     const commitMessage = `chore: bump version ${oldVersion} → ${newVersion} (${bumpType})
 
 - Update package.json version
-- Update Dockerfile version label  
+- Update Dockerfile version label
 - Update MCP server version in source code
 - Update mcp.json version
-- Update DXT manifest version
+- Update MCPB manifest version
 - Automated version bump for release`;
 
     execSync(`git commit -m "${commitMessage}"`);
@@ -137,7 +137,7 @@ function main() {
     updateDockerfile(newVersion);
     updateSourceCode(newVersion);
     updateMcpJson(newVersion);
-    updateDxtManifest(newVersion);
+    updateMcpbManifest(newVersion);
     
     // Create commit and tag
     createCommit(currentVersion, newVersion, bumpType);
@@ -158,4 +158,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { updatePackageJson, updateDockerfile, updateSourceCode, updateMcpJson, updateDxtManifest, createCommit };
+module.exports = { updatePackageJson, updateDockerfile, updateSourceCode, updateMcpJson, updateMcpbManifest, createCommit };

@@ -2,9 +2,15 @@ describe('Config Validation', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    // Reset environment variables
+    // Reset modules before modifying environment
     jest.resetModules();
-    process.env = { ...originalEnv };
+    // Create fresh environment without any HELPSCOUT vars
+    process.env = Object.keys(originalEnv).reduce((env, key) => {
+      if (!key.startsWith('HELPSCOUT_')) {
+        env[key] = originalEnv[key];
+      }
+      return env;
+    }, {} as typeof process.env);
   });
 
   afterEach(() => {
@@ -23,7 +29,7 @@ describe('Config Validation', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
-    it('should pass with valid OAuth2 configuration', async () => {
+    it('should pass with legacy OAuth2 naming (HELPSCOUT_API_KEY/APP_SECRET)', async () => {
       process.env.HELPSCOUT_API_KEY = 'client-id';
       process.env.HELPSCOUT_APP_SECRET = 'client-secret';
       process.env.HELPSCOUT_BASE_URL = 'https://api.helpscout.net/v2/';
@@ -34,8 +40,7 @@ describe('Config Validation', () => {
     });
 
     it('should throw error when authentication is missing', async () => {
-      process.env.HELPSCOUT_API_KEY = '';
-
+      // All HELPSCOUT_ vars already cleared by beforeEach
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
       expect(() => validateConfig()).toThrow(/OAuth2 authentication required/);

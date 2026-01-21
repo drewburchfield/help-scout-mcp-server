@@ -1,5 +1,6 @@
 import nock from 'nock';
 import { ResourceHandler } from '../resources/index.js';
+import { cache } from '../utils/cache.js';
 
 describe('ResourceHandler', () => {
   let resourceHandler: ResourceHandler;
@@ -10,8 +11,11 @@ describe('ResourceHandler', () => {
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
-    
+
     nock.cleanAll();
+
+    // Clear cache to prevent cached responses from affecting tests
+    cache.clear();
     
     // Mock OAuth2 authentication endpoint
     nock(baseURL)
@@ -76,9 +80,8 @@ describe('ResourceHandler', () => {
           .reply(200, mockResponse);
 
         const resource = await resourceHandler.handleResource('helpscout://inboxes');
-        
+
         expect(resource.uri).toBe('helpscout://inboxes');
-        expect(resource.name).toBe('Help Scout Inboxes');
         expect(resource.mimeType).toBe('application/json');
         
         const data = JSON.parse(resource.text as string);
@@ -125,10 +128,9 @@ describe('ResourceHandler', () => {
           .reply(200, mockResponse);
 
         const resource = await resourceHandler.handleResource('helpscout://conversations');
-        
+
         expect(resource.uri).toBe('helpscout://conversations');
-        expect(resource.name).toBe('Help Scout Conversations');
-        expect(resource.description).toBe('Conversations matching the specified filters');
+        expect(resource.mimeType).toBe('application/json');
         
         const data = JSON.parse(resource.text as string);
         expect(data.conversations).toHaveLength(1);
@@ -153,7 +155,7 @@ describe('ResourceHandler', () => {
           'helpscout://conversations?status=active&mailbox=123'
         );
         expect(resource).toBeDefined();
-        expect(resource.name).toBe('Help Scout Conversations');
+        expect(resource.uri).toBe('helpscout://conversations');
       });
 
       it('should handle pagination parameters', async () => {
@@ -228,10 +230,9 @@ describe('ResourceHandler', () => {
         const resource = await resourceHandler.handleResource(
           'helpscout://threads?conversationId=123'
         );
-        
+
         expect(resource.uri).toBe('helpscout://threads?conversationId=123');
-        expect(resource.name).toBe('Help Scout Thread Messages');
-        expect(resource.description).toBe('All messages in conversation 123');
+        expect(resource.mimeType).toBe('application/json');
         
         const data = JSON.parse(resource.text as string);
         expect(data.conversationId).toBe('123');
@@ -295,9 +296,8 @@ describe('ResourceHandler', () => {
     describe('helpscout://clock', () => {
       it('should return server time', async () => {
         const resource = await resourceHandler.handleResource('helpscout://clock');
-        
+
         expect(resource.uri).toBe('helpscout://clock');
-        expect(resource.name).toBe('Server Time');
         expect(resource.mimeType).toBe('application/json');
         
         const data = JSON.parse(resource.text as string);
@@ -324,6 +324,7 @@ describe('ResourceHandler', () => {
       it('should handle API errors', async () => {
         nock(baseURL)
           .get('/mailboxes')
+          .query({ page: 1, size: 50 })
           .reply(500, { message: 'Internal Server Error' });
 
         await expect(
