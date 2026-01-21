@@ -33,7 +33,7 @@
     "version:major": "node scripts/bump-version.cjs major",
     "prepublishOnly": "npm run clean && npm run build",
     "prepack": "npm run build",
-    "mcpb:build": "node scripts/build-dxt.js",
+    "mcpb:build": "node scripts/build-mcpb.js",
     "mcpb:pack": "npm run mcpb:build && cd helpscout-mcp-extension && npx @anthropic-ai/mcpb pack",
     "build:all": "npm run build && npm run mcpb:build"
   },

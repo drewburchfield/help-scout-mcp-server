@@ -2,35 +2,35 @@ import fs from 'fs';
 import path from 'path';
 import { describe, it, expect, beforeAll } from '@jest/globals';
 
-// DXT tests validate the extension build - require it to exist unless explicitly skipped
-// Set SKIP_DXT_TESTS=true in CI if not building the DXT extension
-const SKIP_DXT_TESTS = process.env.SKIP_DXT_TESTS === 'true';
+// MCPB tests validate the extension build - require it to exist unless explicitly skipped
+// Set SKIP_MCPB_TESTS=true in CI if not building the MCPB extension
+const SKIP_MCPB_TESTS = process.env.SKIP_MCPB_TESTS === 'true';
 
-const describeIfNotSkipped = SKIP_DXT_TESTS ? describe.skip : describe;
+const describeIfNotSkipped = SKIP_MCPB_TESTS ? describe.skip : describe;
 
-describeIfNotSkipped('DXT Extension Validation', () => {
-  const dxtDir = path.join(process.cwd(), 'helpscout-mcp-extension');
-  const manifestPath = path.join(dxtDir, 'manifest.json');
-  const buildDir = path.join(dxtDir, 'build');
+describeIfNotSkipped('MCPB Extension Validation', () => {
+  const mcpbDir = path.join(process.cwd(), 'helpscout-mcp-extension');
+  const manifestPath = path.join(mcpbDir, 'manifest.json');
+  const buildDir = path.join(mcpbDir, 'build');
   let manifest: any;
 
   beforeAll(() => {
-    // Ensure DXT is built before running tests
+    // Ensure MCPB is built before running tests
     if (!fs.existsSync(buildDir)) {
-      throw new Error('DXT build directory not found. Run `npm run mcpb:build` first.');
+      throw new Error('MCPB build directory not found. Run `npm run mcpb:build` first.');
     }
 
     if (!fs.existsSync(manifestPath)) {
-      throw new Error('DXT manifest.json not found.');
+      throw new Error('MCPB manifest.json not found.');
     }
 
     manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   });
 
   describe('Manifest Validation', () => {
-    it('should have required DXT fields', () => {
-      // Using dxt_version format per current @anthropic-ai/dxt CLI v0.2.6
-      expect(manifest.dxt_version).toBe('0.1');
+    it('should have required MCPB fields', () => {
+      // Using manifest_version format per MCPB specification
+      expect(manifest.manifest_version).toBe('0.3');
       expect(manifest.name).toBe('help-scout-mcp-server');
       expect(manifest.display_name).toBe('Help Scout MCP Server');
       expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
@@ -48,15 +48,15 @@ describeIfNotSkipped('DXT Extension Validation', () => {
 
     it('should have OAuth2 authentication configuration', () => {
       const userConfig = manifest.user_config;
-      
-      // Should have client_id and app_secret (not personal access token)
-      expect(userConfig.client_id).toBeDefined();
+
+      // Should have app_id and app_secret (not personal access token)
+      expect(userConfig.app_id).toBeDefined();
       expect(userConfig.app_secret).toBeDefined();
-      expect(userConfig.client_id.type).toBe('string');
+      expect(userConfig.app_id.type).toBe('string');
       expect(userConfig.app_secret.type).toBe('string');
-      expect(userConfig.client_id.sensitive).toBe(true);
+      expect(userConfig.app_id.sensitive).toBe(true);
       expect(userConfig.app_secret.sensitive).toBe(true);
-      expect(userConfig.client_id.required).toBe(true);
+      expect(userConfig.app_id.required).toBe(true);
       expect(userConfig.app_secret.required).toBe(true);
 
       // Should NOT have personal access token fields
@@ -86,7 +86,7 @@ describeIfNotSkipped('DXT Extension Validation', () => {
     });
 
     it('should not declare resources (resources are dynamic in MCP)', () => {
-      // According to DXT spec, resources are not included in manifest because 
+      // According to MCPB spec, resources are not included in manifest because
       // MCP resources are inherently dynamic - discovered at runtime
       expect(manifest.resources).toBeUndefined();
     });
@@ -108,11 +108,11 @@ describeIfNotSkipped('DXT Extension Validation', () => {
 
     it('should have environment variable mapping', () => {
       const env = manifest.server.mcp_config.env;
-      
-      expect(env.HELPSCOUT_API_KEY).toBe('${user_config.client_id}');
+
+      expect(env.HELPSCOUT_APP_ID).toBe('${user_config.app_id}');
       expect(env.HELPSCOUT_APP_SECRET).toBe('${user_config.app_secret}');
       expect(env.HELPSCOUT_BASE_URL).toBe('${user_config.base_url}');
-      expect(env.ALLOW_PII).toBe('${user_config.allow_pii}');
+      expect(env.REDACT_MESSAGE_CONTENT).toBe('${user_config.redact_message_content}');
       expect(env.LOG_LEVEL).toBe('${user_config.log_level}');
       expect(env.CACHE_TTL_SECONDS).toBe('${user_config.cache_ttl}');
       expect(env.MAX_CACHE_SIZE).toBe('${user_config.max_cache_size}');
@@ -229,19 +229,19 @@ describeIfNotSkipped('DXT Extension Validation', () => {
 
   describe('Cross-Platform Compatibility', () => {
     it('should use path.join for all paths', () => {
-      const buildScript = path.join(process.cwd(), 'scripts/build-dxt.js');
+      const buildScript = path.join(process.cwd(), 'scripts/build-mcpb.js');
       const content = fs.readFileSync(buildScript, 'utf8');
-      
+
       // Should use path.join, not hardcoded slashes
       expect(content).toContain('path.join');
-      
+
       // Should not use platform-specific commands
       expect(content).not.toContain('cp -r');
       expect(content).not.toContain('xcopy');
     });
 
     it('should have cross-platform copyDirectory function', () => {
-      const buildScript = path.join(process.cwd(), 'scripts/build-dxt.js');
+      const buildScript = path.join(process.cwd(), 'scripts/build-mcpb.js');
       const content = fs.readFileSync(buildScript, 'utf8');
       
       expect(content).toContain('copyDirectory');

@@ -1,25 +1,25 @@
-# Help Scout MCP Server - DXT Extension
+# Help Scout MCP Server - MCPB Extension
 
-This directory contains the DXT (Desktop Extensions) packaging for the Help Scout MCP Server, enabling one-click installation in Claude Desktop.
+This directory contains the MCPB (MCP Bundle) packaging for the Help Scout MCP Server, enabling one-click installation in Claude Desktop.
 
-## What is DXT?
+## What is MCPB?
 
-DXT is Anthropic's packaging format for MCP servers that provides:
+MCPB is Anthropic's packaging format for MCP servers that provides:
 - ✅ One-click installation in Claude Desktop
 - ✅ Bundled dependencies (no Node.js setup required)
 - ✅ Secure credential storage in OS keychain
 - ✅ User-friendly configuration UI
 - ✅ Cross-platform support (macOS, Windows, Linux)
 
-## Building the DXT
+## Building the MCPB
 
 From the project root directory:
 
 ```bash
-# Build the DXT extension
+# Build the MCPB extension
 npm run mcpb:build
 
-# Build and pack the DXT file
+# Build and pack the MCPB file
 npm run mcpb:pack
 ```
 
@@ -27,18 +27,18 @@ This will:
 1. Build the TypeScript source
 2. Create a production bundle in `build/`
 3. Install only production dependencies
-4. Generate the `.dxt` file
+4. Generate the `.mcpb` file
 
 ## Files
 
-- `manifest.json` - DXT configuration and metadata
+- `manifest.json` - MCPB configuration and metadata
 - `icon.svg` - Extension icon (source)
 - `build/` - Generated build directory (gitignored)
-- `*.dxt` - Generated extension files (gitignored)
+- `*.mcpb` - Generated extension files (gitignored)
 
 ## Installation for Users
 
-1. Download the `.dxt` file from GitHub releases
+1. Download the `.mcpb` file from GitHub releases
 2. Double-click to open with Claude Desktop
 3. Click "Install"
 4. Enter your Help Scout OAuth2 Client ID and Client Secret
@@ -52,10 +52,10 @@ The build process:
 3. Creates production-only `package.json`
 4. Installs dependencies without dev packages
 5. Copies manifest and assets
-6. Ready for DXT packaging
+6. Ready for MCPB packaging
 
 To test locally before publishing:
 ```bash
 npm run mcpb:pack
-# Install the generated .dxt file in Claude Desktop
+# Install the generated .mcpb file in Claude Desktop
 ```

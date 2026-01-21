@@ -24,24 +24,24 @@ describe('Authentication Configuration', () => {
       process.env.HELPSCOUT_CLIENT_ID = 'new-client-id';
       process.env.HELPSCOUT_CLIENT_SECRET = 'new-client-secret';
       process.env.HELPSCOUT_API_KEY = 'legacy-client-id';
-      process.env.HELPSCOUT_APP_SECRET = 'legacy-app-secret';
+      // Note: Not setting APP_SECRET, so CLIENT_SECRET will be used
 
       jest.resetModules();
       const { config } = await import('../utils/config.js');
-      
+
       expect(config.helpscout.clientId).toBe('new-client-id');
       expect(config.helpscout.clientSecret).toBe('new-client-secret');
     });
 
-    it('should prioritize HELPSCOUT_CLIENT_SECRET over HELPSCOUT_APP_SECRET', async () => {
+    it('should prioritize HELPSCOUT_APP_SECRET over HELPSCOUT_CLIENT_SECRET', async () => {
       process.env.HELPSCOUT_CLIENT_ID = 'client-id';
-      process.env.HELPSCOUT_CLIENT_SECRET = 'new-secret';
-      process.env.HELPSCOUT_APP_SECRET = 'legacy-secret';
+      process.env.HELPSCOUT_APP_SECRET = 'app-secret';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
 
       jest.resetModules();
       const { config } = await import('../utils/config.js');
-      
-      expect(config.helpscout.clientSecret).toBe('new-secret');
+
+      expect(config.helpscout.clientSecret).toBe('app-secret');
     });
 
     it('should fall back to legacy naming when new naming is not present', async () => {
@@ -102,8 +102,8 @@ describe('Authentication Configuration', () => {
       jest.resetModules();
       const { validateConfig } = await import('../utils/config.js');
 
-      expect(() => validateConfig()).toThrow(/HELPSCOUT_CLIENT_ID/);
-      expect(() => validateConfig()).toThrow(/HELPSCOUT_CLIENT_SECRET/);
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_APP_ID/);
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_APP_SECRET/);
     });
   });
 
