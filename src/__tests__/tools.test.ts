@@ -1136,4 +1136,523 @@ describe('ToolHandler', () => {
       expect(response.searchInfo.searchGuidance).toBeDefined();
     }, 30000); // Extended timeout for retry logic
   });
+
+  describe('pagination fixes (Issue #10)', () => {
+    beforeEach(() => {
+      nock.cleanAll();
+
+      // Re-mock OAuth for each test
+      nock(baseURL)
+        .persist()
+        .post('/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        });
+    });
+
+    describe('searchConversations multi-status pagination', () => {
+      it('should aggregate totalElements from all status searches', async () => {
+        // Mock responses for each status with different totals
+        const activeResponse = {
+          _embedded: {
+            conversations: Array(50).fill(null).map((_, i) => ({
+              id: i + 1,
+              subject: `Active ${i}`,
+              status: 'active',
+              createdAt: '2023-01-01T00:00:00Z',
+              customer: { id: 1 }
+            }))
+          },
+          page: { size: 50, totalElements: 200, totalPages: 4, number: 1 }
+        };
+
+        const pendingResponse = {
+          _embedded: {
+            conversations: Array(50).fill(null).map((_, i) => ({
+              id: i + 100,
+              subject: `Pending ${i}`,
+              status: 'pending',
+              createdAt: '2023-01-01T00:00:00Z',
+              customer: { id: 1 }
+            }))
+          },
+          page: { size: 50, totalElements: 233, totalPages: 5, number: 1 }
+        };
+
+        const closedResponse = {
+          _embedded: {
+            conversations: Array(50).fill(null).map((_, i) => ({
+              id: i + 200,
+              subject: `Closed ${i}`,
+              status: 'closed',
+              createdAt: '2023-01-01T00:00:00Z',
+              customer: { id: 1 }
+            }))
+          },
+          page: { size: 50, totalElements: 200, totalPages: 4, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active')
+          .reply(200, activeResponse);
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'pending')
+          .reply(200, pendingResponse);
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'closed')
+          .reply(200, closedResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: {
+              tag: 'summer_missions'
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should return 50 results (sliced from merged 150)
+        expect(response.results).toHaveLength(50);
+
+        // Should report both returned count and total available
+        expect(response.pagination.totalResults).toBe(50);
+        expect(response.pagination.totalAvailable).toBe(633); // 200 + 233 + 200
+        expect(response.pagination.totalByStatus).toEqual({
+          active: 200,
+          pending: 233,
+          closed: 200
+        });
+
+        // Should have informative note
+        expect(response.pagination.note).toContain('Returned 50 of 633');
+        expect(response.pagination.note).toContain('3 statuses');
+      });
+
+      it('should deduplicate conversations appearing in multiple statuses', async () => {
+        // Conversation #42 appears in both active and pending (edge case)
+        const duplicateConv = {
+          id: 42,
+          subject: 'Duplicate conversation',
+          status: 'active',
+          createdAt: '2023-01-15T00:00:00Z',
+          customer: { id: 1 }
+        };
+
+        const activeResponse = {
+          _embedded: {
+            conversations: [
+              duplicateConv,
+              { id: 1, subject: 'Active 1', status: 'active', createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } }
+            ]
+          },
+          page: { size: 50, totalElements: 100, totalPages: 2, number: 1 }
+        };
+
+        const pendingResponse = {
+          _embedded: {
+            conversations: [
+              { ...duplicateConv, status: 'pending' },
+              { id: 2, subject: 'Pending 1', status: 'pending', createdAt: '2023-01-02T00:00:00Z', customer: { id: 1 } }
+            ]
+          },
+          page: { size: 50, totalElements: 50, totalPages: 1, number: 1 }
+        };
+
+        const closedResponse = {
+          _embedded: { conversations: [] },
+          page: { size: 50, totalElements: 0, totalPages: 0, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active')
+          .reply(200, activeResponse);
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'pending')
+          .reply(200, pendingResponse);
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'closed')
+          .reply(200, closedResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: { tag: 'test' }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should have 3 unique conversations, not 4
+        expect(response.results).toHaveLength(3);
+        expect(response.results.filter((c: any) => c.id === 42)).toHaveLength(1);
+
+        // totalAvailable should be 150 (100+50+0) - not affected by deduplication
+        expect(response.pagination.totalAvailable).toBe(150);
+      });
+
+
+      it('should use standard pagination for single-status search', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [{ id: 1, status: 'active', createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } }]
+          },
+          page: { size: 50, totalElements: 100, totalPages: 2, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(true)
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: { status: 'active', tag: 'test' }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Single-status should return standard API pagination object
+        expect(response.pagination).toEqual({
+          size: 50,
+          totalElements: 100,
+          totalPages: 2,
+          number: 1
+        });
+
+        // Should NOT have multi-status specific fields
+        expect(response.pagination.totalAvailable).toBeUndefined();
+        expect(response.pagination.totalByStatus).toBeUndefined();
+      });
+
+      it('should handle partial failures in multi-status search', async () => {
+        const activeResponse = {
+          _embedded: {
+            conversations: Array(10).fill(null).map((_, i) => ({
+              id: i,
+              subject: `Active ${i}`,
+              status: 'active',
+              createdAt: '2023-01-01T00:00:00Z',
+              customer: { id: 1 }
+            }))
+          },
+          page: { size: 50, totalElements: 10, totalPages: 1, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active')
+          .reply(200, activeResponse);
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'pending')
+          .times(4)
+          .reply(500, { error: 'Internal Server Error' });
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'closed')
+          .reply(200, activeResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: {}
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should report partial totalAvailable (from successful statuses only)
+        expect(response.pagination.totalAvailable).toBeGreaterThan(0); // Has successful statuses
+        expect(response.pagination.totalByStatus).toBeDefined();
+        expect(response.pagination.errors).toHaveLength(1);
+        expect(response.pagination.errors[0].status).toBe('pending');
+        expect(response.pagination.note).toContain('⚠️ WARNING: 1 status(es) failed');
+        expect(response.pagination.note).toContain('Totals reflect successful statuses only');
+      }, 30000);
+    });
+
+    describe('advancedConversationSearch client-side filtering', () => {
+      it('should distinguish filtered count from API total', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } },
+              { id: 2, createdAt: '2023-01-05T00:00:00Z', customer: { id: 1 } },
+              { id: 3, createdAt: '2023-01-10T00:00:00Z', customer: { id: 1 } },
+              { id: 4, createdAt: '2023-01-15T00:00:00Z', customer: { id: 1 } },
+              { id: 5, createdAt: '2023-01-20T00:00:00Z', customer: { id: 1 } }
+            ]
+          },
+          page: { size: 50, totalElements: 100, totalPages: 2, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(true)
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'advancedConversationSearch',
+            arguments: {
+              tags: ['billing'],
+              createdBefore: '2023-01-12T00:00:00Z'
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should filter to 3 conversations (before Jan 12)
+        expect(response.results).toHaveLength(3);
+
+        // Should show both filtered count and API total
+        expect(response.pagination.totalResults).toBe(3);
+        expect(response.pagination.totalAvailable).toBe(100);
+        expect(response.pagination.note).toContain('filtered count (3)');
+        expect(response.pagination.note).toContain('pre-filter API total (100)');
+
+        // Should indicate client-side filtering occurred
+        expect(response.clientSideFiltering).toContain('createdBefore filter removed 2 of 5');
+      });
+
+      it('should handle createdBefore filter removing all results', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, createdAt: '2023-01-20T00:00:00Z', customer: { id: 1 } },
+              { id: 2, createdAt: '2023-01-25T00:00:00Z', customer: { id: 1 } }
+            ]
+          },
+          page: { size: 50, totalElements: 100, totalPages: 2, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => typeof params.query === 'string' && params.query.includes('billing'))
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'advancedConversationSearch',
+            arguments: {
+              tags: ['billing'],
+              createdBefore: '2023-01-01T00:00:00Z' // Before all results
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should return empty results
+        expect(response.results).toHaveLength(0);
+
+        // Should show filtering removed everything
+        expect(response.pagination.totalResults).toBe(0);
+        expect(response.pagination.totalAvailable).toBe(100);
+        expect(response.clientSideFiltering).toMatch(/createdBefore filter removed \d+ of \d+ results/);
+      });
+
+      it('should exclude conversations with createdAt exactly matching createdBefore', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, createdAt: '2023-01-10T00:00:00Z', customer: { id: 1 } },
+              { id: 2, createdAt: '2023-01-11T00:00:00Z', customer: { id: 1 } },
+              { id: 3, createdAt: '2023-01-12T00:00:00Z', customer: { id: 1 } } // Exact match
+            ]
+          },
+          page: { size: 50, totalElements: 100, totalPages: 2, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => typeof params.query === 'string' && params.query.includes('billing'))
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'advancedConversationSearch',
+            arguments: {
+              tags: ['billing'],
+              createdBefore: '2023-01-12T00:00:00Z' // Exact match with id:3
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should exclude exact match (< not <=)
+        // Verify filtering occurred
+        expect(response.results.length).toBeGreaterThanOrEqual(0);
+        expect(response.clientSideFiltering).toMatch(/createdBefore filter removed \d+ of \d+ results/);
+      });
+
+      it('should return normal pagination when no client-side filtering', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } }
+            ]
+          },
+          page: { size: 50, totalElements: 100, totalPages: 2, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(true)
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'advancedConversationSearch',
+            arguments: {
+              tags: ['billing']
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should return API pagination object directly
+        expect(response.pagination).toEqual({
+          size: 50,
+          totalElements: 100,
+          totalPages: 2,
+          number: 1
+        });
+        expect(response.clientSideFiltering).toBeUndefined();
+      });
+    });
+
+    describe('structuredConversationFilter client-side filtering', () => {
+      it('should distinguish filtered count from API total', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } },
+              { id: 2, createdAt: '2023-01-05T00:00:00Z', customer: { id: 2 } },
+              { id: 3, createdAt: '2023-01-10T00:00:00Z', customer: { id: 3 } },
+              { id: 4, createdAt: '2023-01-15T00:00:00Z', customer: { id: 4 } }
+            ]
+          },
+          page: { size: 50, totalElements: 150, totalPages: 3, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(true)
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'structuredConversationFilter',
+            arguments: {
+              assignedTo: 123,
+              createdBefore: '2023-01-08T00:00:00Z'
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should filter to 2 conversations (before Jan 8)
+        expect(response.results).toHaveLength(2);
+
+        // Should show both filtered count and API total
+        expect(response.pagination.totalResults).toBe(2);
+        expect(response.pagination.totalAvailable).toBe(150);
+        expect(response.pagination.note).toContain('filtered count (2)');
+        expect(response.pagination.note).toContain('pre-filter API total (150)');
+
+        // Should indicate client-side filtering occurred
+        expect(response.clientSideFiltering).toContain('createdBefore filter removed 2 of 4');
+      });
+
+      it('should handle createdBefore filter removing all results', async () => {
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, createdAt: '2023-01-20T00:00:00Z', customer: { id: 1 } },
+              { id: 2, createdAt: '2023-01-25T00:00:00Z', customer: { id: 2 } }
+            ]
+          },
+          page: { size: 50, totalElements: 150, totalPages: 3, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => Number(params.assigned_to) === 123)
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'structuredConversationFilter',
+            arguments: {
+              assignedTo: 123,
+              createdBefore: '2023-01-01T00:00:00Z' // Before all results
+            }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should return empty results
+        expect(response.results).toHaveLength(0);
+
+        // Should show filtering removed everything
+        expect(response.pagination.totalResults).toBe(0);
+        expect(response.pagination.totalAvailable).toBe(150);
+        expect(response.clientSideFiltering).toMatch(/createdBefore filter removed \d+ of \d+ results/);
+      });
+    });
+  });
 });
