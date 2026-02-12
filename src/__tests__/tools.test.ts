@@ -1396,7 +1396,7 @@ describe('ToolHandler', () => {
         expect(response.pagination.totalByStatus).toBeDefined();
         expect(response.pagination.errors).toHaveLength(1);
         expect(response.pagination.errors[0].status).toBe('pending');
-        expect(response.pagination.note).toContain('⚠️ WARNING: 1 status(es) failed');
+        expect(response.pagination.note).toContain('[WARNING] 1 status(es) failed');
         expect(response.pagination.note).toContain('Totals reflect successful statuses only');
       }, 30000);
     });
