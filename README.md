@@ -9,7 +9,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-v160)
+- [What's New](#whats-new-in-v161)
 - [Quick Start](#quick-start)
 - [API Credentials](#getting-your-api-credentials)
 - [Tools & Capabilities](#tools--capabilities)
@@ -17,16 +17,24 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
-## What's New in v1.6.0
+## What's New in v1.6.1
 
-- **Inbox Auto-Discovery**: Inboxes automatically discovered on server connect and included in server instructions—no need to call `searchInboxes` first
+- **Pagination Bug Fix**: Multi-status searches now report accurate total counts. Previously, searching without a status filter (active/pending/closed in parallel) reported `totalResults` capped at the page limit instead of the real total across all statuses. Now returns `totalAvailable` (sum of API totals) and `totalByStatus` breakdown. ([#10](https://github.com/drewburchfield/help-scout-mcp-server/issues/10))
+- **Client-Side Date Filtering**: New `createdBefore` parameter for all search tools with clear metadata distinguishing filtered counts from API totals
+- **Partial Failure Transparency**: Multi-status searches now surface structured error info when individual status queries fail, instead of silently returning incomplete results
+- **Stronger Error Type Guard**: `isApiError` now validates against the schema enum, preventing false matches on Node.js system errors
+- **Dependency Security Fixes**: Upgraded `@modelcontextprotocol/sdk` to 1.26.0, fixed axios, hono, and qs vulnerabilities
+
+### Previous Release (v1.6.0)
+
+- **Inbox Auto-Discovery**: Inboxes automatically discovered on server connect and included in server instructions
 - **Multi-Status Search Default**: `searchConversations` now searches all statuses (active, pending, closed) by default when no status specified
 - **Simpler Workflow**: AI agents can use inbox IDs directly from server instructions without a preliminary lookup step
 - **Deprecated Tools**: `searchInboxes` and `listAllInboxes` remain functional but are deprecated (inboxes now in instructions)
 
 ### Previous Release (v1.5.0)
 
-- MCP SDK v1.25.2 with enhanced compatibility
+- MCP SDK with enhanced compatibility
 - `structuredConversationFilter` for ID-based refinement and ticket number lookup
 - Enhanced input validation and error handling
 - Standardized environment variable naming (`APP_ID`/`APP_SECRET`)
