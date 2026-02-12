@@ -399,8 +399,6 @@ export class ToolHandler {
     const requestId = Math.random().toString(36).substring(7);
     const startTime = Date.now();
 
-    // Using direct import
-    
     logger.info('Tool call started', {
       requestId,
       toolName: request.params.name,
@@ -524,8 +522,6 @@ export class ToolHandler {
 
   private async searchInboxes(args: unknown): Promise<CallToolResult> {
     const input = SearchInboxesInputSchema.parse(args);
-    // Using direct import
-    
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
       page: 1,
       size: input.limit,
@@ -565,7 +561,6 @@ export class ToolHandler {
 
   private async searchConversations(args: unknown): Promise<CallToolResult> {
     const input = SearchConversationsInputSchema.parse(args);
-    // Using direct imports
 
     const baseParams: Record<string, unknown> = {
       page: 1,
@@ -707,12 +702,11 @@ export class ToolHandler {
         // Rebuild pagination to show both filtered and pre-filter counts
         if (input.status) {
           // Single-status path: originalPagination is Help Scout's page object with totalElements
-          const apiPage = originalPagination as { totalElements?: number } | null;
-          pagination = {
-            totalResults: conversations.length,
-            totalAvailable: apiPage?.totalElements,
-            note: `Results filtered client-side by createdBefore. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter API total (${apiPage?.totalElements}).`
-          };
+          pagination = this.buildFilteredPagination(
+            conversations.length,
+            originalPagination as { totalElements?: number } | undefined,
+            true
+          );
         } else {
           // Multi-status path: originalPagination has our custom merged structure
           const merged = originalPagination as {
@@ -751,9 +745,7 @@ export class ToolHandler {
       searchInfo: {
         query: input.query,
         statusesSearched: searchedStatuses,
-        inboxScope: effectiveInboxId
-          ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
-          : 'ALL inboxes',
+        inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
         clientSideFiltering: clientSideFiltered ? 'createdBefore filter applied after API fetch - see pagination.totalResults for filtered count and pagination.totalAvailable for API total' : undefined,
         searchGuidance: conversations.length === 0 ? [
           'If no results found, try:',
@@ -779,7 +771,6 @@ export class ToolHandler {
 
   private async getConversationSummary(args: unknown): Promise<CallToolResult> {
     const input = GetConversationSummaryInputSchema.parse(args);
-    // Using direct imports
     
     // Get conversation details
     const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
@@ -839,7 +830,6 @@ export class ToolHandler {
 
   private async getThreads(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsInputSchema.parse(args);
-    // Using direct imports
     
     const response = await helpScoutClient.get<PaginatedResponse<Thread>>(
       `/conversations/${input.conversationId}/threads`,
@@ -891,7 +881,6 @@ export class ToolHandler {
 
   private async listAllInboxes(args: unknown): Promise<CallToolResult> {
     const input = args as { limit?: number };
-    // Using direct import
     const limit = input.limit || 100;
 
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
@@ -927,7 +916,6 @@ export class ToolHandler {
 
   private async advancedConversationSearch(args: unknown): Promise<CallToolResult> {
     const input = AdvancedConversationSearchInputSchema.parse(args);
-    // Using direct import
 
     // Build HelpScout query syntax
     const queryParts: string[] = [];
@@ -997,11 +985,7 @@ export class ToolHandler {
       clientSideFiltered = result.wasFiltered;
     }
 
-    const paginationInfo = clientSideFiltered ? {
-      totalResults: conversations.length,
-      totalAvailable: response.page?.totalElements,
-      note: `Results filtered client-side by createdBefore. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter API total (${response.page?.totalElements}).`
-    } : response.page;
+    const paginationInfo = this.buildFilteredPagination(conversations.length, response.page, clientSideFiltered);
 
     return {
       content: [
@@ -1010,9 +994,7 @@ export class ToolHandler {
           text: JSON.stringify({
             results: conversations,
             searchQuery: queryString,
-            inboxScope: effectiveInboxId
-              ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
-              : 'ALL inboxes',
+            inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
             searchCriteria: {
               contentTerms: input.contentTerms,
               subjectTerms: input.subjectTerms,
@@ -1214,6 +1196,31 @@ export class ToolHandler {
   }
 
   /**
+   * Build inbox scope description string for response metadata.
+   */
+  private formatInboxScope(effectiveInboxId: string | undefined, explicitInboxId: string | undefined): string {
+    if (!effectiveInboxId) return 'ALL inboxes';
+    return explicitInboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`;
+  }
+
+  /**
+   * Build pagination info that distinguishes filtered count from API total.
+   * Used when createdBefore client-side filtering modifies a single API response.
+   */
+  private buildFilteredPagination(
+    filteredCount: number,
+    apiPage: { totalElements?: number } | undefined,
+    wasFiltered: boolean
+  ): unknown {
+    if (!wasFiltered) return apiPage;
+    return {
+      totalResults: filteredCount,
+      totalAvailable: apiPage?.totalElements,
+      note: `Results filtered client-side by createdBefore. totalResults shows filtered count (${filteredCount}), totalAvailable shows pre-filter API total (${apiPage?.totalElements}).`
+    };
+  }
+
+  /**
    * Search conversations for a single status
    */
   private async searchSingleStatus(params: {
@@ -1224,7 +1231,6 @@ export class ToolHandler {
     inboxId?: string;
     createdBefore?: string;
   }) {
-    // Using direct import
     const queryParams: Record<string, unknown> = {
       page: 1,
       size: params.limitPerStatus,
@@ -1291,9 +1297,7 @@ export class ToolHandler {
       searchTerms: input.searchTerms,
       searchQuery,
       searchIn: input.searchIn,
-      inboxScope: effectiveInboxId
-        ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
-        : 'ALL inboxes',
+      inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
       timeframe: {
         createdAfter,
         createdBefore: input.createdBefore,
@@ -1356,11 +1360,7 @@ export class ToolHandler {
       clientSideFiltered = result.wasFiltered;
     }
 
-    const paginationInfo = clientSideFiltered ? {
-      totalResults: conversations.length,
-      totalAvailable: response.page?.totalElements,
-      note: `Results filtered client-side by createdBefore. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter API total (${response.page?.totalElements}).`
-    } : response.page;
+    const paginationInfo = this.buildFilteredPagination(conversations.length, response.page, clientSideFiltered);
 
     return {
       content: [{
@@ -1375,7 +1375,7 @@ export class ToolHandler {
             conversationNumber: input.conversationNumber,
             uniqueSorting: ['waitingSince', 'customerName', 'customerEmail'].includes(input.sortBy) ? input.sortBy : undefined,
           },
-          inboxScope: effectiveInboxId ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`) : 'ALL inboxes',
+          inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
           pagination: paginationInfo,
           nextCursor: response._links?.next?.href,
           clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
