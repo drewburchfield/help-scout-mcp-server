@@ -1391,11 +1391,13 @@ describe('ToolHandler', () => {
         const textContent = result.content[0] as { type: 'text'; text: string };
         const response = JSON.parse(textContent.text);
 
-        // Should report partial totalAvailable (from successful statuses only)
-        expect(response.pagination.totalAvailable).toBeGreaterThan(0); // Has successful statuses
+        // Should report partial totalAvailable from successful statuses
+        expect(response.pagination.totalAvailable).toBeGreaterThan(0);
         expect(response.pagination.totalByStatus).toBeDefined();
         expect(response.pagination.errors).toHaveLength(1);
         expect(response.pagination.errors[0].status).toBe('pending');
+        expect(response.pagination.errors[0].message).toBeTruthy();
+        expect(response.pagination.errors[0].code).toBeDefined();
         expect(response.pagination.note).toContain('[WARNING] 1 status(es) failed');
         expect(response.pagination.note).toContain('Totals reflect successful statuses only');
       }, 30000);
@@ -1490,6 +1492,14 @@ describe('ToolHandler', () => {
       });
 
       it('should exclude conversations with createdAt exactly matching createdBefore', async () => {
+        const freshToolHandler = new ToolHandler();
+
+        nock.cleanAll();
+        nock(baseURL)
+          .persist()
+          .post('/oauth2/token')
+          .reply(200, { access_token: 'mock-access-token', token_type: 'Bearer', expires_in: 3600 });
+
         const mockResponse = {
           _embedded: {
             conversations: [
@@ -1503,7 +1513,7 @@ describe('ToolHandler', () => {
 
         nock(baseURL)
           .get('/conversations')
-          .query(params => typeof params.query === 'string' && params.query.includes('billing'))
+          .query(params => typeof params.query === 'string' && params.query.includes('boundary-test'))
           .reply(200, mockResponse);
 
         const request: CallToolRequest = {
@@ -1511,20 +1521,20 @@ describe('ToolHandler', () => {
           params: {
             name: 'advancedConversationSearch',
             arguments: {
-              tags: ['billing'],
+              tags: ['boundary-test'],
               createdBefore: '2023-01-12T00:00:00Z' // Exact match with id:3
             }
           }
         };
 
-        const result = await toolHandler.callTool(request);
+        const result = await freshToolHandler.callTool(request);
         const textContent = result.content[0] as { type: 'text'; text: string };
         const response = JSON.parse(textContent.text);
 
-        // Should exclude exact match (< not <=)
-        // Verify filtering occurred
-        expect(response.results.length).toBeGreaterThanOrEqual(0);
-        expect(response.clientSideFiltering).toMatch(/createdBefore filter removed \d+ of \d+ results/);
+        // Should exclude exact match (< not <=) - only ids 1 and 2 remain
+        expect(response.results).toHaveLength(2);
+        expect(response.results.map((r: any) => r.id)).toEqual([1, 2]);
+        expect(response.clientSideFiltering).toMatch(/createdBefore filter removed 1 of 3 results/);
       });
 
       it('should return normal pagination when no client-side filtering', async () => {
@@ -1653,6 +1663,212 @@ describe('ToolHandler', () => {
         expect(response.pagination.totalAvailable).toBe(150);
         expect(response.clientSideFiltering).toMatch(/createdBefore filter removed \d+ of \d+ results/);
       });
+    });
+
+    describe('invalid date validation', () => {
+      it('should throw for invalid createdBefore in searchConversations', async () => {
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active')
+          .reply(200, {
+            _embedded: { conversations: [{ id: 1, createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } }] },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 }
+          });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: { status: 'active', createdBefore: 'not-a-date' }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.error.message).toContain('Invalid createdBefore date format');
+      });
+
+      it('should throw for invalid createdBefore in advancedConversationSearch', async () => {
+        nock(baseURL)
+          .get('/conversations')
+          .query(() => true)
+          .reply(200, {
+            _embedded: { conversations: [{ id: 1, createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } }] },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 }
+          });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'advancedConversationSearch',
+            arguments: { tags: ['billing'], createdBefore: 'garbage-date' }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.error.message).toContain('Invalid createdBefore date format');
+      });
+
+      it('should throw for invalid createdBefore in structuredConversationFilter', async () => {
+        nock(baseURL)
+          .get('/conversations')
+          .query(() => true)
+          .reply(200, {
+            _embedded: { conversations: [{ id: 1, createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } }] },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 }
+          });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'structuredConversationFilter',
+            arguments: { assignedTo: 123, createdBefore: 'invalid-date' }
+          }
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.error.message).toContain('Invalid createdBefore date format');
+      });
+    });
+
+    describe('searchConversations single-status + createdBefore', () => {
+      it('should show both filtered count and API total for single-status search', async () => {
+        const freshToolHandler = new ToolHandler();
+
+        nock.cleanAll();
+        nock(baseURL)
+          .persist()
+          .post('/oauth2/token')
+          .reply(200, { access_token: 'mock-access-token', token_type: 'Bearer', expires_in: 3600 });
+
+        const mockResponse = {
+          _embedded: {
+            conversations: [
+              { id: 1, subject: 'Old', status: 'active', createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } },
+              { id: 2, subject: 'Mid', status: 'active', createdAt: '2023-01-15T00:00:00Z', customer: { id: 1 } },
+              { id: 3, subject: 'New', status: 'active', createdAt: '2023-02-01T00:00:00Z', customer: { id: 1 } },
+            ]
+          },
+          page: { size: 50, totalElements: 300, totalPages: 6, number: 1 }
+        };
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active' && typeof params.query === 'string' && params.query.includes('single-status-test'))
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: {
+              status: 'active',
+              query: 'single-status-test',
+              createdBefore: '2023-01-20T00:00:00Z'
+            }
+          }
+        };
+
+        const result = await freshToolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // Should filter to 2 conversations (before Jan 20)
+        expect(response.results).toHaveLength(2);
+        expect(response.pagination.totalResults).toBe(2);
+        expect(response.pagination.totalAvailable).toBe(300);
+        expect(response.pagination.note).toContain('filtered count (2)');
+        expect(response.pagination.note).toContain('pre-filter API total (300)');
+      });
+    });
+
+    describe('comprehensiveConversationSearch with createdBefore', () => {
+      it('should track filtered vs unfiltered totals per status', async () => {
+        const freshToolHandler = new ToolHandler();
+
+        nock.cleanAll();
+        nock(baseURL)
+          .persist()
+          .post('/oauth2/token')
+          .reply(200, {
+            access_token: 'mock-access-token',
+            token_type: 'Bearer',
+            expires_in: 3600,
+          });
+
+        // Active: 3 conversations, 2 before cutoff
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active' && typeof params.query === 'string' && params.query.includes('billing'))
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                { id: 1, subject: 'Active old', status: 'active', createdAt: '2023-01-01T00:00:00Z' },
+                { id: 2, subject: 'Active mid', status: 'active', createdAt: '2023-01-10T00:00:00Z' },
+                { id: 3, subject: 'Active new', status: 'active', createdAt: '2023-02-01T00:00:00Z' },
+              ]
+            },
+            page: { size: 25, totalElements: 3, totalPages: 1, number: 0 }
+          });
+
+        // Pending: 1 conversation, before cutoff
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'pending' && typeof params.query === 'string' && params.query.includes('billing'))
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                { id: 4, subject: 'Pending old', status: 'pending', createdAt: '2023-01-05T00:00:00Z' },
+              ]
+            },
+            page: { size: 25, totalElements: 1, totalPages: 1, number: 0 }
+          });
+
+        // Closed: 2 conversations, 1 before cutoff
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'closed' && typeof params.query === 'string' && params.query.includes('billing'))
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                { id: 5, subject: 'Closed old', status: 'closed', createdAt: '2023-01-02T00:00:00Z' },
+                { id: 6, subject: 'Closed new', status: 'closed', createdAt: '2023-02-15T00:00:00Z' },
+              ]
+            },
+            page: { size: 25, totalElements: 2, totalPages: 1, number: 0 }
+          });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'comprehensiveConversationSearch',
+            arguments: {
+              searchTerms: ['billing'],
+              createdBefore: '2023-01-15T00:00:00Z',
+              timeframeDays: 90,
+            }
+          }
+        };
+
+        const result = await freshToolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // After filtering: active=2, pending=1, closed=1 = 4 total
+        expect(response.totalConversationsFound).toBe(4);
+
+        // Before filtering: active=3, pending=1, closed=2 = 6 total
+        expect(response.totalBeforeClientSideFiltering).toBe(6);
+
+        // Should indicate client-side filtering applied
+        expect(response.clientSideFilteringApplied).toBeDefined();
+        expect(response.clientSideFilteringApplied).toContain('createdBefore filter applied');
+      }, 30000);
     });
   });
 });

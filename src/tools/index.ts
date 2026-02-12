@@ -58,6 +58,20 @@ import {
   StructuredConversationFilterInputSchema,
 } from '../schema/types.js';
 
+/**
+ * Type guard to check if an error is our structured ApiError
+ */
+function isApiError(error: unknown): error is ApiError {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    'message' in error &&
+    typeof (error as ApiError).code === 'string' &&
+    typeof (error as ApiError).message === 'string'
+  );
+}
+
 export class ToolHandler {
   private callHistory: string[] = [];
   private currentUserQuery?: string;
@@ -604,7 +618,7 @@ export class ToolHandler {
       // Merge and dedupe by conversation ID, handling partial failures
       // Track both returned conversations AND total available from API
       const seenIds = new Set<number>();
-      const failedStatuses: Array<{ status: string; error: string; code: string }> = [];
+      const failedStatuses: Array<{ status: string; message: string; code: string }> = [];
       let totalAvailable = 0;
       const totalByStatus: Record<string, number> = {};
 
@@ -624,20 +638,23 @@ export class ToolHandler {
           }
         } else {
           const failedStatus = statuses[index];
-          const apiError = result.reason as ApiError;
-          const errorDetails = {
+          const reason = result.reason;
+          const errorMessage = isApiError(reason)
+            ? reason.message
+            : (reason instanceof Error ? reason.message : String(reason));
+          const errorCode = isApiError(reason) ? reason.code : 'UNKNOWN';
+
+          failedStatuses.push({
             status: failedStatus,
-            error: apiError?.message || (result.reason instanceof Error ? result.reason.message : String(result.reason)),
-            code: apiError?.code || 'UNKNOWN'
-          };
+            message: errorMessage,
+            code: errorCode,
+          });
 
-          failedStatuses.push(errorDetails);
-
-          // Elevate to ERROR since this is a production failure affecting data completeness
+          // Log as ERROR since this affects data completeness
           logger.error('Status search failed - partial results will be returned', {
             status: failedStatus,
-            errorCode: errorDetails.code,
-            message: errorDetails.error,
+            errorCode,
+            message: errorMessage,
             note: 'This status will be excluded from results'
           });
         }
@@ -662,11 +679,7 @@ export class ToolHandler {
         totalResults: conversations.length,
         totalAvailable: Object.keys(totalByStatus).length > 0 ? totalAvailable : undefined,
         totalByStatus: Object.keys(totalByStatus).length > 0 ? totalByStatus : undefined,
-        errors: failedStatuses.length > 0 ? failedStatuses.map(f => ({
-          status: f.status,
-          message: f.error,
-          code: f.code
-        })) : undefined,
+        errors: failedStatuses.length > 0 ? failedStatuses : undefined,
         note: failedStatuses.length > 0
           ? `[WARNING] ${failedStatuses.length} status(es) failed - results incomplete! Failed: ${failedStatuses.map(f => `${f.status} (${f.code})`).join(', ')}. Totals reflect successful statuses only.`
           : `Merged results from ${Object.keys(totalByStatus).length} statuses. Returned ${conversations.length} of ${totalAvailable} total conversations.`
@@ -681,43 +694,39 @@ export class ToolHandler {
 
     // Apply client-side createdBefore filtering
     // NOTE: Help Scout API doesn't support createdBefore natively, so this filters after fetching
-    // This means pagination counts may not reflect filtered totals
+    // Pagination is rebuilt below to distinguish filtered count from API total
     let clientSideFiltered = false;
-    const preFilterCount = conversations.length;
     const originalPagination = pagination;
 
     if (input.createdBefore) {
-      const beforeDate = new Date(input.createdBefore);
-      if (isNaN(beforeDate.getTime())) {
-        throw new Error(`Invalid createdBefore date format: ${input.createdBefore}. Expected ISO 8601 format (e.g., 2023-01-15T00:00:00Z)`);
-      }
-      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
-      clientSideFiltered = preFilterCount !== conversations.length;
+      const filterResult = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'searchConversations');
+      conversations = filterResult.filtered;
+      clientSideFiltered = filterResult.wasFiltered;
 
       if (clientSideFiltered) {
-        logger.warn('Client-side createdBefore filtering applied - pagination totals may not reflect filtered results', {
-          originalCount: preFilterCount,
-          filteredCount: conversations.length,
-          removedCount: preFilterCount - conversations.length
-        });
-
         // Rebuild pagination to show both filtered and pre-filter counts
         if (input.status) {
-          // Single-status path: pagination is response.page
+          // Single-status path: originalPagination is Help Scout's page object with totalElements
+          const apiPage = originalPagination as { totalElements?: number } | null;
           pagination = {
             totalResults: conversations.length,
-            totalAvailable: (originalPagination as any)?.totalElements,
-            note: `Results filtered client-side by createdBefore. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter API total (${(originalPagination as any)?.totalElements}).`
+            totalAvailable: apiPage?.totalElements,
+            note: `Results filtered client-side by createdBefore. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter API total (${apiPage?.totalElements}).`
           };
         } else {
-          // Multi-status path: pagination already has custom structure
-          const multiPagination = originalPagination as any;
+          // Multi-status path: originalPagination has our custom merged structure
+          const merged = originalPagination as {
+            totalAvailable?: number;
+            totalByStatus?: Record<string, number>;
+            errors?: Array<{ status: string; message: string; code: string }>;
+            note?: string;
+          } | null;
           pagination = {
             totalResults: conversations.length,
-            totalAvailable: multiPagination?.totalAvailable,
-            totalByStatus: multiPagination?.totalByStatus,
-            errors: multiPagination?.errors,
-            note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${multiPagination?.totalAvailable}). ${multiPagination?.note || ''}`
+            totalAvailable: merged?.totalAvailable,
+            totalByStatus: merged?.totalByStatus,
+            errors: merged?.errors,
+            note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged?.totalAvailable}). ${merged?.note || ''}`
           };
         }
       }
@@ -745,7 +754,7 @@ export class ToolHandler {
         inboxScope: effectiveInboxId
           ? (input.inboxId ? `Specific inbox: ${effectiveInboxId}` : `Default inbox: ${effectiveInboxId}`)
           : 'ALL inboxes',
-        clientSideFiltering: clientSideFiltered ? 'createdBefore filter applied after API fetch - pagination totals may not reflect filtered count' : undefined,
+        clientSideFiltering: clientSideFiltered ? 'createdBefore filter applied after API fetch - see pagination.totalResults for filtered count and pagination.totalAvailable for API total' : undefined,
         searchGuidance: conversations.length === 0 ? [
           'If no results found, try:',
           '1. Broaden search terms or extend time range',
@@ -980,28 +989,14 @@ export class ToolHandler {
 
     let conversations = response._embedded?.conversations || [];
 
-    // Apply client-side createdBefore filtering (Help Scout API limitation)
     let clientSideFiltered = false;
     const originalCount = conversations.length;
     if (input.createdBefore) {
-      const beforeDate = new Date(input.createdBefore);
-      if (isNaN(beforeDate.getTime())) {
-        throw new Error(`Invalid createdBefore date format: ${input.createdBefore}. Expected ISO 8601 format (e.g., 2023-01-15T00:00:00Z)`);
-      }
-      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
-      clientSideFiltered = originalCount !== conversations.length;
-
-      if (clientSideFiltered) {
-        logger.warn('Client-side createdBefore filter applied - API limitation', {
-          originalCount,
-          filteredCount: conversations.length,
-          removedCount: originalCount - conversations.length,
-          note: 'Help Scout API does not support createdBefore parameter natively'
-        });
-      }
+      const result = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'advancedConversationSearch');
+      conversations = result.filtered;
+      clientSideFiltered = result.wasFiltered;
     }
 
-    // Build pagination object - distinguish between filtered results and API totals
     const paginationInfo = clientSideFiltered ? {
       totalResults: conversations.length,
       totalAvailable: response.page?.totalElements,
@@ -1127,12 +1122,13 @@ export class ToolHandler {
     effectiveInboxId?: string;
   }) {
     const { input, createdAfter, searchQuery, effectiveInboxId } = context;
-    // Using direct import
     const allResults: Array<{
       status: string;
       totalCount: number;
+      totalCountBeforeFilter?: number;
       conversations: Conversation[];
       searchQuery: string;
+      filteredByCreatedBefore?: boolean;
     }> = [];
 
     for (const status of input.statuses) {
@@ -1147,23 +1143,31 @@ export class ToolHandler {
         });
         allResults.push(result);
       } catch (error) {
-        const apiError = error as ApiError;
-
-        // Critical errors should fail the entire operation
-        if (apiError?.code === 'UNAUTHORIZED' || apiError?.code === 'INVALID_INPUT') {
-          logger.error('Critical error in multi-status search - aborting', {
+        // Use type guard instead of unsafe cast
+        if (!isApiError(error)) {
+          // Non-API errors (TypeError, network failures) should not be silently swallowed
+          logger.error('Unexpected non-API error in multi-status search', {
             status,
-            errorCode: apiError.code,
-            message: apiError.message
+            error: error instanceof Error ? error.message : String(error),
           });
-          throw error; // Fail fast for auth/validation errors
+          throw error;
         }
 
-        // Non-critical errors: log as ERROR and include in response
+        // Critical API errors should fail the entire operation
+        if (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_INPUT') {
+          logger.error('Critical API error in multi-status search - aborting', {
+            status,
+            errorCode: error.code,
+            message: error.message
+          });
+          throw error;
+        }
+
+        // Non-critical API errors: log and include in response
         logger.error('Status search failed - partial results will be returned', {
           status,
-          errorCode: apiError?.code || 'UNKNOWN',
-          message: apiError?.message || (error instanceof Error ? error.message : String(error)),
+          errorCode: error.code,
+          message: error.message,
           note: 'This status will be excluded from results'
         });
 
@@ -1177,6 +1181,36 @@ export class ToolHandler {
     }
 
     return allResults;
+  }
+
+  /**
+   * Apply client-side createdBefore filter (Help Scout API does not support this natively).
+   * Returns filtered conversations and metadata about what was removed.
+   */
+  private applyCreatedBeforeFilter(
+    conversations: Conversation[],
+    createdBefore: string,
+    context: string
+  ): { filtered: Conversation[]; wasFiltered: boolean; removedCount: number } {
+    const beforeDate = new Date(createdBefore);
+    if (isNaN(beforeDate.getTime())) {
+      throw new Error(`Invalid createdBefore date format: ${createdBefore}. Expected ISO 8601 format (e.g., 2023-01-15T00:00:00Z)`);
+    }
+
+    const originalCount = conversations.length;
+    const filtered = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
+    const removedCount = originalCount - filtered.length;
+
+    if (removedCount > 0) {
+      logger.warn(`Client-side createdBefore filter applied - ${context}`, {
+        originalCount,
+        filteredCount: filtered.length,
+        removedCount,
+        note: 'Help Scout API does not support createdBefore parameter natively'
+      });
+    }
+
+    return { filtered, wasFiltered: removedCount > 0, removedCount };
   }
 
   /**
@@ -1209,26 +1243,11 @@ export class ToolHandler {
     let conversations = response._embedded?.conversations || [];
     const apiTotalElements = response.page?.totalElements || conversations.length;
 
-    // Apply client-side createdBefore filter
     let filteredByDate = false;
     if (params.createdBefore) {
-      const beforeDate = new Date(params.createdBefore);
-      if (isNaN(beforeDate.getTime())) {
-        throw new Error(`Invalid createdBefore date format: ${params.createdBefore}. Expected ISO 8601 format (e.g., 2023-01-15T00:00:00Z)`);
-      }
-      const originalCount = conversations.length;
-      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
-      filteredByDate = originalCount !== conversations.length;
-
-      if (filteredByDate) {
-        logger.warn('Client-side createdBefore filter applied in searchSingleStatus', {
-          status: params.status,
-          originalCount,
-          filteredCount: conversations.length,
-          apiTotalElements,
-          note: 'totalCount reflects filtered results, not API total'
-        });
-      }
+      const result = this.applyCreatedBeforeFilter(conversations, params.createdBefore, `searchSingleStatus(${params.status})`);
+      conversations = result.filtered;
+      filteredByDate = result.wasFiltered;
     }
 
     return {
@@ -1329,25 +1348,14 @@ export class ToolHandler {
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
     let conversations = response._embedded?.conversations || [];
 
-    // Client-side createdBefore filtering (Help Scout API limitation)
     let clientSideFiltered = false;
     const originalCount = conversations.length;
     if (input.createdBefore) {
-      const beforeDate = new Date(input.createdBefore);
-      conversations = conversations.filter(conv => new Date(conv.createdAt) < beforeDate);
-      clientSideFiltered = originalCount !== conversations.length;
-
-      if (clientSideFiltered) {
-        logger.warn('Client-side createdBefore filter applied - API limitation', {
-          originalCount,
-          filteredCount: conversations.length,
-          removedCount: originalCount - conversations.length,
-          note: 'Help Scout API does not support createdBefore parameter natively'
-        });
-      }
+      const result = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'structuredConversationFilter');
+      conversations = result.filtered;
+      clientSideFiltered = result.wasFiltered;
     }
 
-    // Build pagination object - distinguish between filtered results and API totals
     const paginationInfo = clientSideFiltered ? {
       totalResults: conversations.length,
       totalAvailable: response.page?.totalElements,
