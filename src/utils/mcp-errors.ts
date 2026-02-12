@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ApiError } from '../schema/types.js';
+import { ApiError, ErrorSchema } from '../schema/types.js';
 import { logger } from './logger.js';
 
 /**
@@ -192,9 +192,8 @@ export function createMcpResourceError(
   };
 }
 
-const VALID_API_ERROR_CODES = new Set([
-  'INVALID_INPUT', 'NOT_FOUND', 'UNAUTHORIZED', 'RATE_LIMIT', 'UPSTREAM_ERROR',
-]);
+// Derived from ErrorSchema to maintain a single source of truth
+const VALID_API_ERROR_CODES = new Set(ErrorSchema.shape.code.options);
 
 /**
  * Type guard to check if an error is our structured ApiError.

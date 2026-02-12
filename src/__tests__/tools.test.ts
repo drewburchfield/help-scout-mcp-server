@@ -1408,6 +1408,89 @@ describe('ToolHandler', () => {
       // rejection handler. The defensive code in the rejection handler (throwing on
       // UNAUTHORIZED/INVALID_INPUT) is correct but only activates once validateStatus is fixed.
       // See: NAS-465 (validateStatus swallows 4xx errors)
+
+      it('should apply createdBefore filtering to multi-status merged results', async () => {
+        nock.cleanAll();
+
+        // Re-mock OAuth
+        nock(baseURL.replace('/v2/', ''))
+          .post('/oauth2/token')
+          .reply(200, { access_token: 'test-token', token_type: 'Bearer', expires_in: 7200 });
+
+        // Active: 3 conversations, 2 before cutoff
+        nock(baseURL)
+          .get('/conversations')
+          .query((q: any) => q.status === 'active')
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                { id: 1, status: 'active', createdAt: '2023-01-05T00:00:00Z', customer: { id: 1 }, subject: 'A1' },
+                { id: 2, status: 'active', createdAt: '2023-01-10T00:00:00Z', customer: { id: 1 }, subject: 'A2' },
+                { id: 3, status: 'active', createdAt: '2023-02-01T00:00:00Z', customer: { id: 1 }, subject: 'A3' },
+              ]
+            },
+            page: { size: 50, totalElements: 80, totalPages: 2, number: 1 }
+          });
+
+        // Pending: 2 conversations, 1 before cutoff
+        nock(baseURL)
+          .get('/conversations')
+          .query((q: any) => q.status === 'pending')
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                { id: 4, status: 'pending', createdAt: '2023-01-08T00:00:00Z', customer: { id: 2 }, subject: 'P1' },
+                { id: 5, status: 'pending', createdAt: '2023-02-15T00:00:00Z', customer: { id: 2 }, subject: 'P2' },
+              ]
+            },
+            page: { size: 50, totalElements: 40, totalPages: 1, number: 1 }
+          });
+
+        // Closed: 1 conversation, 1 before cutoff
+        nock(baseURL)
+          .get('/conversations')
+          .query((q: any) => q.status === 'closed')
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                { id: 6, status: 'closed', createdAt: '2023-01-03T00:00:00Z', customer: { id: 3 }, subject: 'C1' },
+              ]
+            },
+            page: { size: 50, totalElements: 30, totalPages: 1, number: 1 }
+          });
+
+        const freshToolHandler = new ToolHandler();
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'searchConversations',
+            arguments: {
+              tag: 'multi-status-filter-test',
+              createdBefore: '2023-01-15T00:00:00Z'
+            }
+          }
+        };
+
+        const result = await freshToolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // 6 total conversations, 4 before cutoff (ids 1,2,4,6)
+        expect(response.results).toHaveLength(4);
+        expect(response.results.map((r: any) => r.id).sort()).toEqual([1, 2, 4, 6]);
+
+        // Pagination should show filtered count AND pre-filter totals
+        expect(response.pagination.totalResults).toBe(4);
+        expect(response.pagination.totalAvailable).toBe(150); // 80+40+30
+        expect(response.pagination.totalByStatus).toEqual({ active: 80, pending: 40, closed: 30 });
+
+        // Note should mention both filtering and merged status info
+        expect(response.pagination.note).toContain('createdBefore');
+
+        // clientSideFiltering should report the filter was applied
+        expect(response.searchInfo.clientSideFiltering).toBeDefined();
+      }, 30000);
     });
 
     describe('advancedConversationSearch client-side filtering', () => {
