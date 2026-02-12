@@ -1,6 +1,6 @@
 import { Tool, CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { PaginatedResponse, helpScoutClient } from '../utils/helpscout-client.js';
-import { createMcpToolError } from '../utils/mcp-errors.js';
+import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
@@ -48,7 +48,6 @@ import {
   Conversation,
   Thread,
   ServerTime,
-  ApiError,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
@@ -57,20 +56,6 @@ import {
   MultiStatusConversationSearchInputSchema,
   StructuredConversationFilterInputSchema,
 } from '../schema/types.js';
-
-/**
- * Type guard to check if an error is our structured ApiError
- */
-function isApiError(error: unknown): error is ApiError {
-  return (
-    error !== null &&
-    typeof error === 'object' &&
-    'code' in error &&
-    'message' in error &&
-    typeof (error as ApiError).code === 'string' &&
-    typeof (error as ApiError).message === 'string'
-  );
-}
 
 export class ToolHandler {
   private callHistory: string[] = [];
@@ -638,6 +623,13 @@ export class ToolHandler {
             ? reason.message
             : (reason instanceof Error ? reason.message : String(reason));
           const errorCode = isApiError(reason) ? reason.code : 'UNKNOWN';
+
+          // Critical errors should abort, not return partial results.
+          // Note: currently blocked by validateStatus < 500 (NAS-465) which
+          // prevents 4xx from reaching this path. Will activate once fixed.
+          if (errorCode === 'UNAUTHORIZED' || errorCode === 'INVALID_INPUT') {
+            throw reason;
+          }
 
           failedStatuses.push({
             status: failedStatus,
