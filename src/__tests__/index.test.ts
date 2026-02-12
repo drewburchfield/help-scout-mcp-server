@@ -98,7 +98,7 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       expect(Server).toHaveBeenCalledWith(
         {
           name: 'helpscout-search',
-          version: '1.6.0',
+          version: '1.6.1',
         },
         expect.objectContaining({
           capabilities: {
