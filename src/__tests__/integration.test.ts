@@ -207,27 +207,34 @@ describe('Complete User Workflows - Integration Tests', () => {
       };
 
       // Set up nock interceptors for each status
+      // Query now includes createdAt range from timeframeDays (fix for modifiedSince mismatch)
       nock(baseURL)
         .get('/conversations')
-        .query(params => 
-          params.status === 'active' && 
-          params.query === '(body:"billing" OR subject:"billing")'
+        .query(params =>
+          params.status === 'active' &&
+          typeof params.query === 'string' &&
+          params.query.includes('body:"billing"') &&
+          params.query.includes('createdAt:')
         )
         .reply(200, mockActiveConversations);
 
       nock(baseURL)
         .get('/conversations')
-        .query(params => 
-          params.status === 'pending' && 
-          params.query === '(body:"billing" OR subject:"billing")'
+        .query(params =>
+          params.status === 'pending' &&
+          typeof params.query === 'string' &&
+          params.query.includes('body:"billing"') &&
+          params.query.includes('createdAt:')
         )
         .reply(200, mockPendingConversations);
 
       nock(baseURL)
         .get('/conversations')
-        .query(params => 
-          params.status === 'closed' && 
-          params.query === '(body:"billing" OR subject:"billing")'
+        .query(params =>
+          params.status === 'closed' &&
+          typeof params.query === 'string' &&
+          params.query.includes('body:"billing"') &&
+          params.query.includes('createdAt:')
         )
         .reply(200, mockClosedConversations);
 

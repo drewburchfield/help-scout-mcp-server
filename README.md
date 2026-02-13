@@ -9,7 +9,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-v161)
+- [What's New](#whats-new-in-v162)
 - [Quick Start](#quick-start)
 - [API Credentials](#getting-your-api-credentials)
 - [Tools & Capabilities](#tools--capabilities)
@@ -17,37 +17,24 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
-## What's New in v1.6.1
+## What's New in v1.6.2
 
-- **Pagination Bug Fix**: Multi-status searches now report accurate total counts. Previously, searching without a status filter (active/pending/closed in parallel) reported `totalResults` capped at the page limit instead of the real total across all statuses. Now returns `totalAvailable` (sum of API totals) and `totalByStatus` breakdown. ([#10](https://github.com/drewburchfield/help-scout-mcp-server/issues/10))
-- **Client-Side Date Filtering**: New `createdBefore` parameter for all search tools with clear metadata distinguishing filtered counts from API totals
-- **Partial Failure Transparency**: Multi-status searches now surface structured error info when individual status queries fail, instead of silently returning incomplete results
-- **Stronger Error Type Guard**: `isApiError` now validates against the schema enum, preventing false matches on Node.js system errors
+- **Date Filter Fix**: `createdAfter` and `timeframeDays` now correctly filter by conversation creation date instead of last modification date. Previously, all search tools mapped `createdAfter` to Help Scout's `modifiedSince` API parameter, silently excluding conversations that were created within the timeframe but not recently modified. Now uses Help Scout query syntax `createdAt:[date TO *]` for accurate creation-date filtering.
+- **Multi-Status Search Consistency**: `advancedConversationSearch` and `structuredConversationFilter` now search all statuses (active, pending, closed) by default, matching the behavior established in v1.6.0 for `searchConversations`. Previously, omitting the status parameter silently returned only active conversations.
+- **Ticket Number Lookup Fix**: `structuredConversationFilter` with `conversationNumber` now finds conversations regardless of status. Previously, looking up a closed ticket by number returned empty results.
+
+### Previous Release (v1.6.1)
+
+- **Pagination Bug Fix**: Multi-status searches now report accurate total counts with `totalAvailable` and `totalByStatus` breakdown ([#10](https://github.com/drewburchfield/help-scout-mcp-server/issues/10))
+- **Client-Side Date Filtering**: New `createdBefore` parameter for all search tools
+- **Partial Failure Transparency**: Multi-status searches surface structured error info when individual status queries fail
 - **Dependency Security Fixes**: Upgraded `@modelcontextprotocol/sdk` to 1.26.0, fixed axios, hono, and qs vulnerabilities
 
 ### Previous Release (v1.6.0)
 
 - **Inbox Auto-Discovery**: Inboxes automatically discovered on server connect and included in server instructions
-- **Multi-Status Search Default**: `searchConversations` now searches all statuses (active, pending, closed) by default when no status specified
+- **Multi-Status Search Default**: `searchConversations` searches all statuses (active, pending, closed) by default when no status specified
 - **Simpler Workflow**: AI agents can use inbox IDs directly from server instructions without a preliminary lookup step
-- **Deprecated Tools**: `searchInboxes` and `listAllInboxes` remain functional but are deprecated (inboxes now in instructions)
-
-### Previous Release (v1.5.0)
-
-- MCP SDK with enhanced compatibility
-- `structuredConversationFilter` for ID-based refinement and ticket number lookup
-- Enhanced input validation and error handling
-- Standardized environment variable naming (`APP_ID`/`APP_SECRET`)
-
-### Migration from v1.5.0
-
-**For programmatic users:**
-- `HelpScoutMCPServer` now uses an async factory pattern: use `await HelpScoutMCPServer.create()` instead of `new HelpScoutMCPServer()`
-
-**Response format change:**
-- `searchConversations` response now includes `statusesSearched` array instead of `status` string when searching without a specific status filter
-
-**No action required for most users** - the MCP protocol interface remains unchanged.
 
 ## Prerequisites
 
