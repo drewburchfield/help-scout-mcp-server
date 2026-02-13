@@ -75,6 +75,26 @@ export class ToolHandler {
   }
 
   /**
+   * Append a createdAt date range to an existing Help Scout query string.
+   * Help Scout has no native createdAfter/createdBefore URL params, so we
+   * use query syntax: (createdAt:[start TO end]).
+   */
+  private appendCreatedAtFilter(
+    existingQuery: string | undefined,
+    createdAfter?: string,
+    createdBefore?: string
+  ): string | undefined {
+    if (!createdAfter && !createdBefore) return existingQuery;
+
+    const start = createdAfter || '*';
+    const end = createdBefore || '*';
+    const clause = `(createdAt:[${start} TO ${end}])`;
+
+    if (!existingQuery) return clause;
+    return `(${existingQuery}) AND ${clause}`;
+  }
+
+  /**
    * Set the current user query for context-aware validation
    */
   setUserContext(userQuery: string): void {
@@ -566,7 +586,14 @@ export class ToolHandler {
     }
 
     if (input.tag) baseParams.tag = input.tag;
-    if (input.createdAfter) baseParams.modifiedSince = input.createdAfter;
+
+    // Use query syntax for creation date filtering (modifiedSince has different semantics)
+    const queryWithDate = this.appendCreatedAtFilter(
+      baseParams.query as string | undefined,
+      input.createdAfter,
+      undefined // createdBefore is handled client-side below
+    );
+    if (queryWithDate) baseParams.query = queryWithDate;
 
     let conversations: Conversation[] = [];
     let searchedStatuses: string[];
@@ -968,8 +995,16 @@ export class ToolHandler {
       queryParams.mailbox = effectiveInboxId;
     }
 
-    if (input.status) queryParams.status = input.status;
-    if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
+    // Default to all statuses for consistency with searchConversations (v1.6.0+)
+    queryParams.status = input.status || 'all';
+
+    // Use query syntax for creation date filtering (modifiedSince has different semantics)
+    const queryWithDate = this.appendCreatedAtFilter(
+      queryParams.query as string | undefined,
+      input.createdAfter,
+      undefined // createdBefore is handled client-side below
+    );
+    if (queryWithDate) queryParams.query = queryWithDate;
 
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
 
@@ -1232,14 +1267,20 @@ export class ToolHandler {
     inboxId?: string;
     createdBefore?: string;
   }) {
+    // Use query syntax for creation date filtering (modifiedSince has different semantics)
+    const queryWithDate = this.appendCreatedAtFilter(
+      params.searchQuery,
+      params.createdAfter,
+      undefined // createdBefore is handled client-side after fetch
+    );
+
     const queryParams: Record<string, unknown> = {
       page: 1,
       size: params.limitPerStatus,
       sortField: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
       sortOrder: TOOL_CONSTANTS.DEFAULT_SORT_ORDER,
-      query: params.searchQuery,
+      query: queryWithDate || params.searchQuery,
       status: params.status,
-      modifiedSince: params.createdAfter,
     };
 
     if (params.inboxId) {
@@ -1345,10 +1386,18 @@ export class ToolHandler {
     // Apply combination filters
     const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
     if (effectiveInboxId) queryParams.mailbox = effectiveInboxId;
-    if (input.status && input.status !== 'all') queryParams.status = input.status;
+    // Send status=all explicitly (Help Scout defaults to active-only when omitted)
+    queryParams.status = (!input.status || input.status === 'all') ? 'all' : input.status;
     if (input.tag) queryParams.tag = input.tag;
-    if (input.createdAfter) queryParams.modifiedSince = input.createdAfter;
     if (input.modifiedSince) queryParams.modifiedSince = input.modifiedSince;
+
+    // Use query syntax for creation date filtering (separate from modifiedSince)
+    const queryWithDate = this.appendCreatedAtFilter(
+      queryParams.query as string | undefined,
+      input.createdAfter,
+      undefined // createdBefore is handled client-side below
+    );
+    if (queryWithDate) queryParams.query = queryWithDate;
 
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
     let conversations = response._embedded?.conversations || [];
