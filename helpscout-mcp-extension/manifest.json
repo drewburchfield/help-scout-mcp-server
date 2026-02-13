@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Connect Claude and other AI assistants to your Help Scout data with enterprise-grade security and advanced search capabilities.",
   "long_description": "Connect your AI assistant to Help Scout for intelligent customer support analysis.\n\n**Search & Analysis:**\n• Advanced conversation search with query syntax\n• Multi-status search across active, pending, and closed\n• Boolean queries with content and subject filtering\n• Conversation summaries and full thread retrieval\n• Direct ticket lookup by number\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional content redaction for privacy\n• Built-in caching and rate limiting\n• Automatic retry with exponential backoff",
   "author": {
