@@ -1127,7 +1127,10 @@ export class ToolHandler {
           throw error;
         }
 
-        // Critical API errors should fail the entire operation
+        // Critical API errors should fail the entire operation.
+        // Note: currently blocked by validateStatus < 500 (NAS-465) which
+        // treats 4xx as successful responses in axios, so they never reach
+        // this catch block. Will activate once validateStatus is fixed.
         if (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_INPUT') {
           logger.error('Critical API error in multi-status search - aborting', {
             status,
