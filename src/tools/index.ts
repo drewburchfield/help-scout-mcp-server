@@ -624,7 +624,13 @@ export class ToolHandler {
             : (reason instanceof Error ? reason.message : String(reason));
           const errorCode = isApiError(reason) ? reason.code : 'UNKNOWN';
 
-          // Critical errors should abort, not return partial results.
+          // Non-API errors (TypeError, ReferenceError, etc.) should not be
+          // silently swallowed - rethrow so programming bugs surface.
+          if (!isApiError(reason)) {
+            throw reason;
+          }
+
+          // Critical API errors should abort, not return partial results.
           // Note: currently blocked by validateStatus < 500 (NAS-465) which
           // prevents 4xx from reaching this path. Will activate once fixed.
           if (errorCode === 'UNAUTHORIZED' || errorCode === 'INVALID_INPUT') {
