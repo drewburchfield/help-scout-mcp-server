@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ApiError } from '../schema/types.js';
+import { ApiError, ErrorSchema } from '../schema/types.js';
 import { logger } from './logger.js';
 
 /**
@@ -192,17 +192,22 @@ export function createMcpResourceError(
   };
 }
 
+// Derived from ErrorSchema to maintain a single source of truth
+const VALID_API_ERROR_CODES = new Set(ErrorSchema.shape.code.options);
+
 /**
- * Type guard to check if an error is our structured ApiError
+ * Type guard to check if an error is our structured ApiError.
+ * Validates code against known enum values to avoid matching Node.js system errors.
  */
-function isApiError(error: unknown): error is ApiError {
+export function isApiError(error: unknown): error is ApiError {
   return (
     error !== null &&
     typeof error === 'object' &&
     'code' in error &&
     'message' in error &&
-    typeof (error as any).code === 'string' &&
-    typeof (error as any).message === 'string'
+    typeof (error as ApiError).code === 'string' &&
+    typeof (error as ApiError).message === 'string' &&
+    VALID_API_ERROR_CODES.has((error as ApiError).code)
   );
 }
 

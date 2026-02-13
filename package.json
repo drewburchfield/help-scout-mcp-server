@@ -1,6 +1,6 @@
 {
   "name": "help-scout-mcp-server",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "The first MCP server for Help Scout - search conversations, threads, and inboxes with AI agents",
   "main": "dist/index.js",
   "type": "module",
@@ -64,7 +64,7 @@
     "url": "https://github.com/drewburchfield/help-scout-mcp-server/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.25.2",
+    "@modelcontextprotocol/sdk": "1.26.0",
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
     "lru-cache": "^10.1.0",
