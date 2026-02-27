@@ -62,6 +62,9 @@ helpscout-mcp-extension/temp-extract/
 # Docker
 .dockerignore
 
+# Local docs (API reference, plans, specs - not for distribution)
+docs/
+
 # Development notes and scratch files
 CLAUDE.md
 *.draft.md
@@ -84,3 +87,6 @@ perf-reports/
 # Script state files (may contain sensitive data)
 scripts/.import-progress.json
 scripts/*.state.json
+
+# Sidecar projects
+meridian-sim/
