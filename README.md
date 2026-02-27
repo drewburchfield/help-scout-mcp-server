@@ -2,60 +2,51 @@
 
 [![npm version](https://badge.fury.io/js/help-scout-mcp-server.svg)](https://badge.fury.io/js/help-scout-mcp-server) [![Docker](https://img.shields.io/docker/v/drewburchfield/help-scout-mcp-server?logo=docker&label=docker)](https://hub.docker.com/r/drewburchfield/help-scout-mcp-server) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/drewburchfield/help-scout-mcp-server) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Help Scout MCP Server** - Connect Claude and other AI assistants to your Help Scout data with enterprise-grade security and advanced search capabilities.
+An [MCP server](https://modelcontextprotocol.io) that gives AI assistants direct access to your Help Scout inboxes, conversations, and threads. Search tickets, pull context, spot patterns, and get answers without leaving your editor or chat window.
 
-## Table of Contents
+Built by a Help Scout customer who wanted to give his support team superpowers. If you handle customer conversations in Help Scout and want AI to help you work faster, this is for you.
 
-- [What's New](#whats-new-in-v162)
-- [Quick Start](#quick-start)
-- [API Credentials](#getting-your-api-credentials)
-- [Tools & Capabilities](#tools--capabilities)
-- [Configuration](#configuration-options)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
+## What You Can Do
 
-## What's New in v1.6.2
-
-- **Date Filter Fix**: `createdAfter` and `timeframeDays` now correctly filter by conversation creation date instead of last modification date. Previously, all search tools mapped `createdAfter` to Help Scout's `modifiedSince` API parameter, silently excluding conversations that were created within the timeframe but not recently modified. Now uses Help Scout query syntax `createdAt:[date TO *]` for accurate creation-date filtering.
-- **Multi-Status Search Consistency**: `advancedConversationSearch` and `structuredConversationFilter` now search all statuses (active, pending, closed) by default, matching the behavior established in v1.6.0 for `searchConversations`. Previously, omitting the status parameter silently returned only active conversations.
-- **Ticket Number Lookup Fix**: `structuredConversationFilter` with `conversationNumber` now finds conversations regardless of status. Previously, looking up a closed ticket by number returned empty results.
-
-### Previous Release (v1.6.1)
-
-- **Pagination Bug Fix**: Multi-status searches now report accurate total counts with `totalAvailable` and `totalByStatus` breakdown ([#10](https://github.com/drewburchfield/help-scout-mcp-server/issues/10))
-- **Client-Side Date Filtering**: New `createdBefore` parameter for all search tools
-- **Partial Failure Transparency**: Multi-status searches surface structured error info when individual status queries fail
-- **Dependency Security Fixes**: Upgraded `@modelcontextprotocol/sdk` to 1.26.0, fixed axios, hono, and qs vulnerabilities
-
-### Previous Release (v1.6.0)
-
-- **Inbox Auto-Discovery**: Inboxes automatically discovered on server connect and included in server instructions
-- **Multi-Status Search Default**: `searchConversations` searches all statuses (active, pending, closed) by default when no status specified
-- **Simpler Workflow**: AI agents can use inbox IDs directly from server instructions without a preliminary lookup step
-
-## Prerequisites
-
-- **Node.js 18+** (for command line usage)
-- **Help Scout Account** with API access
-- **OAuth2 App** from Help Scout (App ID and App Secret)
-- **Claude Desktop** (for extension installation) or any MCP-compatible client
-
-> **Note**: The desktop extension bundles Node.js, so no local installation needed for Claude Desktop users.
+- **Search conversations** by keyword, date range, status, tag, email domain, or ticket number
+- **Pull full thread history** into context before drafting a reply
+- **Get conversation summaries** with the original customer message and latest staff response
+- **Monitor inbox activity** across multiple inboxes with a single query
+- **Stay compliant** with optional PII redaction and scoped inbox access
 
 ## Quick Start
 
-### Option 1: Claude Desktop (One-Click Install)
+### Claude Cowork (Recommended)
 
-Easiest setup using [Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions) - no configuration needed:
+Install the **helpscout-navigator** plugin. It auto-starts the MCP server and includes **navigation skills** that help Claude pick the right search tool for your query.
+
+1. Open Cowork and go to **Customize** > **Browse plugins** > **Personal**
+2. Click **+** > **Add marketplace from GitHub** and enter `drewburchfield/help-scout-mcp-server`
+3. Install **helpscout-navigator** from the marketplace
+4. Add your Help Scout credentials ([step-by-step guide](guides/cowork-setup.md))
+
+> The plugin bundles guided skills, session hooks, and tool selection guidance on top of the MCP server. Other install methods give you the tools; this one also teaches the AI how to use them well.
+
+### Claude Desktop
+
+**One-click install** using [Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions):
 
 1. Download the latest [`.mcpb` file from releases](https://github.com/drewburchfield/help-scout-mcp-server/releases)
-2. Double-click to install (or drag into Claude Desktop window)
+2. Double-click to install (or drag into Claude Desktop)
 3. Enter your Help Scout App ID and App Secret when prompted
-4. Start using immediately
 
-### Option 2: JSON Config (Claude Desktop, Cursor, etc.)
+### Claude Code
 
-Add to your MCP client's config file (e.g., `claude_desktop_config.json`):
+The same **helpscout-navigator** plugin works in Claude Code with the same navigation skills.
+
+1. Run `/plugin` in Claude Code to open the marketplace
+2. Search for **helpscout-navigator** and install it
+3. Set `HELPSCOUT_APP_ID` and `HELPSCOUT_APP_SECRET` as environment variables
+4. Restart Claude Code
+
+### For Cursor, VS Code, and Other MCP Clients
+
+Add to your MCP client's config file (e.g., `claude_desktop_config.json`, `.cursor/mcp.json`):
 
 ```json
 {
@@ -72,7 +63,7 @@ Add to your MCP client's config file (e.g., `claude_desktop_config.json`):
 }
 ```
 
-### Option 3: Docker
+### Docker
 
 ```bash
 docker run -e HELPSCOUT_APP_ID="your-app-id" \
@@ -80,330 +71,114 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
   drewburchfield/help-scout-mcp-server
 ```
 
-### Option 4: Command Line (Claude Code, Codex, etc.)
-
-```bash
-HELPSCOUT_APP_ID="your-app-id" \
-HELPSCOUT_APP_SECRET="your-app-secret" \
-npx help-scout-mcp-server
-```
-
 ## Getting Your API Credentials
 
-### OAuth2 Client Credentials (Only Supported Method)
+1. Go to **Help Scout** > **My Apps** > **Create Private App**
+2. Select at minimum: **Read** access to Mailboxes and Conversations
+3. Copy your **App ID** and **App Secret**
 
-1. Go to **Help Scout** → **My Apps** → **Create Private App**
-2. Fill in app details and select required scopes:
-   - At minimum: **Read** access to Mailboxes and Conversations
-3. Copy your credentials from the Help Scout UI
-4. Use in configuration as shown below
+> Help Scout uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
 
-> **Note**: Help Scout API uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
+| Help Scout UI | Environment Variable |
+|---------------|---------------------|
+| **App ID** | `HELPSCOUT_APP_ID` |
+| **App Secret** | `HELPSCOUT_APP_SECRET` |
 
-### Credential Terminology
+Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `HELPSCOUT_API_KEY` are also supported.
 
-Environment variables match Help Scout's UI exactly:
+## Tools
 
-| Help Scout UI | Environment Variable | Description |
-|---------------|---------------------|-------------|
-| **App ID** | `HELPSCOUT_APP_ID` | Your OAuth2 client identifier |
-| **App Secret** | `HELPSCOUT_APP_SECRET` | Your OAuth2 client secret |
+### Which tool should I use?
 
-**Alternative variable names** (also supported):
-- `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` (OAuth2 standard naming)
-- `HELPSCOUT_API_KEY` (legacy)
+| Task | Tool | Example |
+|------|------|---------|
+| List recent tickets | `searchConversations` | "Show me active tickets from this week" |
+| Find by keyword | `comprehensiveConversationSearch` | "Find conversations about billing errors" |
+| Look up a ticket number | `structuredConversationFilter` | "Show me ticket #42839" |
+| Complex filters | `advancedConversationSearch` | "All @acme.com conversations tagged urgent" |
+| Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
+| Full message history | `getThreads` | "Show me the complete thread" |
+| Current server time | `getServerTime` | Used for time-relative searches |
 
-## Features
+Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in their instructions automatically, so no lookup step is needed.
 
-- **Advanced Search**: Multi-status conversation search, content filtering, boolean queries
-- **Smart Analysis**: Conversation summaries, thread retrieval, inbox monitoring
-- **Enterprise Security**: PII redaction, secure token handling, comprehensive audit logs
-- **High Performance**: Built-in caching, rate limiting, automatic retry logic
-- **Easy Integration**: Works with Claude Desktop, Cursor, Continue.dev, and more
-
-## Tools & Capabilities
-
-### Quick Guide: Which tool should I use?
-
-- **Listing tickets:** `searchConversations` - No keywords needed, great for "show recent/closed/active tickets"
-- **Finding by keyword:** `comprehensiveConversationSearch` - Searches content for specific words
-- **Lookup ticket #:** `structuredConversationFilter` - Direct ticket number lookup
-- **Complex filters:** `advancedConversationSearch` - Email domains, tag combinations
-
-### Core Search Tools
-
-| Tool | Description | Best For |
-|------|-------------|----------|
-| `searchConversations` | Time/status filtering - List conversations by date, status, inbox | "Recent tickets", "closed last week", "active conversations" |
-| `comprehensiveConversationSearch` | Keyword search - Find conversations containing specific words | "Find billing issues", "tickets about bug XYZ" |
-| `structuredConversationFilter` | ID/number lookup - Filter by discovered IDs or ticket number | "Show ticket #42839", "Rep John's queue" (after finding John's ID) |
-| `advancedConversationSearch` | Complex boolean - Email domains, tag combos, separated content/subject | "All @acme.com conversations", "urgent AND billing tags" |
-| `searchInboxes` | ⚠️ *Deprecated* - Find inboxes by name | Use server instructions instead |
-| `listAllInboxes` | ⚠️ *Deprecated* - List all inboxes with IDs | Use server instructions instead |
-
-### Analysis & Retrieval Tools
-
-| Tool | Description | Use Case |
-|------|-------------|----------|
-| `getConversationSummary` | Customer message + latest staff reply summary | Quick conversation overview |
-| `getThreads` | Complete conversation message history | Full context analysis |
-| `getServerTime` | Current server timestamp | Time-relative searches |
-
-### Inbox Auto-Discovery (v1.6.0+)
-
-When the server connects, it automatically discovers all available inboxes and includes them in the server instructions. AI agents can reference inbox IDs directly without calling lookup tools first.
-
-Example server instructions snippet:
-```
-## Available Inboxes (3 total)
-  - "Support Inbox" (ID: 12345)
-  - "Sales Inquiries" (ID: 67890)
-  - "Billing Questions" (ID: 24680)
-```
-
-### Resources (Dynamic Discovery)
-
-- `helpscout://inboxes` - List all accessible inboxes
-- `helpscout://conversations` - Search conversations with filters
-- `helpscout://threads` - Get thread messages for a conversation
-- `helpscout://clock` - Current server timestamp
-
-> **Note**: Resources are discovered dynamically at runtime through MCP protocol, not declared in the extension manifest.
-
-## Search Examples
-
-> **Key Distinction**: Use `searchConversations` (without query) for **listing** conversations, use `comprehensiveConversationSearch` (with search terms) for **finding** specific content.
-
-> **v1.6.0+**: When no status is specified, searches automatically include all statuses (active, pending, closed).
-
-### Listing Recent Conversations
-```javascript
-// Best for "show me recent tickets" - searches ALL statuses by default
-searchConversations({
-  limit: 25,
-  sort: "createdAt",
-  order: "desc"
-})
-
-// To filter to specific status, specify it explicitly
-searchConversations({
-  status: "active",
-  limit: 25
-})
-```
-
-### Content-Based Search
-```javascript
-// Best for "find tickets about X" - requires search terms
-comprehensiveConversationSearch({
-  searchTerms: ["urgent", "billing"],
-  timeframeDays: 60,
-  inboxId: "256809"
-})
-```
-
-### Content-Specific Searches
-```javascript
-// Search in message bodies and subjects
-comprehensiveConversationSearch({
-  searchTerms: ["refund", "cancellation"],
-  searchIn: ["both"],
-  timeframeDays: 30
-})
-
-// Customer organization search
-advancedConversationSearch({
-  emailDomain: "company.com",
-  contentTerms: ["integration", "API"],
-  status: "active"
-})
-```
-
-### Help Scout Query Syntax
-```javascript
-// Advanced query syntax support
-searchConversations({
-  query: "(body:\"urgent\" OR subject:\"emergency\") AND tag:\"escalated\"",
-  status: "active"
-})
-```
-
-## Configuration Options
+## Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HELPSCOUT_APP_ID` | App ID from Help Scout My Apps | Required |
 | `HELPSCOUT_APP_SECRET` | App Secret from Help Scout My Apps | Required |
-| `HELPSCOUT_DEFAULT_INBOX_ID` | Default inbox ID for scoped searches (improves LLM context) | None (searches all inboxes) |
+| `HELPSCOUT_DEFAULT_INBOX_ID` | Scope searches to a specific inbox | None (all inboxes) |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
 | `REDACT_MESSAGE_CONTENT` | Hide message bodies in responses | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 
-*Legacy variables `HELPSCOUT_CLIENT_ID`, `HELPSCOUT_CLIENT_SECRET`, and `ALLOW_PII` still supported for backwards compatibility.*
-
-
 ## Compatibility
 
-Works with any [Model Context Protocol (MCP)](https://modelcontextprotocol.io) compatible client:
+Works with any [MCP-compatible](https://modelcontextprotocol.io) client:
 
-- **AI Assistants**: Claude Desktop, Goose, and other MCP-enabled assistants
-- **Code Editors**: Cursor, VS Code (via extensions), Windsurf, and other editors with MCP support
-- **Command Line**: Claude Code, Codex, Gemini CLI, OpenCode, and other CLI-based MCP clients
-- **Custom Integrations**: Any application implementing the MCP standard
+| Category | Clients |
+|----------|---------|
+| **AI Assistants** | Claude Desktop, Goose, and other MCP-enabled assistants |
+| **Code Editors** | Cursor, VS Code, Windsurf, Continue.dev |
+| **Command Line** | Claude Code, Codex, Gemini CLI, OpenCode |
+| **Custom** | Any application implementing the MCP standard |
 
-**Quickest Setup**: [Claude Desktop](https://claude.ai/desktop) with one-click extension installation - no configuration needed.
+## Security and Privacy
 
-*Since this server follows the MCP standard, it automatically works with any current or future MCP-compatible client.*
+Built with compliance-minded teams in mind:
 
-## Security & Privacy
-
-- **Content Redaction**: Optional message body hiding (set `REDACT_MESSAGE_CONTENT=true`)
-- **Secure Authentication**: OAuth2 Client Credentials with automatic token refresh
-- **Audit Logging**: Comprehensive request tracking and error logging
-- **Rate Limiting**: Built-in retry logic with exponential backoff
-- **Smart Inbox Scoping**: Optional default inbox configuration for improved LLM context
-- **Enterprise Ready**: SOC2 compliant deployment options
-
-## Development
-
-```bash
-# Quick start
-git clone https://github.com/drewburchfield/help-scout-mcp-server.git
-cd help-scout-mcp-server
-npm install && npm run build
-
-# Create .env file with your credentials (from Help Scout My Apps)
-echo "HELPSCOUT_APP_ID=your-app-id" > .env
-echo "HELPSCOUT_APP_SECRET=your-app-secret" >> .env
-
-# Start the server
-npm start
-```
+- **Optional PII redaction.** Message bodies are included by default. Set `REDACT_MESSAGE_CONTENT=true` to hide them for stricter compliance requirements.
+- **Secure authentication.** OAuth2 Client Credentials with automatic token refresh.
+- **Rate limit handling.** Automatic retry with exponential backoff on 429 responses.
+- **Scoped access.** Optional default inbox configuration limits what the AI can search.
 
 ## Troubleshooting
 
-### Common Issues
+**Authentication failed?** Verify your credentials work with Help Scout directly:
 
-**Authentication Failed**
 ```bash
-# Verify your credentials
-echo $HELPSCOUT_APP_ID
-echo $HELPSCOUT_APP_SECRET
-
-# Test with curl
 curl -X POST https://api.helpscout.net/v2/oauth2/token \
   -d "grant_type=client_credentials&client_id=$HELPSCOUT_APP_ID&client_secret=$HELPSCOUT_APP_SECRET"
 ```
 
-**Connection Timeouts**
-- Check your network connection to `api.helpscout.net`
-- Verify no firewall blocking HTTPS traffic
-- Consider increasing `HTTP_SOCKET_TIMEOUT` environment variable
+**Empty search results?** Common causes:
+- Using the wrong search tool (use `searchConversations` for listing, `comprehensiveConversationSearch` for keyword search)
+- Inbox ID mismatch. Check the IDs from server instructions, not guessed values.
+- Search terms too narrow. Try broader terms or a longer time range.
 
-**Rate Limiting**
-- The server automatically handles rate limits with exponential backoff
-- Reduce concurrent requests if you see frequent 429 errors
-- Monitor logs for retry patterns
-
-**Empty Search Results**
-- **Wrong tool choice**: Use `searchConversations` (no query) for listing, `comprehensiveConversationSearch` for content search
-- **Empty search terms**: Don't use empty strings `[""]` with comprehensiveConversationSearch
-- **Inbox ID issues**: Use inbox IDs from server instructions (auto-discovered on connect), not guessed values
-- Verify inbox permissions with your API credentials
-- Check conversation exists and you have access
-- Try broader search terms or different time ranges
-
-> **v1.6.0+**: Searches now include all statuses by default. If you're still getting empty results, verify the inbox ID matches one from the server instructions.
-
-### Debug Mode
-
-Enable debug logging to troubleshoot issues:
+**Need more detail?** Enable debug logging:
 
 ```bash
 LOG_LEVEL=debug npx help-scout-mcp-server
 ```
 
-### Getting Help
-
-If you're still having issues:
-1. Check [existing issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
-2. Enable debug logging and share relevant logs
-3. Include your configuration (without credentials!)
-
-## Contributing
-
-Contributions welcome! Here's how to get started:
-
-### Development Setup
+## Development
 
 ```bash
 git clone https://github.com/drewburchfield/help-scout-mcp-server.git
 cd help-scout-mcp-server
-npm install
+npm install && npm run build
+npm start
 ```
-
-### Development Workflow
 
 ```bash
-# Run tests
-npm test
-
-# Type checking
-npm run type-check
-
-# Linting
-npm run lint
-
-# Build for development
-npm run build
-
-# Start development server
-npm run dev
+npm test           # Run tests
+npm run type-check # TypeScript validation
+npm run lint       # Linting
+npm run dev        # Development server with auto-reload
 ```
 
-### Before Submitting
-
-- All tests pass (`npm test`)
-- Type checking passes (`npm run type-check`)
-- Linting passes (`npm run lint`)
-- Add tests for new features
-- Update documentation if needed
-
-### Bug Reports
-
-When reporting bugs, please include:
-- Help Scout MCP Server version
-- Node.js version
-- App ID (not the secret!)
-- Error messages and logs
-- Steps to reproduce
-
-### Feature Requests
-
-We'd love to hear your ideas! Please open an issue describing:
-- The problem you're trying to solve
-- Your proposed solution
-- Any alternative approaches you've considered
+Contributions welcome. Please ensure tests, type checking, and linting pass before submitting a PR.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/drewburchfield/help-scout-mcp-server/discussions)
-- **NPM Package**: [help-scout-mcp-server](https://www.npmjs.com/package/help-scout-mcp-server)
-
----
-
-## About This Project
-
-Built with care by a Help Scout customer who wanted to give his support team superpowers. If you're using Help Scout and want your AI assistants to help you find conversations, spot patterns, and get context faster, this is for you.
-
----
+- [GitHub Issues](https://github.com/drewburchfield/help-scout-mcp-server/issues)
+- [GitHub Discussions](https://github.com/drewburchfield/help-scout-mcp-server/discussions)
+- [NPM Package](https://www.npmjs.com/package/help-scout-mcp-server)
+- [Changelog](https://github.com/drewburchfield/help-scout-mcp-server/releases)
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
----
-
-**Need help?** [Open an issue](https://github.com/drewburchfield/help-scout-mcp-server/issues) or check our [documentation](https://github.com/drewburchfield/help-scout-mcp-server/wiki).
+MIT License - see [LICENSE](LICENSE) for details.
