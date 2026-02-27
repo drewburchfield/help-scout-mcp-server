@@ -15,7 +15,7 @@ const path = require('path');
 
 // Load environment variables from .env file
 function loadEnvFile() {
-  const envPath = path.join(__dirname, '.env');
+  const envPath = path.join(__dirname, '..', '.env');
   if (!fs.existsSync(envPath)) {
     console.error('❌ .env file not found. Please create one from .env.example');
     process.exit(1);
@@ -37,7 +37,7 @@ function loadEnvFile() {
   return envVars;
 }
 
-const SERVER_PATH = path.join(__dirname, 'dist/index.js');
+const SERVER_PATH = path.join(__dirname, '..', 'dist/index.js');
 
 class ForensicTester {
   constructor() {

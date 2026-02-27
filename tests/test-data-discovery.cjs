@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 
 function loadEnvFile() {
-  const envPath = path.join(__dirname, '.env');
+  const envPath = path.join(__dirname, '..', '.env');
   if (!fs.existsSync(envPath)) {
     console.error('❌ .env file not found');
     process.exit(1);
@@ -33,7 +33,7 @@ function loadEnvFile() {
   return envVars;
 }
 
-const SERVER_PATH = path.join(__dirname, 'dist/index.js');
+const SERVER_PATH = path.join(__dirname, '..', 'dist/index.js');
 
 class DataDiscovery {
   constructor() {

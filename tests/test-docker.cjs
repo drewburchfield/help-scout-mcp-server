@@ -12,7 +12,7 @@ const path = require('path');
 
 // Load environment variables from .env file
 function loadEnvFile() {
-  const envPath = path.join(__dirname, '.env');
+  const envPath = path.join(__dirname, '..', '.env');
   if (!fs.existsSync(envPath)) {
     console.error('❌ .env file not found. Please create one from .env.example');
     console.error('   Copy .env.example to .env and add your Help Scout credentials');
