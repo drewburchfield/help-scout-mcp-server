@@ -12,7 +12,7 @@
       "name": "helpscout-navigator",
       "source": {"source": "url", "url": "https://github.com/drewburchfield/helpscout-navigator.git"},
       "description": "HelpScout support ticket search with guidance for correct tool usage. Bundles HelpScout MCP server - auto-starts when plugin is enabled.",
-      "version": "1.0.9",
+      "version": "1.0.10",
       "author": {"name": "Drew Burchfield"},
       "category": "productivity",
       "homepage": "https://github.com/drewburchfield/helpscout-navigator"
