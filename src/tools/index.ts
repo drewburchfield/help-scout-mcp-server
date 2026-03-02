@@ -100,7 +100,7 @@ export class ToolHandler {
     if (!createdAfter && !createdBefore) return existingQuery;
 
     // Validate date format to prevent query injection and match Help Scout expectations
-    const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/;
+    const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T[\d:.]+([+-]\d{2}:\d{2}|Z)?)?$/;
     if (createdAfter && !isoDatePattern.test(createdAfter)) {
       throw new Error(`Invalid createdAfter date format: ${createdAfter}. Expected ISO 8601 (e.g., 2024-01-15T00:00:00Z)`);
     }
