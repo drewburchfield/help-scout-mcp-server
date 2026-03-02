@@ -1563,9 +1563,15 @@ export class ToolHandler {
   private redactCustomer(customer: Customer): Record<string, unknown> {
     if (config.security.allowPii) return customer as unknown as Record<string, unknown>;
 
-    const { background, _embedded, ...rest } = customer;
+    const { background, firstName, lastName, jobTitle, location, photoUrl, age, _embedded, ...rest } = customer;
     const redacted: Record<string, unknown> = {
       ...rest,
+      firstName: firstName ? '[redacted]' : firstName,
+      lastName: lastName ? '[redacted]' : lastName,
+      jobTitle: jobTitle ? '[redacted]' : jobTitle,
+      location: location ? '[redacted]' : location,
+      photoUrl: photoUrl ? '[redacted]' : photoUrl,
+      age: age ? '[redacted]' : age,
       background: background ? '[redacted]' : background,
     };
 
@@ -1579,6 +1585,13 @@ export class ToolHandler {
             value: '[redacted]',
           }));
         }
+      }
+      if (embeddedCopy.properties) {
+        embeddedCopy.properties = embeddedCopy.properties.map(prop => ({
+          ...prop,
+          value: prop.value ? '[redacted]' : prop.value,
+          text: prop.text ? '[redacted]' : prop.text,
+        }));
       }
       redacted._embedded = embeddedCopy;
     }
@@ -1631,7 +1644,7 @@ export class ToolHandler {
         city: '[redacted]',
         state: '[redacted]',
         postalCode: '[redacted]',
-        lines: address.lines ? '[redacted]' : undefined,
+        lines: address.lines ? ['[redacted]'] : undefined,
         country: address.country, // Country is not PII
       };
     }
@@ -1721,6 +1734,20 @@ export class ToolHandler {
 
   // ── Organization Tools (NAS-684, NAS-712) ──
 
+  private redactOrganization(org: Organization): Record<string, unknown> {
+    if (config.security.allowPii) return org as unknown as Record<string, unknown>;
+
+    return {
+      ...org,
+      website: org.website ? '[redacted]' : org.website,
+      domains: org.domains ? ['[redacted]'] : org.domains,
+      phones: org.phones ? ['[redacted]'] : org.phones,
+      location: org.location ? '[redacted]' : org.location,
+      note: org.note ? '[redacted]' : org.note,
+      description: org.description ? '[redacted]' : org.description,
+    };
+  }
+
   private async getOrganization(args: unknown): Promise<CallToolResult> {
     const input = GetOrganizationInputSchema.parse(args);
 
@@ -1733,12 +1760,7 @@ export class ToolHandler {
       params
     );
 
-    // Redact freeform text fields that may contain PII
-    const orgResult = config.security.allowPii ? org : {
-      ...org,
-      note: org.note ? '[redacted]' : org.note,
-      description: org.description ? '[redacted]' : org.description,
-    };
+    const orgResult = this.redactOrganization(org);
 
     return {
       content: [{
@@ -1766,7 +1788,7 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: organizations,
+          results: organizations.map(org => this.redactOrganization(org)),
           returnedCount: organizations.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
@@ -1825,8 +1847,10 @@ export class ToolHandler {
             subject: c.subject,
             status: c.status,
             customer: config.security.allowPii ? c.customer : {
-              ...c.customer,
+              id: c.customer?.id,
               email: c.customer?.email ? '[redacted]' : c.customer?.email,
+              firstName: c.customer?.firstName ? '[redacted]' : c.customer?.firstName,
+              lastName: c.customer?.lastName ? '[redacted]' : c.customer?.lastName,
             },
             assignee: c.assignee,
             createdAt: c.createdAt,
