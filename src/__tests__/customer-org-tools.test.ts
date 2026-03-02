@@ -211,7 +211,7 @@ describe('Customer & Organization Tools', () => {
       expect(data.results).toHaveLength(1);
       expect(data.results[0].firstName).toBe('Jane');
       expect(data.returnedCount).toBe(1);
-      expect(data.nextCursor).toContain('cursor=abc');
+      expect(data.nextCursor).toBe('abc');
     });
 
     it('should redact email and customer data when allowPii is false', async () => {

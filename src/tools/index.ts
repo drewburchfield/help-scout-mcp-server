@@ -626,6 +626,7 @@ export class ToolHandler {
       this.callHistory.push(request.params.name);
       
       // Enhance result with API constraint guidance (best-effort: never turn a success into a failure)
+      let guidanceProvided = false;
       try {
         const guidance = HelpScoutAPIConstraints.generateToolGuidance(
           request.params.name,
@@ -640,6 +641,7 @@ export class ToolHandler {
             type: 'text',
             text: JSON.stringify(originalContent, null, 2)
           };
+          guidanceProvided = true;
         }
       } catch (guidanceError) {
         logger.warn('Failed to inject API guidance into tool response', {
@@ -654,7 +656,7 @@ export class ToolHandler {
         toolName: request.params.name,
         duration,
         validationPassed: true,
-        guidanceProvided: true
+        guidanceProvided
       });
 
       return result;
@@ -1745,6 +1747,18 @@ export class ToolHandler {
 
     const customers = v3Response._embedded?.customers || [];
 
+    // Extract cursor token from v3 next link (full URL -> just the cursor param value)
+    let nextCursor: string | undefined;
+    const nextHref = v3Response._links?.next?.href;
+    if (nextHref) {
+      try {
+        const url = new URL(nextHref);
+        nextCursor = url.searchParams.get('cursor') || nextHref;
+      } catch {
+        nextCursor = nextHref;
+      }
+    }
+
     return {
       content: [{
         type: 'text',
@@ -1752,8 +1766,8 @@ export class ToolHandler {
           results: customers.map(c => this.redactCustomer(c)),
           returnedCount: customers.length,
           searchedEmail: config.security.allowPii ? input.email : '[redacted]',
-          nextCursor: v3Response._links?.next?.href,
-          note: 'v3 API uses cursor-based pagination. Follow nextCursor if present for more results.',
+          nextCursor,
+          note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
           usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
         }, null, 2),
       }],
@@ -1882,7 +1896,12 @@ export class ToolHandler {
               firstName: c.customer?.firstName ? '[redacted]' : c.customer?.firstName,
               lastName: c.customer?.lastName ? '[redacted]' : c.customer?.lastName,
             },
-            assignee: c.assignee,
+            assignee: config.security.allowPii ? c.assignee : (c.assignee ? {
+              id: c.assignee.id,
+              firstName: '[redacted]',
+              lastName: '[redacted]',
+              email: '[redacted]',
+            } : null),
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
             closedAt: c.closedAt,
