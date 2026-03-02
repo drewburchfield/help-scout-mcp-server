@@ -1,7 +1,8 @@
 {
   "name": "help-scout-mcp-server",
   "version": "1.6.2",
-  "description": "The first MCP server for Help Scout - search conversations, threads, and inboxes with AI agents",
+  "mcpName": "io.github.drewburchfield/help-scout-mcp",
+  "description": "Search Help Scout conversations, threads, and inboxes with AI assistants",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -47,6 +48,9 @@
     "helpscout",
     "help scout",
     "customer-support",
+    "claude-cowork",
+    "claude-code-plugin",
+    "claude-desktop",
     "typescript",
     "nodejs"
   ],
@@ -90,6 +94,7 @@
   },
   "overrides": {
     "cross-spawn": "^7.0.6",
-    "brace-expansion": "^2.0.2"
+    "brace-expansion": "^2.0.2",
+    "minimatch": "^9.0.7"
   }
 }
