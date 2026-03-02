@@ -222,9 +222,10 @@ export class HelpScoutAPIConstraints {
     }
     
     if (toolName === 'searchConversations' || toolName === 'comprehensiveConversationSearch') {
-      const conversations = result?.results || result?.resultsByStatus || [];
-      const totalFound = Array.isArray(conversations) ? conversations.length : 
-        (result?.totalConversationsFound || 0);
+      // comprehensiveConversationSearch uses resultsByStatus (array of status buckets),
+      // so use totalConversationsFound directly instead of counting buckets
+      const totalFound = result?.totalConversationsFound ??
+        (Array.isArray(result?.results) ? result.results.length : 0);
       
       if (totalFound === 0) {
         guidance.push('❌ No conversations found. Try:');

@@ -95,7 +95,7 @@ export const SearchConversationsInputSchema = z.object({
   createdBefore: z.string().optional(),
   limit: z.number().min(1).max(100).default(50),
   cursor: z.string().optional(),
-  sort: z.enum(['createdAt', 'updatedAt', 'number']).default('createdAt'),
+  sort: z.enum(['createdAt', 'modifiedAt', 'number']).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
   fields: z.array(z.string()).optional(),
 });

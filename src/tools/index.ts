@@ -195,7 +195,7 @@ export class ToolHandler {
             },
             sort: {
               type: 'string',
-              enum: ['createdAt', 'updatedAt', 'number'],
+              enum: ['createdAt', 'modifiedAt', 'number'],
               default: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
               description: 'Sort field',
             },
@@ -1681,14 +1681,27 @@ export class ToolHandler {
     const response = await helpScoutClient.get<PaginatedResponse<Customer>>('/customers', params);
     const customers = response._embedded?.customers || [];
 
+    // Slim view: strip _links and _embedded to keep response concise for browsing.
+    // Use getCustomer for the full profile with all sub-resources.
+    const slimResults = customers.map(c => {
+      const redacted = this.redactCustomer(c);
+      const { _links, _embedded, ...slim } = redacted;
+      // Preserve just the primary email for identification
+      const emails = (_embedded as Record<string, unknown[]> | undefined)?.emails;
+      if (Array.isArray(emails) && emails.length > 0) {
+        slim.primaryEmail = (emails[0] as Record<string, unknown>).value;
+      }
+      return slim;
+    });
+
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: customers.map(c => this.redactCustomer(c)),
+          results: slimResults,
           returnedCount: customers.length,
           pagination: response.page,
-          usage: 'Use customer.id with getCustomer for full profile, or with structuredConversationFilter(customerIds) for their conversations.',
+          usage: 'Use customer.id with getCustomer for full profile (includes emails, phones, address, etc.), or with structuredConversationFilter(customerIds) for their conversations.',
         }, null, 2),
       }],
     };
