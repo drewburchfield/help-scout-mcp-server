@@ -1599,9 +1599,9 @@ export class ToolHandler {
   private redactAddress(address: CustomerAddress): Record<string, unknown> {
     if (config.security.allowPii) return address as unknown as Record<string, unknown>;
     return {
-      city: '[redacted]',
-      state: '[redacted]',
-      postalCode: '[redacted]',
+      city: address.city != null ? '[redacted]' : address.city,
+      state: address.state != null ? '[redacted]' : address.state,
+      postalCode: address.postalCode != null ? '[redacted]' : address.postalCode,
       lines: address.lines ? address.lines.map(() => '[redacted]') : undefined,
       country: address.country, // Country is not PII
     };
