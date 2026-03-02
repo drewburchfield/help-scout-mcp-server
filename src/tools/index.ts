@@ -47,6 +47,9 @@ import {
   Inbox,
   Conversation,
   Thread,
+  Customer,
+  CustomerAddress,
+  Organization,
   ServerTime,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
@@ -55,6 +58,13 @@ import {
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
   StructuredConversationFilterInputSchema,
+  GetCustomerInputSchema,
+  ListCustomersInputSchema,
+  SearchCustomersByEmailInputSchema,
+  GetOrganizationInputSchema,
+  ListOrganizationsInputSchema,
+  GetOrganizationMembersInputSchema,
+  GetOrganizationConversationsInputSchema,
 } from '../schema/types.js';
 
 export class ToolHandler {
@@ -408,6 +418,108 @@ export class ToolHandler {
           },
         },
       },
+      // Customer tools (NAS-680, NAS-727, NAS-728)
+      {
+        name: 'getCustomer',
+        description: 'Get a customer profile by ID. Returns full profile with embedded emails, phones, chat handles, social profiles, websites, and address.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: {
+              type: 'string',
+              description: 'Customer ID',
+            },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'listCustomers',
+        description: 'List or search customers by name, query syntax, or modification date. Page-based pagination (v2 API).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            firstName: { type: 'string', description: 'Filter by first name' },
+            lastName: { type: 'string', description: 'Filter by last name' },
+            query: { type: 'string', description: 'Advanced query syntax, e.g. (email:"john@example.com")' },
+            mailbox: { type: 'string', description: 'Filter by inbox ID' },
+            modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
+            sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt' },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            page: { type: 'number', minimum: 1, default: 1 },
+            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+          },
+        },
+      },
+      {
+        name: 'searchCustomersByEmail',
+        description: 'Search customers by email address using the v3 API. Supports cursor-based pagination and email filtering not available in v2.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', description: 'Email address to search for' },
+            firstName: { type: 'string', description: 'Filter by first name' },
+            lastName: { type: 'string', description: 'Filter by last name' },
+            query: { type: 'string', description: 'Advanced query syntax' },
+            modifiedSince: { type: 'string', description: 'ISO 8601 date' },
+            createdSince: { type: 'string', description: 'ISO 8601 date - only in v3' },
+          },
+          required: ['email'],
+        },
+      },
+      // Organization tools (NAS-684, NAS-712)
+      {
+        name: 'getOrganization',
+        description: 'Get an organization by ID with optional customer/conversation counts.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            organizationId: { type: 'string', description: 'Organization ID' },
+            includeCounts: { type: 'boolean', default: true, description: 'Include customerCount and conversationCount' },
+            includeProperties: { type: 'boolean', default: false, description: 'Include organization property values' },
+          },
+          required: ['organizationId'],
+        },
+      },
+      {
+        name: 'listOrganizations',
+        description: 'List all organizations with sorting options. Use for discovering organizations before drilling into members or conversations.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sortField: { type: 'string', enum: ['name', 'customerCount', 'conversationCount', 'lastInteractionAt'], default: 'lastInteractionAt' },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            page: { type: 'number', minimum: 1, default: 1 },
+            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+          },
+        },
+      },
+      {
+        name: 'getOrganizationMembers',
+        description: 'Get all customers belonging to an organization. Use after getOrganization to see who is in the org.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            organizationId: { type: 'string', description: 'Organization ID' },
+            page: { type: 'number', minimum: 1, default: 1 },
+            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+          },
+          required: ['organizationId'],
+        },
+      },
+      {
+        name: 'getOrganizationConversations',
+        description: 'Get all conversations associated with an organization. Traverses org-to-conversations without needing individual customer lookups.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            organizationId: { type: 'string', description: 'Organization ID' },
+            page: { type: 'number', minimum: 1, default: 1 },
+            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+          },
+          required: ['organizationId'],
+        },
+      },
     ];
   }
 
@@ -491,6 +603,27 @@ export class ToolHandler {
           break;
         case 'structuredConversationFilter':
           result = await this.structuredConversationFilter(request.params.arguments || {});
+          break;
+        case 'getCustomer':
+          result = await this.getCustomer(request.params.arguments || {});
+          break;
+        case 'listCustomers':
+          result = await this.listCustomers(request.params.arguments || {});
+          break;
+        case 'searchCustomersByEmail':
+          result = await this.searchCustomersByEmail(request.params.arguments || {});
+          break;
+        case 'getOrganization':
+          result = await this.getOrganization(request.params.arguments || {});
+          break;
+        case 'listOrganizations':
+          result = await this.listOrganizations(request.params.arguments || {});
+          break;
+        case 'getOrganizationMembers':
+          result = await this.getOrganizationMembers(request.params.arguments || {});
+          break;
+        case 'getOrganizationConversations':
+          result = await this.getOrganizationConversations(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1433,6 +1566,254 @@ export class ToolHandler {
           nextCursor: response._links?.next?.href,
           clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
           note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  // ── Customer Tools (NAS-680, NAS-727) ──
+
+  private redactPii(obj: Record<string, unknown>, fields: string[]): Record<string, unknown> {
+    if (config.security.allowPii) return obj;
+    const redacted: Record<string, unknown> = { ...obj };
+    for (const field of fields) {
+      if (field in redacted && redacted[field]) {
+        redacted[field] = '[redacted]';
+      }
+    }
+    return redacted;
+  }
+
+  private redactCustomer(customer: Record<string, unknown>): Record<string, unknown> {
+    const redacted = this.redactPii(customer, ['background']);
+    if (!config.security.allowPii && redacted._embedded) {
+      const embedded = { ...(redacted._embedded as Record<string, unknown>) };
+      // Redact email values, phone values, etc.
+      for (const key of ['emails', 'phones', 'chats', 'social_profiles']) {
+        if (Array.isArray(embedded[key])) {
+          embedded[key] = (embedded[key] as Array<Record<string, unknown>>).map(item => ({
+            ...item,
+            value: '[redacted]',
+          }));
+        }
+      }
+      redacted._embedded = embedded;
+    }
+    return redacted;
+  }
+
+  private async getCustomer(args: unknown): Promise<CallToolResult> {
+    const input = GetCustomerInputSchema.parse(args);
+
+    // Fetch customer profile and address in parallel
+    const [customerResponse, addressResponse] = await Promise.allSettled([
+      helpScoutClient.get<Customer>(`/customers/${input.customerId}`),
+      helpScoutClient.get<CustomerAddress>(`/customers/${input.customerId}/address`),
+    ]);
+
+    if (customerResponse.status === 'rejected') {
+      throw customerResponse.reason;
+    }
+
+    const customer = customerResponse.value;
+    const address = addressResponse.status === 'fulfilled' ? addressResponse.value : null;
+
+    const result: Record<string, unknown> = this.redactCustomer(customer as unknown as Record<string, unknown>);
+    if (address) {
+      result.address = config.security.allowPii ? address : {
+        city: '[redacted]',
+        state: '[redacted]',
+        country: address.country, // Country is not PII
+      };
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          customer: result,
+          usage: 'NEXT STEPS: Use organizationId to explore their org with getOrganization. Use customer.id with structuredConversationFilter(customerIds) to find their conversations.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listCustomers(args: unknown): Promise<CallToolResult> {
+    const input = ListCustomersInputSchema.parse(args);
+
+    const params: Record<string, unknown> = {
+      page: input.page,
+      size: input.limit,
+      sortField: input.sortField,
+      sortOrder: input.sortOrder,
+    };
+
+    if (input.firstName) params.firstName = input.firstName;
+    if (input.lastName) params.lastName = input.lastName;
+    if (input.query) params.query = input.query;
+    if (input.mailbox) params.mailbox = input.mailbox;
+    if (input.modifiedSince) params.modifiedSince = input.modifiedSince;
+
+    const response = await helpScoutClient.get<PaginatedResponse<Customer>>('/customers', params);
+    const customers = response._embedded?.customers || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: customers.map(c => this.redactCustomer(c as unknown as Record<string, unknown>)),
+          totalResults: customers.length,
+          pagination: response.page,
+          nextCursor: response._links?.next?.href,
+          usage: 'Use customer.id with getCustomer for full profile, or with structuredConversationFilter(customerIds) for their conversations.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  // NAS-728: v3 Customer search with email filter
+  private async searchCustomersByEmail(args: unknown): Promise<CallToolResult> {
+    const input = SearchCustomersByEmailInputSchema.parse(args);
+
+    const params: Record<string, unknown> = {
+      email: input.email,
+    };
+    if (input.firstName) params.firstName = input.firstName;
+    if (input.lastName) params.lastName = input.lastName;
+    if (input.query) params.query = input.query;
+    if (input.modifiedSince) params.modifiedSince = input.modifiedSince;
+    if (input.createdSince) params.createdSince = input.createdSince;
+
+    // v3 endpoint at /v3/customers - relative path from /v2/ baseURL
+    const v3Response = await helpScoutClient.get<{
+      _embedded: { customers: Customer[] };
+      _links?: { next?: { href: string } };
+    }>('../v3/customers', params);
+
+    const customers = v3Response._embedded?.customers || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: customers.map(c => this.redactCustomer(c as unknown as Record<string, unknown>)),
+          totalResults: customers.length,
+          searchedEmail: config.security.allowPii ? input.email : '[redacted]',
+          nextCursor: v3Response._links?.next?.href,
+          note: 'v3 API uses cursor-based pagination. Follow nextCursor if present for more results.',
+          usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  // ── Organization Tools (NAS-684, NAS-712) ──
+
+  private async getOrganization(args: unknown): Promise<CallToolResult> {
+    const input = GetOrganizationInputSchema.parse(args);
+
+    const params: Record<string, unknown> = {};
+    if (input.includeCounts) params.includeCounts = true;
+    if (input.includeProperties) params.includeProperties = true;
+
+    const org = await helpScoutClient.get<Organization>(
+      `/organizations/${input.organizationId}`,
+      params
+    );
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          organization: org,
+          usage: 'NEXT STEPS: Use getOrganizationMembers to see customers in this org. Use getOrganizationConversations to see all conversations.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listOrganizations(args: unknown): Promise<CallToolResult> {
+    const input = ListOrganizationsInputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<Organization>>('/organizations', {
+      page: input.page,
+      size: input.limit,
+      sort: `${input.sortField},${input.sortOrder}`,
+    });
+
+    const organizations = response._embedded?.organizations || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: organizations,
+          totalResults: organizations.length,
+          pagination: response.page,
+          nextCursor: response._links?.next?.href,
+          usage: 'Use organization.id with getOrganization for details, getOrganizationMembers for customers, or getOrganizationConversations for support history.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  // NAS-712: Customer-Org relational traversal
+  private async getOrganizationMembers(args: unknown): Promise<CallToolResult> {
+    const input = GetOrganizationMembersInputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<Customer>>(
+      `/organizations/${input.organizationId}/customers`,
+      { page: input.page, size: input.limit }
+    );
+
+    const customers = response._embedded?.customers || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          organizationId: input.organizationId,
+          members: customers.map(c => this.redactCustomer(c as unknown as Record<string, unknown>)),
+          totalResults: customers.length,
+          pagination: response.page,
+          nextCursor: response._links?.next?.href,
+          usage: 'Use customer.id with getCustomer for full profile or structuredConversationFilter(customerIds) for their conversations.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getOrganizationConversations(args: unknown): Promise<CallToolResult> {
+    const input = GetOrganizationConversationsInputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>(
+      `/organizations/${input.organizationId}/conversations`,
+      { page: input.page, size: input.limit }
+    );
+
+    const conversations = response._embedded?.conversations || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          organizationId: input.organizationId,
+          conversations: conversations.map(c => ({
+            id: c.id,
+            number: c.number,
+            subject: c.subject,
+            status: c.status,
+            customer: c.customer,
+            assignee: c.assignee,
+            createdAt: c.createdAt,
+            updatedAt: c.updatedAt,
+            closedAt: c.closedAt,
+            tags: c.tags,
+          })),
+          totalResults: conversations.length,
+          pagination: response.page,
+          nextCursor: response._links?.next?.href,
+          usage: 'Use conversation.id with getThreads to read full message history, or getConversationSummary for a quick overview.',
         }, null, 2),
       }],
     };

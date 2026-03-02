@@ -155,6 +155,116 @@ export const StructuredConversationFilterInputSchema = z.object({
   { message: 'Must use at least one unique field: assignedTo, folderId, customerIds, conversationNumber, or unique sorting. For content search, use comprehensiveConversationSearch.' }
 );
 
+// Customer API Types
+export const CustomerSchema = z.object({
+  id: z.number(),
+  firstName: z.string().nullable().optional(),
+  lastName: z.string().nullable().optional(),
+  gender: z.string().optional(),
+  jobTitle: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  organizationId: z.number().nullable().optional(),
+  photoType: z.string().optional(),
+  photoUrl: z.string().nullable().optional(),
+  age: z.string().nullable().optional(),
+  background: z.string().nullable().optional(),
+  conversationCount: z.number().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  draft: z.boolean().optional(),
+  _embedded: z.object({
+    emails: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
+    phones: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
+    chats: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
+    social_profiles: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
+    websites: z.array(z.object({ id: z.number(), value: z.string() })).optional(),
+    properties: z.array(z.object({
+      type: z.string().optional(),
+      slug: z.string().optional(),
+      name: z.string().optional(),
+      value: z.unknown().optional(),
+      text: z.string().nullable().optional(),
+      source: z.string().nullable().optional(),
+    })).optional(),
+  }).optional(),
+});
+
+export const CustomerAddressSchema = z.object({
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
+  lines: z.array(z.string()).optional(),
+});
+
+export const OrganizationSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  website: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  logoUrl: z.string().nullable().optional(),
+  note: z.string().nullable().optional(),
+  domains: z.array(z.string()).optional(),
+  phones: z.array(z.string()).optional(),
+  brandColor: z.string().nullable().optional(),
+  customerCount: z.number().optional(),
+  conversationCount: z.number().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+// Customer & Organization Input Schemas
+export const GetCustomerInputSchema = z.object({
+  customerId: z.string().describe('Customer ID'),
+});
+
+export const ListCustomersInputSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  query: z.string().optional().describe('Advanced query syntax, e.g. (email:"john@example.com")'),
+  mailbox: z.string().optional().describe('Filter by inbox ID'),
+  modifiedSince: z.string().optional().describe('ISO 8601 date'),
+  sortField: z.enum(['createdAt', 'firstName', 'lastName', 'modifiedAt']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(50).default(50),
+});
+
+export const SearchCustomersByEmailInputSchema = z.object({
+  email: z.string().describe('Email address to search for'),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  query: z.string().optional(),
+  modifiedSince: z.string().optional(),
+  createdSince: z.string().optional(),
+});
+
+export const GetOrganizationInputSchema = z.object({
+  organizationId: z.string().describe('Organization ID'),
+  includeCounts: z.boolean().default(true),
+  includeProperties: z.boolean().default(false),
+});
+
+export const ListOrganizationsInputSchema = z.object({
+  sortField: z.enum(['name', 'customerCount', 'conversationCount', 'lastInteractionAt']).default('lastInteractionAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(50).default(50),
+});
+
+export const GetOrganizationMembersInputSchema = z.object({
+  organizationId: z.string().describe('Organization ID'),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(50).default(50),
+});
+
+export const GetOrganizationConversationsInputSchema = z.object({
+  organizationId: z.string().describe('Organization ID'),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(50).default(50),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -172,11 +282,21 @@ export const ErrorSchema = z.object({
 export type Inbox = z.infer<typeof InboxSchema>;
 export type Conversation = z.infer<typeof ConversationSchema>;
 export type Thread = z.infer<typeof ThreadSchema>;
+export type Customer = z.infer<typeof CustomerSchema>;
+export type CustomerAddress = z.infer<typeof CustomerAddressSchema>;
+export type Organization = z.infer<typeof OrganizationSchema>;
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
 export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
 export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
+export type GetCustomerInput = z.infer<typeof GetCustomerInputSchema>;
+export type ListCustomersInput = z.infer<typeof ListCustomersInputSchema>;
+export type SearchCustomersByEmailInput = z.infer<typeof SearchCustomersByEmailInputSchema>;
+export type GetOrganizationInput = z.infer<typeof GetOrganizationInputSchema>;
+export type ListOrganizationsInput = z.infer<typeof ListOrganizationsInputSchema>;
+export type GetOrganizationMembersInput = z.infer<typeof GetOrganizationMembersInputSchema>;
+export type GetOrganizationConversationsInput = z.infer<typeof GetOrganizationConversationsInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

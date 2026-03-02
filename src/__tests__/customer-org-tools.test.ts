@@ -1,0 +1,295 @@
+import nock from 'nock';
+import { ToolHandler } from '../tools/index.js';
+import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
+import { cache } from '../utils/cache.js';
+import { config } from '../utils/config.js';
+
+describe('Customer & Organization Tools', () => {
+  let toolHandler: ToolHandler;
+  const baseURL = 'https://api.helpscout.net/v2';
+
+  beforeEach(() => {
+    process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+    process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+    process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+    nock.cleanAll();
+    cache.clear();
+
+    nock(baseURL)
+      .persist()
+      .post('/oauth2/token')
+      .reply(200, {
+        access_token: 'mock-access-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+
+    toolHandler = new ToolHandler();
+  });
+
+  afterEach(async () => {
+    nock.cleanAll();
+    await new Promise(resolve => setImmediate(resolve));
+  });
+
+  function makeRequest(name: string, args: Record<string, unknown>): CallToolRequest {
+    return {
+      method: 'tools/call',
+      params: { name, arguments: args },
+    } as CallToolRequest;
+  }
+
+  function parseResult(result: { content: Array<{ type: string; text?: string }> }) {
+    return JSON.parse(result.content[0].text as string);
+  }
+
+  describe('getCustomer', () => {
+    it('should fetch a customer profile with address', async () => {
+      const scope = nock(baseURL)
+        .get('/customers/123')
+        .query(true)
+        .reply(200, {
+          id: 123,
+          firstName: 'Jane',
+          lastName: 'Doe',
+          organizationId: 456,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-06-01T00:00:00Z',
+          _embedded: {
+            emails: [{ id: 1, value: 'jane@example.com', type: 'work' }],
+            phones: [{ id: 2, value: '+1234567890', type: 'mobile' }],
+          },
+        })
+        .get('/customers/123/address')
+        .query(true)
+        .reply(200, {
+          city: 'Nashville',
+          state: 'TN',
+          postalCode: '37201',
+          country: 'US',
+        });
+
+      const result = await toolHandler.callTool(makeRequest('getCustomer', { customerId: '123' }));
+      const data = parseResult(result);
+
+      expect(data.customer.id).toBe(123);
+      expect(data.customer.firstName).toBe('Jane');
+      expect(data.customer.address).toBeDefined();
+      expect(data.usage).toContain('getOrganization');
+    });
+
+    it('should handle missing address gracefully', async () => {
+      nock(baseURL)
+        .get('/customers/123')
+        .query(true)
+        .reply(200, {
+          id: 123,
+          firstName: 'Jane',
+          lastName: 'Doe',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-06-01T00:00:00Z',
+        })
+        .get('/customers/123/address')
+        .query(true)
+        .reply(404, { message: 'Not Found' });
+
+      const result = await toolHandler.callTool(makeRequest('getCustomer', { customerId: '123' }));
+      const data = parseResult(result);
+
+      expect(data.customer.id).toBe(123);
+      // Address key should not be present when 404
+      expect(data.customer.address).toBeUndefined();
+    });
+
+    it('should redact PII when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock(baseURL)
+          .get('/customers/123')
+          .query(true)
+          .reply(200, {
+            id: 123,
+            firstName: 'Jane',
+            lastName: 'Doe',
+            background: 'Some personal notes',
+            createdAt: '2024-01-01T00:00:00Z',
+            updatedAt: '2024-06-01T00:00:00Z',
+            _embedded: {
+              emails: [{ id: 1, value: 'jane@example.com', type: 'work' }],
+              phones: [{ id: 2, value: '+1234567890', type: 'mobile' }],
+            },
+          })
+          .get('/customers/123/address')
+          .query(true)
+          .reply(200, {
+            city: 'Nashville',
+            state: 'TN',
+            postalCode: '37201',
+            country: 'US',
+          });
+
+        const result = await toolHandler.callTool(makeRequest('getCustomer', { customerId: '123' }));
+        const data = parseResult(result);
+
+        expect(data.customer.background).toBe('[redacted]');
+        expect(data.customer._embedded.emails[0].value).toBe('[redacted]');
+        expect(data.customer._embedded.phones[0].value).toBe('[redacted]');
+        expect(data.customer.address.city).toBe('[redacted]');
+        expect(data.customer.address.country).toBe('US'); // Country is not PII
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
+    });
+  });
+
+  describe('listCustomers', () => {
+    it('should list customers with pagination', async () => {
+      nock(baseURL)
+        .get('/customers')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            customers: [
+              { id: 1, firstName: 'John', lastName: 'Doe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+              { id: 2, firstName: 'Jane', lastName: 'Smith', createdAt: '2024-02-01T00:00:00Z', updatedAt: '2024-02-01T00:00:00Z' },
+            ],
+          },
+          page: { size: 50, totalElements: 2, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('listCustomers', {}));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(2);
+      expect(data.pagination.totalElements).toBe(2);
+    });
+
+    it('should filter by firstName', async () => {
+      nock(baseURL)
+        .get('/customers')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            customers: [
+              { id: 1, firstName: 'John', lastName: 'Doe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('listCustomers', { firstName: 'John' }));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(1);
+      expect(data.results[0].firstName).toBe('John');
+    });
+  });
+
+  describe('getOrganization', () => {
+    it('should fetch organization with counts', async () => {
+      nock(baseURL)
+        .get('/organizations/456')
+        .query(true)
+        .reply(200, {
+          id: 456,
+          name: 'Acme Corp',
+          website: 'https://acme.com',
+          domains: ['acme.com'],
+          customerCount: 10,
+          conversationCount: 25,
+        });
+
+      const result = await toolHandler.callTool(makeRequest('getOrganization', { organizationId: '456' }));
+      const data = parseResult(result);
+
+      expect(data.organization.id).toBe(456);
+      expect(data.organization.name).toBe('Acme Corp');
+      expect(data.organization.customerCount).toBe(10);
+      expect(data.usage).toContain('getOrganizationMembers');
+    });
+  });
+
+  describe('listOrganizations', () => {
+    it('should list organizations with default sorting', async () => {
+      nock(baseURL)
+        .get('/organizations')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            organizations: [
+              { id: 1, name: 'Org A' },
+              { id: 2, name: 'Org B' },
+            ],
+          },
+          page: { size: 50, totalElements: 2, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('listOrganizations', {}));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(2);
+    });
+  });
+
+  describe('getOrganizationMembers', () => {
+    it('should fetch customers belonging to an organization', async () => {
+      nock(baseURL)
+        .get('/organizations/456/customers')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            customers: [
+              { id: 1, firstName: 'John', lastName: 'Doe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z' },
+              { id: 2, firstName: 'Jane', lastName: 'Smith', createdAt: '2024-02-01T00:00:00Z', updatedAt: '2024-02-01T00:00:00Z' },
+            ],
+          },
+          page: { size: 50, totalElements: 2, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('getOrganizationMembers', { organizationId: '456' }));
+      const data = parseResult(result);
+
+      expect(data.organizationId).toBe('456');
+      expect(data.members).toHaveLength(2);
+      expect(data.usage).toContain('getCustomer');
+    });
+  });
+
+  describe('getOrganizationConversations', () => {
+    it('should fetch conversations for an organization', async () => {
+      nock(baseURL)
+        .get('/organizations/456/conversations')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            conversations: [
+              {
+                id: 100,
+                number: 1001,
+                subject: 'Billing question',
+                status: 'active',
+                customer: { id: 1, firstName: 'John', lastName: 'Doe', email: 'john@acme.com' },
+                assignee: null,
+                createdAt: '2024-01-01T00:00:00Z',
+                updatedAt: '2024-01-02T00:00:00Z',
+                closedAt: null,
+                tags: [],
+              },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('getOrganizationConversations', { organizationId: '456' }));
+      const data = parseResult(result);
+
+      expect(data.organizationId).toBe('456');
+      expect(data.conversations).toHaveLength(1);
+      expect(data.conversations[0].subject).toBe('Billing question');
+      expect(data.usage).toContain('getThreads');
+    });
+  });
+});
