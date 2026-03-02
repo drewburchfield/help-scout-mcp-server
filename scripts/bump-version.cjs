@@ -78,6 +78,25 @@ function updateMcpJson(newVersion) {
   log(`Updated mcp.json version: ${newVersion}`);
 }
 
+function updateServerJson(newVersion) {
+  const serverJsonPath = path.join(__dirname, '..', 'server.json');
+  const serverJson = JSON.parse(fs.readFileSync(serverJsonPath, 'utf8'));
+
+  serverJson.version = newVersion;
+  // Update version in package identifiers
+  if (serverJson.packages) {
+    for (const pkg of serverJson.packages) {
+      if (pkg.version) pkg.version = newVersion;
+      if (pkg.identifier && pkg.identifier.includes(':')) {
+        pkg.identifier = pkg.identifier.replace(/:[^:]+$/, `:${newVersion}`);
+      }
+    }
+  }
+
+  fs.writeFileSync(serverJsonPath, JSON.stringify(serverJson, null, 2) + '\n');
+  log(`Updated server.json version: ${newVersion}`);
+}
+
 function updateMcpbManifest(newVersion) {
   const manifestPath = path.join(__dirname, '..', 'helpscout-mcp-extension', 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -91,7 +110,7 @@ function updateMcpbManifest(newVersion) {
 function createCommit(oldVersion, newVersion, bumpType) {
   try {
     // Stage the changes
-    execSync('git add package.json Dockerfile src/index.ts mcp.json helpscout-mcp-extension/manifest.json');
+    execSync('git add package.json Dockerfile src/index.ts mcp.json server.json helpscout-mcp-extension/manifest.json');
     
     // Create commit
     const commitMessage = `chore: bump version ${oldVersion} → ${newVersion} (${bumpType})
@@ -137,6 +156,7 @@ function main() {
     updateDockerfile(newVersion);
     updateSourceCode(newVersion);
     updateMcpJson(newVersion);
+    updateServerJson(newVersion);
     updateMcpbManifest(newVersion);
     
     // Create commit and tag
@@ -158,4 +178,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { updatePackageJson, updateDockerfile, updateSourceCode, updateMcpJson, updateMcpbManifest, createCommit };
+module.exports = { updatePackageJson, updateDockerfile, updateSourceCode, updateMcpJson, updateServerJson, updateMcpbManifest, createCommit };

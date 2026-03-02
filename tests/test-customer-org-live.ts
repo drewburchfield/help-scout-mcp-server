@@ -48,7 +48,7 @@ async function main() {
   console.error('\n=== Customer & Organization Tools - Live Integration Test ===\n');
 
   // 1. listCustomers
-  const customerList = await runTest('listCustomers (first 5)', 'listCustomers', { limit: 5 });
+  const customerList = await runTest('listCustomers (page 1)', 'listCustomers', { page: 1 });
   if (customerList?.results?.length) {
     console.error(`    -> Found ${customerList.results.length} customers`);
     console.error(`    -> First: ${customerList.results[0].firstName} ${customerList.results[0].lastName} (ID: ${customerList.results[0].id})`);
@@ -96,7 +96,7 @@ async function main() {
   }
 
   // 4. listOrganizations
-  const orgList = await runTest('listOrganizations (first 5)', 'listOrganizations', { limit: 5 });
+  const orgList = await runTest('listOrganizations (page 1)', 'listOrganizations', { page: 1 });
   if (orgList?.results?.length) {
     console.error(`    -> Found ${orgList.results.length} organizations`);
     for (const org of orgList.results.slice(0, 3)) {

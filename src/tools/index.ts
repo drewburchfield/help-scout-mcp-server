@@ -1710,6 +1710,9 @@ export class ToolHandler {
 
     // v3 endpoint: construct absolute URL from configured base URL
     const v3Url = config.helpscout.baseUrl.replace(/\/v2\/?$/, '/v3/customers');
+    if (v3Url === config.helpscout.baseUrl) {
+      logger.warn('v3 URL construction: baseUrl did not match /v2/ pattern, URL may be incorrect', { baseUrl: config.helpscout.baseUrl, v3Url });
+    }
     const v3Response = await helpScoutClient.get<{
       _embedded: { customers: Customer[] };
       _links?: { next?: { href: string } };
@@ -1792,6 +1795,7 @@ export class ToolHandler {
           returnedCount: organizations.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
+          nextPage: response._links?.next?.href ? (response.page?.number ?? 0) + 1 : undefined,
           usage: 'Use organization.id with getOrganization for details, getOrganizationMembers for customers, or getOrganizationConversations for support history.',
         }, null, 2),
       }],
@@ -1819,6 +1823,7 @@ export class ToolHandler {
           returnedCount: customers.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
+          nextPage: response._links?.next?.href ? (response.page?.number ?? 0) + 1 : undefined,
           usage: 'Use customer.id with getCustomer for full profile or structuredConversationFilter(customerIds) for their conversations.',
         }, null, 2),
       }],
@@ -1861,6 +1866,7 @@ export class ToolHandler {
           returnedCount: conversations.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
+          nextPage: response._links?.next?.href ? (response.page?.number ?? 0) + 1 : undefined,
           usage: 'Use conversation.id with getThreads to read full message history, or getConversationSummary for a quick overview.',
         }, null, 2),
       }],
