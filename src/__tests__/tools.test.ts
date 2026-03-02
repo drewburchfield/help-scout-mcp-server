@@ -1409,13 +1409,6 @@ describe('ToolHandler', () => {
         expect(response.pagination.note).toContain('Totals reflect successful statuses only');
       }, 30000);
 
-      // Note: Testing UNAUTHORIZED fail-fast in multi-status search is blocked by a known
-      // upstream issue: validateStatus < 500 in helpscout-client.ts means 401 responses
-      // are treated as successful (not rejected), so they never reach the Promise.allSettled
-      // rejection handler. The defensive code in the rejection handler (throwing on
-      // UNAUTHORIZED/INVALID_INPUT) is correct but only activates once validateStatus is fixed.
-      // See: NAS-465 (validateStatus swallows 4xx errors)
-
       it('should apply createdBefore filtering to multi-status merged results', async () => {
         nock.cleanAll();
 

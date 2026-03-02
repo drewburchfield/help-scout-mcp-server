@@ -289,6 +289,7 @@ describe('Customer & Organization Tools', () => {
         })
         .get('/customers/123/address')
         .query(true)
+        .times(4) // 1 initial + 3 retries
         .reply(500, { message: 'Internal Server Error' });
 
       const result = await toolHandler.callTool(makeRequest('getCustomer', { customerId: '123' }));
@@ -402,6 +403,165 @@ describe('Customer & Organization Tools', () => {
       expect(data.conversations).toHaveLength(1);
       expect(data.conversations[0].subject).toBe('Billing question');
       expect(data.usage).toContain('getThreads');
+    });
+  });
+
+  // ── PII Redaction Tests (F9) ──
+
+  describe('PII redaction for organizations', () => {
+    it('should redact PII in getOrganization when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock(baseURL)
+          .get('/organizations/456')
+          .query(true)
+          .reply(200, {
+            id: 456,
+            name: 'Acme Corp',
+            website: 'https://acme.com',
+            domains: ['acme.com', 'acme.io'],
+            phones: ['+1-555-0100'],
+            location: 'Nashville, TN',
+            note: 'Key account, handle with care',
+            description: 'Enterprise SaaS company',
+            logoUrl: 'https://acme.com/logo.png',
+            brandColor: '#FF0000',
+            customerCount: 10,
+            conversationCount: 25,
+          });
+
+        const result = await toolHandler.callTool(makeRequest('getOrganization', { organizationId: '456' }));
+        const data = parseResult(result);
+
+        // Preserved fields
+        expect(data.organization.id).toBe(456);
+        expect(data.organization.name).toBe('Acme Corp');
+        expect(data.organization.customerCount).toBe(10);
+        expect(data.organization.logoUrl).toBe('https://acme.com/logo.png');
+        expect(data.organization.brandColor).toBe('#FF0000');
+
+        // Redacted fields
+        expect(data.organization.website).toBe('[redacted]');
+        expect(data.organization.domains).toEqual(['[redacted]']);
+        expect(data.organization.phones).toEqual(['[redacted]']);
+        expect(data.organization.location).toBe('[redacted]');
+        expect(data.organization.note).toBe('[redacted]');
+        expect(data.organization.description).toBe('[redacted]');
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
+    });
+
+    it('should redact PII in listOrganizations when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock(baseURL)
+          .get('/organizations')
+          .query(true)
+          .reply(200, {
+            _embedded: {
+              organizations: [
+                {
+                  id: 1, name: 'Org A', website: 'https://orga.com',
+                  domains: ['orga.com'], phones: ['+1-555-0101'],
+                  location: 'Austin, TX', note: 'Notes here', description: 'Desc here',
+                },
+              ],
+            },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        const result = await toolHandler.callTool(makeRequest('listOrganizations', {}));
+        const data = parseResult(result);
+
+        expect(data.results[0].name).toBe('Org A');
+        expect(data.results[0].website).toBe('[redacted]');
+        expect(data.results[0].domains).toEqual(['[redacted]']);
+        expect(data.results[0].phones).toEqual(['[redacted]']);
+        expect(data.results[0].location).toBe('[redacted]');
+        expect(data.results[0].note).toBe('[redacted]');
+        expect(data.results[0].description).toBe('[redacted]');
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
+    });
+
+    it('should redact customer PII in getOrganizationConversations when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock(baseURL)
+          .get('/organizations/456/conversations')
+          .query(true)
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                {
+                  id: 100, number: 1001, subject: 'Billing question', status: 'active',
+                  customer: { id: 1, firstName: 'John', lastName: 'Doe', email: 'john@acme.com' },
+                  assignee: null, createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-02T00:00:00Z',
+                  closedAt: null, tags: [],
+                },
+              ],
+            },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        const result = await toolHandler.callTool(makeRequest('getOrganizationConversations', { organizationId: '456' }));
+        const data = parseResult(result);
+
+        // Customer ID preserved, PII redacted
+        expect(data.conversations[0].customer.id).toBe(1);
+        expect(data.conversations[0].customer.email).toBe('[redacted]');
+        expect(data.conversations[0].customer.firstName).toBe('[redacted]');
+        expect(data.conversations[0].customer.lastName).toBe('[redacted]');
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
+    });
+
+    it('should redact customer fields in getOrganizationMembers when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock(baseURL)
+          .get('/organizations/456/customers')
+          .query(true)
+          .reply(200, {
+            _embedded: {
+              customers: [
+                {
+                  id: 1, firstName: 'John', lastName: 'Doe',
+                  jobTitle: 'CTO', location: 'Nashville, TN',
+                  photoUrl: 'https://example.com/photo.jpg', age: '35',
+                  createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+                },
+              ],
+            },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        const result = await toolHandler.callTool(makeRequest('getOrganizationMembers', { organizationId: '456' }));
+        const data = parseResult(result);
+
+        // ID preserved
+        expect(data.members[0].id).toBe(1);
+        // PII redacted
+        expect(data.members[0].firstName).toBe('[redacted]');
+        expect(data.members[0].lastName).toBe('[redacted]');
+        expect(data.members[0].jobTitle).toBe('[redacted]');
+        expect(data.members[0].location).toBe('[redacted]');
+        expect(data.members[0].photoUrl).toBe('[redacted]');
+        expect(data.members[0].age).toBe('[redacted]');
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
     });
   });
 });
