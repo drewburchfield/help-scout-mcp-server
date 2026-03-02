@@ -88,5 +88,8 @@ perf-reports/
 scripts/.import-progress.json
 scripts/*.state.json
 
+# Braintrust session logs
+.braintrust/
+
 # Sidecar projects
 meridian-sim/
