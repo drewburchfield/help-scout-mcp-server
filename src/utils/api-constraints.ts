@@ -91,9 +91,8 @@ export class HelpScoutAPIConstraints {
     
     // CONSTRAINT 4: Date format validation
     if (args.createdAfter) {
-      try {
-        new Date(args.createdAfter as string);
-      } catch {
+      const parsed = new Date(args.createdAfter as string);
+      if (isNaN(parsed.getTime())) {
         errors.push('Invalid createdAfter date format');
         suggestions.push('Use ISO 8601 format (YYYY-MM-DDTHH:mm:ssZ) for dates');
       }
