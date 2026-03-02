@@ -476,6 +476,28 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getAttachment',
+        description: 'Download an attachment from a Help Scout conversation thread. Returns the file saved to a temp path that can be read with the Read tool. Use getThreads first to find attachment IDs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            attachmentId: {
+              type: 'string',
+              description: 'The attachment ID (from getThreads attachment metadata)',
+            },
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID the attachment belongs to',
+            },
+            filename: {
+              type: 'string',
+              description: 'Original filename (from getThreads attachment metadata). Used for the saved file.',
+            },
+          },
+          required: ['attachmentId', 'conversationId'],
+        },
+      },
+      {
         name: 'getServerTime',
         description: 'Get current server timestamp. Use before date-relative searches to calculate time ranges.',
         inputSchema: {
@@ -615,6 +637,9 @@ export class ToolHandler {
             break;
           case 'getThreads':
             result = await this.getThreads(request.params.arguments || {});
+            break;
+          case 'getAttachment':
+            result = await this.getAttachment(request.params.arguments || {});
             break;
           case 'getServerTime':
             result = await this.getServerTime();
@@ -1277,7 +1302,16 @@ export class ToolHandler {
         from: name,
         date: t.createdAt,
         body,
-        ...(((t as any).attachments?.length > 0) ? { attachments: (t as any).attachments.length } : {}),
+        ...((((t as any)._embedded?.attachments || (t as any).attachments)?.length > 0) ? {
+          attachments: ((t as any)._embedded?.attachments || (t as any).attachments).map((a: any) => ({
+            id: a.id,
+            filename: a.filename || a.fileName,
+            mimeType: a.mimeType,
+            size: a.size,
+            width: a.width,
+            height: a.height,
+          }))
+        } : {}),
       };
     });
   }
@@ -1377,7 +1411,16 @@ export class ToolHandler {
         email: (thread as any).customer.email,
       } : null,
       createdAt: thread.createdAt,
-      ...(((thread as any).attachments?.length > 0) ? { attachments: (thread as any).attachments.length } : {}),
+      ...((((thread as any)._embedded?.attachments || (thread as any).attachments)?.length > 0) ? {
+        attachments: ((thread as any)._embedded?.attachments || (thread as any).attachments).map((a: any) => ({
+          id: a.id,
+          filename: a.filename || a.fileName,
+          mimeType: a.mimeType,
+          size: a.size,
+          width: a.width,
+          height: a.height,
+        }))
+      } : {}),
     }));
 
     return {
@@ -1390,6 +1433,72 @@ export class ToolHandler {
         }),
       }],
     };
+  }
+
+  private async getAttachment(args: unknown): Promise<CallToolResult> {
+    const input = z.object({
+      attachmentId: z.string(),
+      conversationId: z.string(),
+      filename: z.string().optional(),
+    }).parse(args);
+
+    try {
+      // Fetch attachment data from Help Scout API
+      const response = await helpScoutClient.get<{ data: string }>(
+        `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`,
+        {}
+      );
+
+      if (!response.data) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'No attachment data returned from API' }) }],
+          isError: true,
+        };
+      }
+
+      // Decode base64 data
+      const buffer = Buffer.from(response.data, 'base64');
+      const filename = input.filename || `attachment-${input.attachmentId}`;
+
+      // Write to temp file
+      const fs = await import('fs');
+      const path = await import('path');
+      const dir = path.join('/tmp', 'helpscout-attachments', input.conversationId);
+      fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, filename);
+      fs.writeFileSync(filePath, buffer);
+
+      // Detect mime type from extension
+      const ext = path.extname(filename).toLowerCase();
+      const mimeMap: Record<string, string> = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+        '.zip': 'application/zip', '.csv': 'text/csv', '.json': 'application/json',
+        '.xml': 'application/xml', '.txt': 'text/plain', '.log': 'text/plain',
+        '.html': 'text/html', '.htm': 'text/html',
+      };
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            attachmentId: input.attachmentId,
+            conversationId: input.conversationId,
+            filename,
+            filePath,
+            size: buffer.length,
+            mimeType: mimeMap[ext] || 'application/octet-stream',
+            hint: 'Use the Read tool on filePath to view this file. Claude can natively view images (PNG, JPG, GIF, WEBP) and PDFs. For ZIP files, use Bash: unzip -l to list contents.',
+          }),
+        }],
+      };
+    } catch (error: any) {
+      const message = isApiError(error) ? `Help Scout API error: ${error.message}` : `Failed to download attachment: ${error.message}`;
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
+        isError: true,
+      };
+    }
   }
 
   private async getServerTime(): Promise<CallToolResult> {
