@@ -5,44 +5,6 @@ import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constrain
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { z } from 'zod';
-
-/**
- * Constants for tool operations
- */
-const TOOL_CONSTANTS = {
-  // API pagination defaults
-  DEFAULT_PAGE_SIZE: 50,
-  MAX_PAGE_SIZE: 100,
-  MAX_THREAD_SIZE: 200,
-  DEFAULT_THREAD_SIZE: 200,
-  
-  // Search limits
-  MAX_SEARCH_TERMS: 10,
-  DEFAULT_TIMEFRAME_DAYS: 60,
-  DEFAULT_LIMIT_PER_STATUS: 25,
-  
-  // Sort configuration
-  DEFAULT_SORT_FIELD: 'createdAt',
-  DEFAULT_SORT_ORDER: 'desc',
-  
-  // Cache and performance
-  MAX_CONVERSATION_ID_LENGTH: 20,
-  
-  // Search locations
-  SEARCH_LOCATIONS: {
-    BODY: 'body',
-    SUBJECT: 'subject', 
-    BOTH: 'both'
-  } as const,
-  
-  // Conversation statuses
-  STATUSES: {
-    ACTIVE: 'active',
-    PENDING: 'pending',
-    CLOSED: 'closed',
-    SPAM: 'spam'
-  } as const
-} as const;
 import {
   Inbox,
   Conversation,
@@ -66,6 +28,44 @@ import {
   GetOrganizationMembersInputSchema,
   GetOrganizationConversationsInputSchema,
 } from '../schema/types.js';
+
+/**
+ * Constants for tool operations
+ */
+const TOOL_CONSTANTS = {
+  // API pagination defaults
+  DEFAULT_PAGE_SIZE: 50,
+  MAX_PAGE_SIZE: 100,
+  MAX_THREAD_SIZE: 200,
+  DEFAULT_THREAD_SIZE: 200,
+
+  // Search limits
+  MAX_SEARCH_TERMS: 10,
+  DEFAULT_TIMEFRAME_DAYS: 60,
+  DEFAULT_LIMIT_PER_STATUS: 25,
+
+  // Sort configuration
+  DEFAULT_SORT_FIELD: 'createdAt',
+  DEFAULT_SORT_ORDER: 'desc',
+
+  // Cache and performance
+  MAX_CONVERSATION_ID_LENGTH: 20,
+
+  // Search locations
+  SEARCH_LOCATIONS: {
+    BODY: 'body',
+    SUBJECT: 'subject',
+    BOTH: 'both'
+  } as const,
+
+  // Conversation statuses
+  STATUSES: {
+    ACTIVE: 'active',
+    PENDING: 'pending',
+    CLOSED: 'closed',
+    SPAM: 'spam'
+  } as const
+} as const;
 
 export class ToolHandler {
   private callHistory: string[] = [];
@@ -385,11 +385,6 @@ export class ToolHandler {
               minimum: 1,
               maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
               default: TOOL_CONSTANTS.DEFAULT_LIMIT_PER_STATUS,
-            },
-            includeVariations: {
-              type: 'boolean',
-              description: 'Include common variations of search terms',
-              default: true,
             },
           },
           required: ['searchTerms'],
@@ -800,8 +795,6 @@ export class ToolHandler {
           }
 
           // Critical API errors should abort, not return partial results.
-          // Note: currently blocked by validateStatus < 500 (NAS-465) which
-          // prevents 4xx from reaching this path. Will activate once fixed.
           if (errorCode === 'UNAUTHORIZED' || errorCode === 'INVALID_INPUT') {
             throw reason;
           }
@@ -1309,9 +1302,6 @@ export class ToolHandler {
         }
 
         // Critical API errors should fail the entire operation.
-        // Note: currently blocked by validateStatus < 500 (NAS-465) which
-        // treats 4xx as successful responses in axios, so they never reach
-        // this catch block. Will activate once validateStatus is fixed.
         if (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_INPUT') {
           logger.error('Critical API error in multi-status search - aborting', {
             status,
@@ -1573,32 +1563,29 @@ export class ToolHandler {
 
   // ── Customer Tools (NAS-680, NAS-727) ──
 
-  private redactPii(obj: Record<string, unknown>, fields: string[]): Record<string, unknown> {
-    if (config.security.allowPii) return obj;
-    const redacted: Record<string, unknown> = { ...obj };
-    for (const field of fields) {
-      if (field in redacted && redacted[field]) {
-        redacted[field] = '[redacted]';
-      }
-    }
-    return redacted;
-  }
+  private redactCustomer(customer: Customer): Record<string, unknown> {
+    if (config.security.allowPii) return customer as unknown as Record<string, unknown>;
 
-  private redactCustomer(customer: Record<string, unknown>): Record<string, unknown> {
-    const redacted = this.redactPii(customer, ['background']);
-    if (!config.security.allowPii && redacted._embedded) {
-      const embedded = { ...(redacted._embedded as Record<string, unknown>) };
-      // Redact email values, phone values, etc.
-      for (const key of ['emails', 'phones', 'chats', 'social_profiles']) {
-        if (Array.isArray(embedded[key])) {
-          embedded[key] = (embedded[key] as Array<Record<string, unknown>>).map(item => ({
+    const { background, _embedded, ...rest } = customer;
+    const redacted: Record<string, unknown> = {
+      ...rest,
+      background: background ? '[redacted]' : background,
+    };
+
+    if (_embedded) {
+      const embeddedCopy = { ..._embedded };
+      for (const key of ['emails', 'phones', 'chats', 'social_profiles', 'websites'] as const) {
+        const entries = embeddedCopy[key];
+        if (entries) {
+          (embeddedCopy as Record<string, unknown>)[key] = entries.map(item => ({
             ...item,
             value: '[redacted]',
           }));
         }
       }
-      redacted._embedded = embedded;
+      redacted._embedded = embeddedCopy;
     }
+
     return redacted;
   }
 
@@ -1616,15 +1603,43 @@ export class ToolHandler {
     }
 
     const customer = customerResponse.value;
-    const address = addressResponse.status === 'fulfilled' ? addressResponse.value : null;
 
-    const result: Record<string, unknown> = this.redactCustomer(customer as unknown as Record<string, unknown>);
+    // Handle address response: 404 means no address on file (expected), all other errors should surface
+    let address: CustomerAddress | null = null;
+    let addressNote: string | undefined;
+    if (addressResponse.status === 'fulfilled') {
+      address = addressResponse.value;
+    } else {
+      const reason = addressResponse.reason;
+      const is404 = isApiError(reason) && reason.code === 'NOT_FOUND';
+      if (!is404) {
+        // Critical errors (auth, rate limit) should abort entirely
+        if (isApiError(reason) && (reason.code === 'UNAUTHORIZED' || reason.code === 'RATE_LIMIT')) {
+          throw reason;
+        }
+        // Non-API errors (TypeError, network) should propagate
+        if (!isApiError(reason)) {
+          throw reason;
+        }
+        // Other API errors: log and surface in response
+        const errorMessage = reason.message || String(reason);
+        logger.error('Address fetch failed for customer', { customerId: input.customerId, error: errorMessage });
+        addressNote = `Address lookup failed: ${errorMessage}`;
+      }
+    }
+
+    const result: Record<string, unknown> = this.redactCustomer(customer);
     if (address) {
       result.address = config.security.allowPii ? address : {
         city: '[redacted]',
         state: '[redacted]',
+        postalCode: '[redacted]',
+        lines: address.lines ? '[redacted]' : undefined,
         country: address.country, // Country is not PII
       };
+    }
+    if (addressNote) {
+      result.addressNote = addressNote;
     }
 
     return {
@@ -1646,13 +1661,12 @@ export class ToolHandler {
       size: input.limit,
       sortField: input.sortField,
       sortOrder: input.sortOrder,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      query: input.query,
+      mailbox: input.mailbox,
+      modifiedSince: input.modifiedSince,
     };
-
-    if (input.firstName) params.firstName = input.firstName;
-    if (input.lastName) params.lastName = input.lastName;
-    if (input.query) params.query = input.query;
-    if (input.mailbox) params.mailbox = input.mailbox;
-    if (input.modifiedSince) params.modifiedSince = input.modifiedSince;
 
     const response = await helpScoutClient.get<PaginatedResponse<Customer>>('/customers', params);
     const customers = response._embedded?.customers || [];
@@ -1661,8 +1675,8 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: customers.map(c => this.redactCustomer(c as unknown as Record<string, unknown>)),
-          totalResults: customers.length,
+          results: customers.map(c => this.redactCustomer(c)),
+          returnedCount: customers.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
           usage: 'Use customer.id with getCustomer for full profile, or with structuredConversationFilter(customerIds) for their conversations.',
@@ -1677,18 +1691,19 @@ export class ToolHandler {
 
     const params: Record<string, unknown> = {
       email: input.email,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      query: input.query,
+      modifiedSince: input.modifiedSince,
+      createdSince: input.createdSince,
     };
-    if (input.firstName) params.firstName = input.firstName;
-    if (input.lastName) params.lastName = input.lastName;
-    if (input.query) params.query = input.query;
-    if (input.modifiedSince) params.modifiedSince = input.modifiedSince;
-    if (input.createdSince) params.createdSince = input.createdSince;
 
-    // v3 endpoint at /v3/customers - relative path from /v2/ baseURL
+    // v3 endpoint: construct absolute URL from configured base URL
+    const v3Url = config.helpscout.baseUrl.replace(/\/v2\/?$/, '/v3/customers');
     const v3Response = await helpScoutClient.get<{
       _embedded: { customers: Customer[] };
       _links?: { next?: { href: string } };
-    }>('../v3/customers', params);
+    }>(v3Url, params);
 
     const customers = v3Response._embedded?.customers || [];
 
@@ -1696,8 +1711,8 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: customers.map(c => this.redactCustomer(c as unknown as Record<string, unknown>)),
-          totalResults: customers.length,
+          results: customers.map(c => this.redactCustomer(c)),
+          returnedCount: customers.length,
           searchedEmail: config.security.allowPii ? input.email : '[redacted]',
           nextCursor: v3Response._links?.next?.href,
           note: 'v3 API uses cursor-based pagination. Follow nextCursor if present for more results.',
@@ -1721,11 +1736,18 @@ export class ToolHandler {
       params
     );
 
+    // Redact freeform text fields that may contain PII
+    const orgResult = config.security.allowPii ? org : {
+      ...org,
+      note: org.note ? '[redacted]' : org.note,
+      description: org.description ? '[redacted]' : org.description,
+    };
+
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          organization: org,
+          organization: orgResult,
           usage: 'NEXT STEPS: Use getOrganizationMembers to see customers in this org. Use getOrganizationConversations to see all conversations.',
         }, null, 2),
       }],
@@ -1748,7 +1770,7 @@ export class ToolHandler {
         type: 'text',
         text: JSON.stringify({
           results: organizations,
-          totalResults: organizations.length,
+          returnedCount: organizations.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
           usage: 'Use organization.id with getOrganization for details, getOrganizationMembers for customers, or getOrganizationConversations for support history.',
@@ -1773,8 +1795,8 @@ export class ToolHandler {
         type: 'text',
         text: JSON.stringify({
           organizationId: input.organizationId,
-          members: customers.map(c => this.redactCustomer(c as unknown as Record<string, unknown>)),
-          totalResults: customers.length,
+          members: customers.map(c => this.redactCustomer(c)),
+          returnedCount: customers.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
           usage: 'Use customer.id with getCustomer for full profile or structuredConversationFilter(customerIds) for their conversations.',
@@ -1803,14 +1825,17 @@ export class ToolHandler {
             number: c.number,
             subject: c.subject,
             status: c.status,
-            customer: c.customer,
+            customer: config.security.allowPii ? c.customer : {
+              ...c.customer,
+              email: c.customer?.email ? '[redacted]' : c.customer?.email,
+            },
             assignee: c.assignee,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
             closedAt: c.closedAt,
             tags: c.tags,
           })),
-          totalResults: conversations.length,
+          returnedCount: conversations.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
           usage: 'Use conversation.id with getThreads to read full message history, or getConversationSummary for a quick overview.',

@@ -138,6 +138,8 @@ describe('Customer & Organization Tools', () => {
         expect(data.customer._embedded.emails[0].value).toBe('[redacted]');
         expect(data.customer._embedded.phones[0].value).toBe('[redacted]');
         expect(data.customer.address.city).toBe('[redacted]');
+        expect(data.customer.address.state).toBe('[redacted]');
+        expect(data.customer.address.postalCode).toBe('[redacted]');
         expect(data.customer.address.country).toBe('US'); // Country is not PII
       } finally {
         config.security.allowPii = originalAllowPii;
@@ -185,6 +187,116 @@ describe('Customer & Organization Tools', () => {
 
       expect(data.results).toHaveLength(1);
       expect(data.results[0].firstName).toBe('John');
+    });
+  });
+
+  describe('searchCustomersByEmail', () => {
+    it('should search customers via v3 API', async () => {
+      nock('https://api.helpscout.net')
+        .get('/v3/customers')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            customers: [
+              { id: 1, firstName: 'Jane', lastName: 'Doe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+                _embedded: { emails: [{ id: 1, value: 'jane@example.com', type: 'work' }] } },
+            ],
+          },
+          _links: { next: { href: 'https://api.helpscout.net/v3/customers?cursor=abc' } },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('searchCustomersByEmail', { email: 'jane@example.com' }));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(1);
+      expect(data.results[0].firstName).toBe('Jane');
+      expect(data.returnedCount).toBe(1);
+      expect(data.nextCursor).toContain('cursor=abc');
+    });
+
+    it('should redact email and customer data when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock('https://api.helpscout.net')
+          .get('/v3/customers')
+          .query(true)
+          .reply(200, {
+            _embedded: {
+              customers: [
+                { id: 1, firstName: 'Jane', lastName: 'Doe', background: 'VIP client', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+                  _embedded: { emails: [{ id: 1, value: 'jane@example.com', type: 'work' }] } },
+              ],
+            },
+          });
+
+        const result = await toolHandler.callTool(makeRequest('searchCustomersByEmail', { email: 'jane@example.com' }));
+        const data = parseResult(result);
+
+        expect(data.searchedEmail).toBe('[redacted]');
+        expect(data.results[0].background).toBe('[redacted]');
+        expect(data.results[0]._embedded.emails[0].value).toBe('[redacted]');
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
+    });
+
+    it('should handle empty results', async () => {
+      nock('https://api.helpscout.net')
+        .get('/v3/customers')
+        .query(true)
+        .reply(200, { _embedded: { customers: [] } });
+
+      const result = await toolHandler.callTool(makeRequest('searchCustomersByEmail', { email: 'nobody@example.com' }));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(0);
+      expect(data.returnedCount).toBe(0);
+    });
+  });
+
+  describe('getCustomer - error handling', () => {
+    it('should propagate 429 rate limit from address endpoint', async () => {
+      nock(baseURL)
+        .get('/customers/123')
+        .query(true)
+        .reply(200, {
+          id: 123, firstName: 'Jane', lastName: 'Doe',
+          createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+        });
+
+      // Persist the 429 so retries also get rate-limited, with short retry-after
+      nock(baseURL)
+        .get('/customers/123/address')
+        .query(true)
+        .times(4) // 1 initial + 3 retries
+        .reply(429, { message: 'Rate limit exceeded' }, { 'Retry-After': '0' });
+
+      const result = await toolHandler.callTool(makeRequest('getCustomer', { customerId: '123' }));
+      expect(result.isError).toBe(true);
+      const text = (result.content[0] as { type: string; text: string }).text;
+      expect(text).toContain('RATE_LIMIT');
+    });
+
+    it('should surface non-critical address errors in response', async () => {
+      nock(baseURL)
+        .get('/customers/123')
+        .query(true)
+        .reply(200, {
+          id: 123, firstName: 'Jane', lastName: 'Doe',
+          createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-01-01T00:00:00Z',
+        })
+        .get('/customers/123/address')
+        .query(true)
+        .reply(500, { message: 'Internal Server Error' });
+
+      const result = await toolHandler.callTool(makeRequest('getCustomer', { customerId: '123' }));
+      const data = parseResult(result);
+
+      expect(data.customer.id).toBe(123);
+      expect(data.customer.address).toBeUndefined();
+      expect(data.customer.addressNote).toContain('Address lookup failed');
     });
   });
 

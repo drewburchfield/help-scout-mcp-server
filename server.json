@@ -20,14 +20,14 @@
       "environmentVariables": [
         {
           "name": "HELPSCOUT_APP_ID",
-          "description": "Help Scout OAuth2 App ID from My Apps > Create Private App",
+          "description": "Help Scout OAuth2 App ID (also accepts HELPSCOUT_CLIENT_ID)",
           "isRequired": true,
           "isSecret": true,
           "format": "string"
         },
         {
           "name": "HELPSCOUT_APP_SECRET",
-          "description": "Help Scout OAuth2 App Secret from My Apps > Create Private App",
+          "description": "Help Scout OAuth2 App Secret (also accepts HELPSCOUT_CLIENT_SECRET)",
           "isRequired": true,
           "isSecret": true,
           "format": "string"

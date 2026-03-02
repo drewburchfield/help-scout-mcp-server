@@ -132,7 +132,6 @@ export const MultiStatusConversationSearchInputSchema = z.object({
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
   limitPerStatus: z.number().min(1).max(100).default(25),
-  includeVariations: z.boolean().default(true),
 });
 
 export const StructuredConversationFilterInputSchema = z.object({
@@ -156,6 +155,10 @@ export const StructuredConversationFilterInputSchema = z.object({
 );
 
 // Customer API Types
+
+// Shared schema for contact sub-resources (emails, phones, chats, social profiles)
+const ContactEntrySchema = z.object({ id: z.number(), value: z.string(), type: z.string() });
+
 export const CustomerSchema = z.object({
   id: z.number(),
   firstName: z.string().nullable().optional(),
@@ -173,10 +176,10 @@ export const CustomerSchema = z.object({
   updatedAt: z.string(),
   draft: z.boolean().optional(),
   _embedded: z.object({
-    emails: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
-    phones: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
-    chats: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
-    social_profiles: z.array(z.object({ id: z.number(), value: z.string(), type: z.string() })).optional(),
+    emails: z.array(ContactEntrySchema).optional(),
+    phones: z.array(ContactEntrySchema).optional(),
+    chats: z.array(ContactEntrySchema).optional(),
+    social_profiles: z.array(ContactEntrySchema).optional(),
     websites: z.array(z.object({ id: z.number(), value: z.string() })).optional(),
     properties: z.array(z.object({
       type: z.string().optional(),
