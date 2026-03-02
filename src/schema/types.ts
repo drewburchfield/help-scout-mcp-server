@@ -265,6 +265,14 @@ export const GetOrganizationConversationsInputSchema = z.object({
   page: z.number().min(1).default(1),
 });
 
+export const GetCustomerContactsInputSchema = z.object({
+  customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
+});
+
+export const ListAllInboxesInputSchema = z.object({
+  limit: z.number().min(1).max(100).default(100).optional(),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -298,5 +306,7 @@ export type GetOrganizationInput = z.infer<typeof GetOrganizationInputSchema>;
 export type ListOrganizationsInput = z.infer<typeof ListOrganizationsInputSchema>;
 export type GetOrganizationMembersInput = z.infer<typeof GetOrganizationMembersInputSchema>;
 export type GetOrganizationConversationsInput = z.infer<typeof GetOrganizationConversationsInputSchema>;
+export type GetCustomerContactsInput = z.infer<typeof GetCustomerContactsInputSchema>;
+export type ListAllInboxesInput = z.infer<typeof ListAllInboxesInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

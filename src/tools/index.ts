@@ -23,6 +23,8 @@ import {
   GetCustomerInputSchema,
   ListCustomersInputSchema,
   SearchCustomersByEmailInputSchema,
+  GetCustomerContactsInputSchema,
+  ListAllInboxesInputSchema,
   GetOrganizationInputSchema,
   ListOrganizationsInputSchema,
   GetOrganizationMembersInputSchema,
@@ -462,6 +464,21 @@ export class ToolHandler {
           required: ['email'],
         },
       },
+      // NAS-727: Customer sub-resource tools
+      {
+        name: 'getCustomerContacts',
+        description: 'Get all contact details for a customer: emails, phones, chat handles, social profiles, websites, and address. Calls dedicated sub-resource endpoints for complete data. Use after getCustomer or listCustomers.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: {
+              type: 'string',
+              description: 'Customer ID',
+            },
+          },
+          required: ['customerId'],
+        },
+      },
       // Organization tools (NAS-684, NAS-712)
       {
         name: 'getOrganization',
@@ -548,7 +565,7 @@ export class ToolHandler {
         validation: errorDetails
       });
       
-      // Return helpful error with API constraint guidance
+      // Return helpful error with API constraint guidance (NAS-472: isError per MCP spec)
       return {
         content: [{
           type: 'text',
@@ -561,7 +578,8 @@ export class ToolHandler {
               suggestions: validation.suggestions
             }
           }, null, 2)
-        }]
+        }],
+        isError: true,
       };
     }
 
@@ -604,6 +622,9 @@ export class ToolHandler {
           break;
         case 'searchCustomersByEmail':
           result = await this.searchCustomersByEmail(request.params.arguments || {});
+          break;
+        case 'getCustomerContacts':
+          result = await this.getCustomerContacts(request.params.arguments || {});
           break;
         case 'getOrganization':
           result = await this.getOrganization(request.params.arguments || {});
@@ -1047,7 +1068,7 @@ export class ToolHandler {
   }
 
   private async listAllInboxes(args: unknown): Promise<CallToolResult> {
-    const input = args as { limit?: number };
+    const input = ListAllInboxesInputSchema.parse(args);
     const limit = input.limit || 100;
 
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
@@ -1769,6 +1790,74 @@ export class ToolHandler {
           nextCursor,
           note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
           usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  // NAS-727: Customer sub-resource contacts tool
+  private async getCustomerContacts(args: unknown): Promise<CallToolResult> {
+    const input = GetCustomerContactsInputSchema.parse(args);
+    const cid = input.customerId;
+
+    // Fetch all 6 sub-resources in parallel via dedicated endpoints
+    const [emailsRes, phonesRes, chatsRes, socialRes, websitesRes, addressRes] = await Promise.allSettled([
+      helpScoutClient.get<{ _embedded?: { emails?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/emails`),
+      helpScoutClient.get<{ _embedded?: { phones?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/phones`),
+      helpScoutClient.get<{ _embedded?: { chats?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/chats`),
+      helpScoutClient.get<{ _embedded?: { social_profiles?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/social-profiles`),
+      helpScoutClient.get<{ _embedded?: { websites?: Array<{ id: number; value: string }> } }>(`/customers/${cid}/websites`),
+      helpScoutClient.get<CustomerAddress>(`/customers/${cid}/address`),
+    ]);
+
+    // Helper: extract data or note the error
+    const extract = <T>(settled: PromiseSettledResult<T>, label: string): { data: T | null; error?: string } => {
+      if (settled.status === 'fulfilled') return { data: settled.value };
+      const reason = settled.reason;
+      // 404 = no data on file (normal)
+      if (isApiError(reason) && reason.code === 'NOT_FOUND') return { data: null };
+      // Auth/rate limit errors should abort
+      if (isApiError(reason) && (reason.code === 'UNAUTHORIZED' || reason.code === 'RATE_LIMIT')) throw reason;
+      return { data: null, error: `${label} fetch failed: ${reason?.message || String(reason)}` };
+    };
+
+    const emails = extract(emailsRes, 'emails');
+    const phones = extract(phonesRes, 'phones');
+    const chats = extract(chatsRes, 'chats');
+    const social = extract(socialRes, 'social profiles');
+    const websites = extract(websitesRes, 'websites');
+    const address = extract(addressRes, 'address');
+
+    const redactValue = (v: string) => config.security.allowPii ? v : '[redacted]';
+    const redactEntry = (e: { id: number; value: string; type?: string }) => ({
+      id: e.id, value: redactValue(e.value), ...(e.type ? { type: e.type } : {}),
+    });
+
+    const result: Record<string, unknown> = {
+      customerId: cid,
+      emails: emails.data ? (emails.data._embedded?.emails || []).map(redactEntry) : [],
+      phones: phones.data ? (phones.data._embedded?.phones || []).map(redactEntry) : [],
+      chats: chats.data ? (chats.data._embedded?.chats || []).map(redactEntry) : [],
+      socialProfiles: social.data ? (social.data._embedded?.social_profiles || []).map(redactEntry) : [],
+      websites: websites.data ? (websites.data._embedded?.websites || []).map(e => ({ id: e.id, value: redactValue(e.value) })) : [],
+      address: address.data ? (config.security.allowPii ? address.data : {
+        city: '[redacted]', state: '[redacted]', postalCode: '[redacted]',
+        lines: (address.data as CustomerAddress).lines ? ['[redacted]'] : undefined,
+        country: (address.data as CustomerAddress).country, // Country is not PII
+      }) : null,
+    };
+
+    // Collect any partial errors
+    const errors = [emails, phones, chats, social, websites, address]
+      .map(r => r.error).filter(Boolean);
+    if (errors.length > 0) result.partialErrors = errors;
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ...result,
+          usage: 'This returns all contact channels for a customer. Use getCustomer for the full profile with demographics.',
         }, null, 2),
       }],
     };

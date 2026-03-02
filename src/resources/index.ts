@@ -16,6 +16,20 @@ export class ResourceHandler {
     const path = url.hostname; // For custom protocols like helpscout://, the resource name is in hostname
     const searchParams = Object.fromEntries(url.searchParams.entries());
 
+    // NAS-471: Bounds checking for page/size params
+    if (searchParams.page) {
+      const page = parseInt(searchParams.page, 10);
+      if (isNaN(page) || page < 1 || page > 10000) {
+        throw new Error('page must be a number between 1 and 10000');
+      }
+    }
+    if (searchParams.size) {
+      const size = parseInt(searchParams.size, 10);
+      if (isNaN(size) || size < 1 || size > 200) {
+        throw new Error('size must be a number between 1 and 200');
+      }
+    }
+
     logger.info('Handling resource request', { uri, path, params: searchParams });
 
     switch (path) {
@@ -91,6 +105,9 @@ export class ResourceHandler {
     const conversationId = params.conversationId;
     if (!conversationId) {
       throw new Error('conversationId parameter is required for threads resource');
+    }
+    if (!/^\d+$/.test(conversationId)) {
+      throw new Error('conversationId must be a numeric value');
     }
 
     try {
