@@ -109,7 +109,7 @@ export class ToolHandler {
     }
 
     // Strip milliseconds (Help Scout rejects .xxx format)
-    const normalize = (d: string) => d.replace(/\.\d{3}Z$/, 'Z');
+    const normalize = (d: string) => d.replace(/\.\d{3}(Z|[+-]\d{2}:\d{2})$/, '$1');
     const start = createdAfter ? normalize(createdAfter) : '*';
     const end = createdBefore ? normalize(createdBefore) : '*';
     const clause = `(createdAt:[${start} TO ${end}])`;
@@ -1636,8 +1636,8 @@ export class ToolHandler {
       if (embeddedCopy.properties) {
         embeddedCopy.properties = embeddedCopy.properties.map(prop => ({
           ...prop,
-          value: prop.value ? '[redacted]' : prop.value,
-          text: prop.text ? '[redacted]' : prop.text,
+          value: prop.value != null ? '[redacted]' : prop.value,
+          text: prop.text != null ? '[redacted]' : prop.text,
         }));
       }
       redacted._embedded = embeddedCopy;
@@ -2001,12 +2001,12 @@ export class ToolHandler {
             number: c.number,
             subject: c.subject,
             status: c.status,
-            customer: config.security.allowPii ? c.customer : {
-              id: c.customer?.id,
-              email: c.customer?.email ? '[redacted]' : c.customer?.email,
-              firstName: c.customer?.firstName ? '[redacted]' : c.customer?.firstName,
-              lastName: c.customer?.lastName ? '[redacted]' : c.customer?.lastName,
-            },
+            customer: config.security.allowPii ? c.customer : (c.customer ? {
+              id: c.customer.id,
+              email: c.customer.email ? '[redacted]' : c.customer.email,
+              firstName: c.customer.firstName ? '[redacted]' : c.customer.firstName,
+              lastName: c.customer.lastName ? '[redacted]' : c.customer.lastName,
+            } : null),
             assignee: config.security.allowPii ? c.assignee : (c.assignee ? {
               id: c.assignee.id,
               firstName: '[redacted]',
