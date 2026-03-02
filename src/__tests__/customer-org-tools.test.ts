@@ -564,4 +564,102 @@ describe('Customer & Organization Tools', () => {
       }
     });
   });
+
+  describe('getCustomerContacts', () => {
+    const mockEmails = { _embedded: { emails: [{ id: 1, value: 'jane@example.com', type: 'work' }] } };
+    const mockPhones = { _embedded: { phones: [{ id: 2, value: '+1-555-0100', type: 'work' }] } };
+    const mockChats = { _embedded: { chats: [{ id: 3, value: 'jane.doe', type: 'other' }] } };
+    const mockSocial = { _embedded: { social_profiles: [{ id: 4, value: '@janedoe', type: 'twitter' }] } };
+    const mockWebsites = { _embedded: { websites: [{ id: 5, value: 'https://janedoe.com' }] } };
+    const mockAddress = { city: 'Nashville', state: 'TN', postalCode: '37201', country: 'US', lines: ['100 Broadway'] };
+
+    function mockAllSubResources(cid: string) {
+      nock(baseURL).get(`/customers/${cid}/emails`).query(true).reply(200, mockEmails);
+      nock(baseURL).get(`/customers/${cid}/phones`).query(true).reply(200, mockPhones);
+      nock(baseURL).get(`/customers/${cid}/chats`).query(true).reply(200, mockChats);
+      nock(baseURL).get(`/customers/${cid}/social-profiles`).query(true).reply(200, mockSocial);
+      nock(baseURL).get(`/customers/${cid}/websites`).query(true).reply(200, mockWebsites);
+      nock(baseURL).get(`/customers/${cid}/address`).query(true).reply(200, mockAddress);
+    }
+
+    it('should fetch all 6 sub-resources in parallel', async () => {
+      mockAllSubResources('123');
+      const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: '123' }));
+      const data = parseResult(result);
+
+      expect(data.customerId).toBe('123');
+      expect(data.emails).toHaveLength(1);
+      expect(data.emails[0].value).toBe('jane@example.com');
+      expect(data.phones).toHaveLength(1);
+      expect(data.phones[0].value).toBe('+1-555-0100');
+      expect(data.chats).toHaveLength(1);
+      expect(data.socialProfiles).toHaveLength(1);
+      expect(data.websites).toHaveLength(1);
+      expect(data.address).toBeTruthy();
+      expect(data.address.city).toBe('Nashville');
+      expect(data.partialErrors).toBeUndefined();
+    });
+
+    it('should handle 404s as empty data (no error)', async () => {
+      // All sub-resources return 404
+      for (const path of ['/emails', '/phones', '/chats', '/social-profiles', '/websites', '/address']) {
+        nock(baseURL).get(`/customers/999${path}`).query(true).reply(404, { message: 'Not found' });
+      }
+      const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: '999' }));
+      const data = parseResult(result);
+
+      expect(data.emails).toEqual([]);
+      expect(data.phones).toEqual([]);
+      expect(data.chats).toEqual([]);
+      expect(data.socialProfiles).toEqual([]);
+      expect(data.websites).toEqual([]);
+      expect(data.address).toBeNull();
+      expect(data.warning).toContain('No contact data found');
+    });
+
+    it('should report partial errors when some sub-resources fail', async () => {
+      nock(baseURL).get('/customers/123/emails').query(true).reply(200, mockEmails);
+      nock(baseURL).get('/customers/123/phones').query(true).reply(500, { message: 'Server Error' });
+      nock(baseURL).get('/customers/123/chats').query(true).reply(200, mockChats);
+      nock(baseURL).get('/customers/123/social-profiles').query(true).reply(200, mockSocial);
+      nock(baseURL).get('/customers/123/websites').query(true).reply(200, mockWebsites);
+      nock(baseURL).get('/customers/123/address').query(true).reply(200, mockAddress);
+
+      const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: '123' }));
+      const data = parseResult(result);
+
+      expect(data.emails).toHaveLength(1);
+      expect(data.phones).toEqual([]);
+      expect(data.partialErrors).toBeDefined();
+      expect(data.partialErrors.length).toBeGreaterThan(0);
+    });
+
+    it('should redact PII when allowPii is false', async () => {
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+      try {
+        mockAllSubResources('123');
+        const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: '123' }));
+        const data = parseResult(result);
+
+        expect(data.emails[0].value).toBe('[redacted]');
+        expect(data.phones[0].value).toBe('[redacted]');
+        expect(data.chats[0].value).toBe('[redacted]');
+        expect(data.socialProfiles[0].value).toBe('[redacted]');
+        expect(data.websites[0].value).toBe('[redacted]');
+        // Address: city/state/postal redacted, country preserved
+        expect(data.address.city).toBe('[redacted]');
+        expect(data.address.state).toBe('[redacted]');
+        expect(data.address.postalCode).toBe('[redacted]');
+        expect(data.address.country).toBe('US');
+      } finally {
+        config.security.allowPii = originalAllowPii;
+      }
+    });
+
+    it('should reject non-numeric customerId', async () => {
+      const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: 'abc' }));
+      expect((result as any).isError).toBe(true);
+    });
+  });
 });

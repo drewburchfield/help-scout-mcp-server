@@ -270,7 +270,7 @@ export const GetCustomerContactsInputSchema = z.object({
 });
 
 export const ListAllInboxesInputSchema = z.object({
-  limit: z.number().min(1).max(100).default(100).optional(),
+  limit: z.number().min(1).max(100).default(100),
 });
 
 // Response Types

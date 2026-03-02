@@ -521,7 +521,11 @@ export class HelpScoutClient {
     this.httpAgent = new HttpAgent(poolConfig);
     this.httpsAgent = new HttpsAgent(poolConfig);
 
-    logger.debug('Cleared idle connections', { 
+    // Update Axios instance to use the new agents
+    this.client.defaults.httpAgent = this.httpAgent;
+    this.client.defaults.httpsAgent = this.httpsAgent;
+
+    logger.debug('Cleared idle connections', {
       clearedHttp: stats.http.freeSockets,
       clearedHttps: stats.https.freeSockets,
     });

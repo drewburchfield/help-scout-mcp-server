@@ -4,6 +4,7 @@ import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
+import { PII_REDACTED_BODY } from '../utils/constants.js';
 import { z } from 'zod';
 import {
   Inbox,
@@ -649,14 +650,14 @@ export class ToolHandler {
       // Enhance result with API constraint guidance (best-effort: never turn a success into a failure)
       let guidanceProvided = false;
       try {
+        const originalContent = JSON.parse((result.content[0] as any).text);
         const guidance = HelpScoutAPIConstraints.generateToolGuidance(
           request.params.name,
-          JSON.parse((result.content[0] as any).text),
+          originalContent,
           validationContext
         );
 
         if (guidance.length > 0) {
-          const originalContent = JSON.parse((result.content[0] as any).text);
           originalContent.apiGuidance = guidance;
           result.content[0] = {
             type: 'text',
@@ -994,13 +995,13 @@ export class ToolHandler {
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
-        body: config.security.allowPii ? firstCustomerMessage.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+        body: config.security.allowPii ? firstCustomerMessage.body : PII_REDACTED_BODY,
         createdAt: firstCustomerMessage.createdAt,
         customer: firstCustomerMessage.customer,
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
-        body: config.security.allowPii ? latestStaffReply.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+        body: config.security.allowPii ? latestStaffReply.body : PII_REDACTED_BODY,
         createdAt: latestStaffReply.createdAt,
         createdBy: latestStaffReply.createdBy,
       } : null,
@@ -1032,7 +1033,7 @@ export class ToolHandler {
     // Redact PII if configured
     const processedThreads = threads.map(thread => ({
       ...thread,
-      body: config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+      body: config.security.allowPii ? thread.body : PII_REDACTED_BODY,
     }));
 
     return {
@@ -1595,6 +1596,17 @@ export class ToolHandler {
 
   // ── Customer Tools (NAS-680, NAS-727) ──
 
+  private redactAddress(address: CustomerAddress): Record<string, unknown> {
+    if (config.security.allowPii) return address as unknown as Record<string, unknown>;
+    return {
+      city: '[redacted]',
+      state: '[redacted]',
+      postalCode: '[redacted]',
+      lines: address.lines ? ['[redacted]'] : undefined,
+      country: address.country, // Country is not PII
+    };
+  }
+
   private redactCustomer(customer: Customer): Record<string, unknown> {
     if (config.security.allowPii) return customer as unknown as Record<string, unknown>;
 
@@ -1675,13 +1687,7 @@ export class ToolHandler {
 
     const result: Record<string, unknown> = this.redactCustomer(customer);
     if (address) {
-      result.address = config.security.allowPii ? address : {
-        city: '[redacted]',
-        state: '[redacted]',
-        postalCode: '[redacted]',
-        lines: address.lines ? ['[redacted]'] : undefined,
-        country: address.country, // Country is not PII
-      };
+      result.address = this.redactAddress(address);
     }
     if (addressNote) {
       result.addressNote = addressNote;
@@ -1720,6 +1726,7 @@ export class ToolHandler {
     // Use getCustomer for the full profile with all sub-resources.
     const slimResults = customers.map(c => {
       const redacted = this.redactCustomer(c);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { _links, _embedded, ...slim } = redacted;
       // Extract primary email from _embedded for slim view (redacted if PII protection is on)
       const emails = (_embedded as Record<string, unknown[]> | undefined)?.emails;
@@ -1775,7 +1782,11 @@ export class ToolHandler {
       try {
         const url = new URL(nextHref);
         nextCursor = url.searchParams.get('cursor') || nextHref;
-      } catch {
+      } catch (parseError) {
+        logger.debug('Could not parse v3 next link as URL, using raw href as cursor', {
+          nextHref,
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+        });
         nextCursor = nextHref;
       }
     }
@@ -1818,7 +1829,9 @@ export class ToolHandler {
       if (isApiError(reason) && reason.code === 'NOT_FOUND') return { data: null };
       // Auth/rate limit errors should abort
       if (isApiError(reason) && (reason.code === 'UNAUTHORIZED' || reason.code === 'RATE_LIMIT')) throw reason;
-      return { data: null, error: `${label} fetch failed: ${reason?.message || String(reason)}` };
+      // Non-API errors (TypeError, ReferenceError, etc.) are programming bugs; propagate them
+      if (!isApiError(reason)) throw reason;
+      return { data: null, error: `${label} fetch failed (${reason.code}): ${reason.message}` };
     };
 
     const emails = extract(emailsRes, 'emails');
@@ -1840,17 +1853,26 @@ export class ToolHandler {
       chats: chats.data ? (chats.data._embedded?.chats || []).map(redactEntry) : [],
       socialProfiles: social.data ? (social.data._embedded?.social_profiles || []).map(redactEntry) : [],
       websites: websites.data ? (websites.data._embedded?.websites || []).map(e => ({ id: e.id, value: redactValue(e.value) })) : [],
-      address: address.data ? (config.security.allowPii ? address.data : {
-        city: '[redacted]', state: '[redacted]', postalCode: '[redacted]',
-        lines: (address.data as CustomerAddress).lines ? ['[redacted]'] : undefined,
-        country: (address.data as CustomerAddress).country, // Country is not PII
-      }) : null,
+      address: address.data ? this.redactAddress(address.data as CustomerAddress) : null,
     };
 
     // Collect any partial errors
     const errors = [emails, phones, chats, social, websites, address]
       .map(r => r.error).filter(Boolean);
-    if (errors.length > 0) result.partialErrors = errors;
+    if (errors.length > 0) {
+      logger.error('getCustomerContacts returned partial results', {
+        customerId: cid,
+        failedResources: errors,
+        successCount: 6 - errors.length,
+      });
+      result.partialErrors = errors;
+    }
+
+    // Warn if all sub-resources returned no data (likely invalid customerId)
+    const allEmpty = !emails.data && !phones.data && !chats.data && !social.data && !websites.data && !address.data;
+    if (allEmpty && errors.length === 0) {
+      result.warning = 'No contact data found. Verify the customerId exists using getCustomer.';
+    }
 
     return {
       content: [{

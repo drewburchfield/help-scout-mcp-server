@@ -3,6 +3,7 @@ import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js
 import { Inbox, Conversation, Thread, ServerTime } from '../schema/types.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
+import { PII_REDACTED_BODY } from '../utils/constants.js';
 
 export class ResourceHandler {
   async handleResource(uri: string): Promise<TextResourceContents> {
@@ -120,7 +121,7 @@ export class ResourceHandler {
 
       const redactedThreads = threads.map(thread => ({
         ...thread,
-        body: config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+        body: config.security.allowPii ? thread.body : PII_REDACTED_BODY,
       }));
 
       return {
