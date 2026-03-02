@@ -437,12 +437,11 @@ export class ToolHandler {
             firstName: { type: 'string', description: 'Filter by first name' },
             lastName: { type: 'string', description: 'Filter by last name' },
             query: { type: 'string', description: 'Advanced query syntax, e.g. (email:"john@example.com")' },
-            mailbox: { type: 'string', description: 'Filter by inbox ID' },
+            mailbox: { type: 'number', description: 'Filter by inbox ID' },
             modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
             sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt' },
             sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
-            page: { type: 'number', minimum: 1, default: 1 },
-            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number (API returns 50 results per page)' },
           },
         },
       },
@@ -458,6 +457,7 @@ export class ToolHandler {
             query: { type: 'string', description: 'Advanced query syntax' },
             modifiedSince: { type: 'string', description: 'ISO 8601 date' },
             createdSince: { type: 'string', description: 'ISO 8601 date - only in v3' },
+            cursor: { type: 'string', description: 'Cursor for pagination (from nextCursor in previous response)' },
           },
           required: ['email'],
         },
@@ -478,39 +478,36 @@ export class ToolHandler {
       },
       {
         name: 'listOrganizations',
-        description: 'List all organizations with sorting options. Use for discovering organizations before drilling into members or conversations.',
+        description: 'List all organizations with sorting options. Use for discovering organizations before drilling into members or conversations. Returns 50 per page.',
         inputSchema: {
           type: 'object',
           properties: {
             sortField: { type: 'string', enum: ['name', 'customerCount', 'conversationCount', 'lastInteractionAt'], default: 'lastInteractionAt' },
             sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
-            page: { type: 'number', minimum: 1, default: 1 },
-            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number (50 results per page)' },
           },
         },
       },
       {
         name: 'getOrganizationMembers',
-        description: 'Get all customers belonging to an organization. Use after getOrganization to see who is in the org.',
+        description: 'Get all customers belonging to an organization. Use after getOrganization to see who is in the org. Returns 50 per page.',
         inputSchema: {
           type: 'object',
           properties: {
             organizationId: { type: 'string', description: 'Organization ID' },
-            page: { type: 'number', minimum: 1, default: 1 },
-            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number (50 results per page)' },
           },
           required: ['organizationId'],
         },
       },
       {
         name: 'getOrganizationConversations',
-        description: 'Get all conversations associated with an organization. Traverses org-to-conversations without needing individual customer lookups.',
+        description: 'Get all conversations associated with an organization. Traverses org-to-conversations without needing individual customer lookups. Returns 50 per page.',
         inputSchema: {
           type: 'object',
           properties: {
             organizationId: { type: 'string', description: 'Organization ID' },
-            page: { type: 'number', minimum: 1, default: 1 },
-            limit: { type: 'number', minimum: 1, maximum: 50, default: 50 },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number (50 results per page)' },
           },
           required: ['organizationId'],
         },
@@ -1656,9 +1653,9 @@ export class ToolHandler {
   private async listCustomers(args: unknown): Promise<CallToolResult> {
     const input = ListCustomersInputSchema.parse(args);
 
+    // v2 API: page size is fixed at 50, 'size' param is not documented/supported
     const params: Record<string, unknown> = {
       page: input.page,
-      size: input.limit,
       sortField: input.sortField,
       sortOrder: input.sortOrder,
       firstName: input.firstName,
@@ -1678,7 +1675,6 @@ export class ToolHandler {
           results: customers.map(c => this.redactCustomer(c)),
           returnedCount: customers.length,
           pagination: response.page,
-          nextCursor: response._links?.next?.href,
           usage: 'Use customer.id with getCustomer for full profile, or with structuredConversationFilter(customerIds) for their conversations.',
         }, null, 2),
       }],
@@ -1696,6 +1692,7 @@ export class ToolHandler {
       query: input.query,
       modifiedSince: input.modifiedSince,
       createdSince: input.createdSince,
+      cursor: input.cursor,
     };
 
     // v3 endpoint: construct absolute URL from configured base URL
@@ -1757,9 +1754,9 @@ export class ToolHandler {
   private async listOrganizations(args: unknown): Promise<CallToolResult> {
     const input = ListOrganizationsInputSchema.parse(args);
 
+    // v2 API: page size is fixed at 50
     const response = await helpScoutClient.get<PaginatedResponse<Organization>>('/organizations', {
       page: input.page,
-      size: input.limit,
       sort: `${input.sortField},${input.sortOrder}`,
     });
 
@@ -1783,9 +1780,10 @@ export class ToolHandler {
   private async getOrganizationMembers(args: unknown): Promise<CallToolResult> {
     const input = GetOrganizationMembersInputSchema.parse(args);
 
+    // v2 API: page size is fixed at 50
     const response = await helpScoutClient.get<PaginatedResponse<Customer>>(
       `/organizations/${input.organizationId}/customers`,
-      { page: input.page, size: input.limit }
+      { page: input.page }
     );
 
     const customers = response._embedded?.customers || [];
@@ -1808,9 +1806,10 @@ export class ToolHandler {
   private async getOrganizationConversations(args: unknown): Promise<CallToolResult> {
     const input = GetOrganizationConversationsInputSchema.parse(args);
 
+    // v2 API: page size is fixed at 50
     const response = await helpScoutClient.get<PaginatedResponse<Conversation>>(
       `/organizations/${input.organizationId}/conversations`,
-      { page: input.page, size: input.limit }
+      { page: input.page }
     );
 
     const conversations = response._embedded?.conversations || [];

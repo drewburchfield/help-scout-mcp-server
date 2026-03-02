@@ -226,12 +226,11 @@ export const ListCustomersInputSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   query: z.string().optional().describe('Advanced query syntax, e.g. (email:"john@example.com")'),
-  mailbox: z.string().optional().describe('Filter by inbox ID'),
+  mailbox: z.coerce.number().optional().describe('Filter by inbox ID'),
   modifiedSince: z.string().optional().describe('ISO 8601 date'),
   sortField: z.enum(['createdAt', 'firstName', 'lastName', 'modifiedAt']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(50).default(50),
 });
 
 export const SearchCustomersByEmailInputSchema = z.object({
@@ -241,6 +240,7 @@ export const SearchCustomersByEmailInputSchema = z.object({
   query: z.string().optional(),
   modifiedSince: z.string().optional(),
   createdSince: z.string().optional(),
+  cursor: z.string().optional().describe('Cursor for v3 pagination (from nextCursor in previous response)'),
 });
 
 export const GetOrganizationInputSchema = z.object({
@@ -253,19 +253,16 @@ export const ListOrganizationsInputSchema = z.object({
   sortField: z.enum(['name', 'customerCount', 'conversationCount', 'lastInteractionAt']).default('lastInteractionAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(50).default(50),
 });
 
 export const GetOrganizationMembersInputSchema = z.object({
   organizationId: z.string().describe('Organization ID'),
   page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(50).default(50),
 });
 
 export const GetOrganizationConversationsInputSchema = z.object({
   organizationId: z.string().describe('Organization ID'),
   page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(50).default(50),
 });
 
 // Response Types
