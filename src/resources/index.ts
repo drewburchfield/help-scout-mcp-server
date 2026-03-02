@@ -2,6 +2,7 @@ import { TextResourceContents, Resource } from '@modelcontextprotocol/sdk/types.
 import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js';
 import { Inbox, Conversation, Thread, ServerTime } from '../schema/types.js';
 import { logger } from '../utils/logger.js';
+import { config } from '../utils/config.js';
 
 export class ResourceHandler {
   async handleResource(uri: string): Promise<TextResourceContents> {
@@ -100,12 +101,17 @@ export class ResourceHandler {
 
       const threads = response._embedded?.threads || [];
 
+      const redactedThreads = threads.map(thread => ({
+        ...thread,
+        body: config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+      }));
+
       return {
         uri: `helpscout://threads?conversationId=${conversationId}`,
         mimeType: 'application/json',
         text: JSON.stringify({
           conversationId,
-          threads,
+          threads: redactedThreads,
           pagination: response.page,
           links: response._links,
         }, null, 2),

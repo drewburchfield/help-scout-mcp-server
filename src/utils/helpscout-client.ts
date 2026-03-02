@@ -110,7 +110,7 @@ export class HelpScoutClient {
       httpsAgent: this.httpsAgent,
       // Additional connection optimizations
       maxRedirects: 5,
-      validateStatus: (status) => status < 500, // Don't throw on 4xx errors, handle them in transformError
+      validateStatus: (status) => status >= 200 && status < 300, // Only accept 2xx; non-2xx errors throw as AxiosError for retry logic and transformError
     });
 
     this.setupInterceptors();
@@ -186,8 +186,12 @@ export class HelpScoutClient {
       }
     }
     
-    // lastError should always be defined here since we only reach this point after catching an error
-    throw lastError || new Error('Request failed without error details');
+    // All errors arrive here as raw AxiosError (interceptor passes them through unchanged).
+    // Transform to structured ApiError at this boundary, after all retries are exhausted.
+    if (lastError) {
+      throw this.transformError(lastError);
+    }
+    throw new Error('Request failed without error details');
   }
 
   private setupInterceptors(): void {
@@ -224,15 +228,18 @@ export class HelpScoutClient {
       (error: AxiosError) => {
         const duration = error.config?.metadata ? Date.now() - error.config.metadata.startTime : 0;
         const requestId = error.config?.metadata?.requestId || 'unknown';
-        
+
         logger.error('API error', {
           requestId,
           status: error.response?.status,
           message: error.message,
           duration,
         });
-        
-        return Promise.reject(this.transformError(error));
+
+        // Pass all errors through as raw AxiosError so executeWithRetry can
+        // inspect .response.status for retry decisions. transformError is called
+        // only after retries are exhausted (in executeWithRetry).
+        return Promise.reject(error);
       }
     );
   }
@@ -431,7 +438,7 @@ export class HelpScoutClient {
 
   private getDefaultCacheTtl(endpoint: string): number {
     if (endpoint.includes('/conversations')) return 300; // 5 minutes
-    if (endpoint.includes('/mailboxes')) return 1440; // 24 hours
+    if (endpoint.includes('/mailboxes')) return 86400; // 24 hours
     if (endpoint.includes('/threads')) return 300; // 5 minutes
     return 300; // Default 5 minutes
   }
