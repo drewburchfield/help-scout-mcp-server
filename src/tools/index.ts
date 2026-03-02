@@ -1602,7 +1602,7 @@ export class ToolHandler {
       city: '[redacted]',
       state: '[redacted]',
       postalCode: '[redacted]',
-      lines: address.lines ? ['[redacted]'] : undefined,
+      lines: address.lines ? address.lines.map(() => '[redacted]') : undefined,
       country: address.country, // Country is not PII
     };
   }
@@ -1613,13 +1613,13 @@ export class ToolHandler {
     const { background, firstName, lastName, jobTitle, location, photoUrl, age, _embedded, ...rest } = customer;
     const redacted: Record<string, unknown> = {
       ...rest,
-      firstName: firstName ? '[redacted]' : firstName,
-      lastName: lastName ? '[redacted]' : lastName,
-      jobTitle: jobTitle ? '[redacted]' : jobTitle,
-      location: location ? '[redacted]' : location,
-      photoUrl: photoUrl ? '[redacted]' : photoUrl,
-      age: age ? '[redacted]' : age,
-      background: background ? '[redacted]' : background,
+      firstName: firstName != null ? '[redacted]' : firstName,
+      lastName: lastName != null ? '[redacted]' : lastName,
+      jobTitle: jobTitle != null ? '[redacted]' : jobTitle,
+      location: location != null ? '[redacted]' : location,
+      photoUrl: photoUrl != null ? '[redacted]' : photoUrl,
+      age: age != null ? '[redacted]' : age,
+      background: background != null ? '[redacted]' : background,
     };
 
     if (_embedded) {
@@ -1892,12 +1892,12 @@ export class ToolHandler {
 
     return {
       ...org,
-      website: org.website ? '[redacted]' : org.website,
+      website: org.website != null ? '[redacted]' : org.website,
       domains: org.domains ? org.domains.map(() => '[redacted]') : org.domains,
       phones: org.phones ? org.phones.map(() => '[redacted]') : org.phones,
-      location: org.location ? '[redacted]' : org.location,
-      note: org.note ? '[redacted]' : org.note,
-      description: org.description ? '[redacted]' : org.description,
+      location: org.location != null ? '[redacted]' : org.location,
+      note: org.note != null ? '[redacted]' : org.note,
+      description: org.description != null ? '[redacted]' : org.description,
     };
   }
 
@@ -2003,9 +2003,9 @@ export class ToolHandler {
             status: c.status,
             customer: config.security.allowPii ? c.customer : (c.customer ? {
               id: c.customer.id,
-              email: c.customer.email ? '[redacted]' : c.customer.email,
-              firstName: c.customer.firstName ? '[redacted]' : c.customer.firstName,
-              lastName: c.customer.lastName ? '[redacted]' : c.customer.lastName,
+              email: c.customer.email != null ? '[redacted]' : c.customer.email,
+              firstName: c.customer.firstName != null ? '[redacted]' : c.customer.firstName,
+              lastName: c.customer.lastName != null ? '[redacted]' : c.customer.lastName,
             } : null),
             assignee: config.security.allowPii ? c.assignee : (c.assignee ? {
               id: c.assignee.id,
