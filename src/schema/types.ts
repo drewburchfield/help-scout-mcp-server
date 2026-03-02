@@ -101,13 +101,13 @@ export const SearchConversationsInputSchema = z.object({
 });
 
 export const GetThreadsInputSchema = z.object({
-  conversationId: z.string(),
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
   limit: z.number().min(1).max(200).default(200),
   cursor: z.string().optional(),
 });
 
 export const GetConversationSummaryInputSchema = z.object({
-  conversationId: z.string(),
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
 });
 
 export const AdvancedConversationSearchInputSchema = z.object({
@@ -219,7 +219,7 @@ export const OrganizationSchema = z.object({
 
 // Customer & Organization Input Schemas
 export const GetCustomerInputSchema = z.object({
-  customerId: z.string().describe('Customer ID'),
+  customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
 });
 
 export const ListCustomersInputSchema = z.object({
@@ -244,7 +244,7 @@ export const SearchCustomersByEmailInputSchema = z.object({
 });
 
 export const GetOrganizationInputSchema = z.object({
-  organizationId: z.string().describe('Organization ID'),
+  organizationId: z.string().regex(/^\d+$/, 'Organization ID must be numeric').describe('Organization ID'),
   includeCounts: z.boolean().default(true),
   includeProperties: z.boolean().default(false),
 });
@@ -256,12 +256,12 @@ export const ListOrganizationsInputSchema = z.object({
 });
 
 export const GetOrganizationMembersInputSchema = z.object({
-  organizationId: z.string().describe('Organization ID'),
+  organizationId: z.string().regex(/^\d+$/, 'Organization ID must be numeric').describe('Organization ID'),
   page: z.number().min(1).default(1),
 });
 
 export const GetOrganizationConversationsInputSchema = z.object({
-  organizationId: z.string().describe('Organization ID'),
+  organizationId: z.string().regex(/^\d+$/, 'Organization ID must be numeric').describe('Organization ID'),
   page: z.number().min(1).default(1),
 });
 

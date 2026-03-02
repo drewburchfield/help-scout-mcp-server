@@ -442,9 +442,9 @@ describe('Customer & Organization Tools', () => {
         expect(data.organization.logoUrl).toBe('https://acme.com/logo.png');
         expect(data.organization.brandColor).toBe('#FF0000');
 
-        // Redacted fields
+        // Redacted fields (arrays preserve element count)
         expect(data.organization.website).toBe('[redacted]');
-        expect(data.organization.domains).toEqual(['[redacted]']);
+        expect(data.organization.domains).toEqual(['[redacted]', '[redacted]']);
         expect(data.organization.phones).toEqual(['[redacted]']);
         expect(data.organization.location).toBe('[redacted]');
         expect(data.organization.note).toBe('[redacted]');

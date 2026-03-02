@@ -416,7 +416,7 @@ export class ToolHandler {
       // Customer tools (NAS-680, NAS-727, NAS-728)
       {
         name: 'getCustomer',
-        description: 'Get a customer profile by ID. Returns full profile with embedded emails, phones, chat handles, social profiles, websites, and address.',
+        description: 'Get a customer profile by ID. Returns profile with contact details (emails, phones, chat handles, social profiles, websites) plus address from a separate lookup.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -447,7 +447,7 @@ export class ToolHandler {
       },
       {
         name: 'searchCustomersByEmail',
-        description: 'Search customers by email address using the v3 API. Supports cursor-based pagination and email filtering not available in v2.',
+        description: 'Search customers by email address using the v3 API. Provides email as a dedicated filter parameter (vs query syntax in v2) and cursor-based pagination.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -625,20 +625,28 @@ export class ToolHandler {
       // Add to call history for future validation
       this.callHistory.push(request.params.name);
       
-      // Enhance result with API constraint guidance
-      const guidance = HelpScoutAPIConstraints.generateToolGuidance(
-        request.params.name, 
-        JSON.parse((result.content[0] as any).text), 
-        validationContext
-      );
-      
-      if (guidance.length > 0) {
-        const originalContent = JSON.parse((result.content[0] as any).text);
-        originalContent.apiGuidance = guidance;
-        result.content[0] = {
-          type: 'text',
-          text: JSON.stringify(originalContent, null, 2)
-        };
+      // Enhance result with API constraint guidance (best-effort: never turn a success into a failure)
+      try {
+        const guidance = HelpScoutAPIConstraints.generateToolGuidance(
+          request.params.name,
+          JSON.parse((result.content[0] as any).text),
+          validationContext
+        );
+
+        if (guidance.length > 0) {
+          const originalContent = JSON.parse((result.content[0] as any).text);
+          originalContent.apiGuidance = guidance;
+          result.content[0] = {
+            type: 'text',
+            text: JSON.stringify(originalContent, null, 2)
+          };
+        }
+      } catch (guidanceError) {
+        logger.warn('Failed to inject API guidance into tool response', {
+          requestId,
+          toolName: request.params.name,
+          error: guidanceError instanceof Error ? guidanceError.message : String(guidanceError),
+        });
       }
 
       logger.info('Tool call completed', {
@@ -646,7 +654,7 @@ export class ToolHandler {
         toolName: request.params.name,
         duration,
         validationPassed: true,
-        guidanceProvided: guidance.length > 0
+        guidanceProvided: true
       });
 
       return result;
@@ -1274,6 +1282,7 @@ export class ToolHandler {
       conversations: Conversation[];
       searchQuery: string;
       filteredByCreatedBefore?: boolean;
+      error?: string;
     }> = [];
 
     for (const status of input.statuses) {
@@ -1321,6 +1330,7 @@ export class ToolHandler {
           totalCount: 0,
           conversations: [],
           searchQuery,
+          error: `Search failed (${error.code}): ${error.message}`,
         });
       }
     }
@@ -1444,6 +1454,7 @@ export class ToolHandler {
       conversations: Conversation[];
       searchQuery: string;
       filteredByCreatedBefore?: boolean;
+      error?: string;
     }>,
     context: {
       input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
@@ -1475,6 +1486,7 @@ export class ToolHandler {
       totalBeforeClientSideFiltering: totalBeforeFilter,
       clientSideFilteringApplied: hasClientSideFiltering ?
         `createdBefore filter applied - totalConversationsFound (${totalConversations}) reflects filtered results, totalBeforeClientSideFiltering (${totalBeforeFilter}) shows pre-filter API totals` : undefined,
+      failedStatuses: allResults.filter(r => r.error).map(r => `[WARNING] Status "${r.status}" search failed: ${r.error}`),
       resultsByStatus: allResults,
       searchTips: totalConversations === 0 ? [
         'Try broader search terms or increase the timeframe',
@@ -1686,7 +1698,7 @@ export class ToolHandler {
     const slimResults = customers.map(c => {
       const redacted = this.redactCustomer(c);
       const { _links, _embedded, ...slim } = redacted;
-      // Preserve just the primary email for identification
+      // Extract primary email from _embedded for slim view (redacted if PII protection is on)
       const emails = (_embedded as Record<string, unknown[]> | undefined)?.emails;
       if (Array.isArray(emails) && emails.length > 0) {
         slim.primaryEmail = (emails[0] as Record<string, unknown>).value;
@@ -1756,8 +1768,8 @@ export class ToolHandler {
     return {
       ...org,
       website: org.website ? '[redacted]' : org.website,
-      domains: org.domains ? ['[redacted]'] : org.domains,
-      phones: org.phones ? ['[redacted]'] : org.phones,
+      domains: org.domains ? org.domains.map(() => '[redacted]') : org.domains,
+      phones: org.phones ? org.phones.map(() => '[redacted]') : org.phones,
       location: org.location ? '[redacted]' : org.location,
       note: org.note ? '[redacted]' : org.note,
       description: org.description ? '[redacted]' : org.description,
