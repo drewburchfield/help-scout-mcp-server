@@ -64,8 +64,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 9 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(9);
+    it('should have all 17 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(17);
 
       const expectedTools = [
         'searchInboxes',
@@ -76,7 +76,15 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
         'listAllInboxes',
-        'structuredConversationFilter'
+        'structuredConversationFilter',
+        'getCustomer',
+        'listCustomers',
+        'searchCustomersByEmail',
+        'getCustomerContacts',
+        'getOrganization',
+        'listOrganizations',
+        'getOrganizationMembers',
+        'getOrganizationConversations'
       ];
 
       const toolNames = manifest.tools.map((tool: any) => tool.name);
@@ -218,7 +226,15 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getThreads',
         'getServerTime',
         'advancedConversationSearch',
-        'comprehensiveConversationSearch'
+        'comprehensiveConversationSearch',
+        'getCustomer',
+        'listCustomers',
+        'searchCustomersByEmail',
+        'getCustomerContacts',
+        'getOrganization',
+        'listOrganizations',
+        'getOrganizationMembers',
+        'getOrganizationConversations'
       ];
 
       expectedExports.forEach(exportName => {

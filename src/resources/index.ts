@@ -26,8 +26,8 @@ export class ResourceHandler {
     }
     if (searchParams.size) {
       const size = parseInt(searchParams.size, 10);
-      if (isNaN(size) || size < 1 || size > 200) {
-        throw new Error('size must be a number between 1 and 200');
+      if (isNaN(size) || size < 1 || size > 50) {
+        throw new Error('size must be a number between 1 and 50');
       }
     }
 

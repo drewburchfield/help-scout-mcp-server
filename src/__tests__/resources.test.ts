@@ -104,6 +104,12 @@ describe('ResourceHandler', () => {
         const resource = await resourceHandler.handleResource('helpscout://inboxes?page=2&size=10');
         expect(resource).toBeDefined();
       });
+
+      it('should reject invalid size parameters above Help Scout limits', async () => {
+        await expect(
+          resourceHandler.handleResource('helpscout://inboxes?size=51')
+        ).rejects.toThrow('size must be a number between 1 and 50');
+      });
     });
 
     describe('helpscout://conversations', () => {
@@ -178,6 +184,12 @@ describe('ResourceHandler', () => {
         const data = JSON.parse(resource.text as string);
         expect(data.pagination.number).toBe(2);
         expect(data.pagination.size).toBe(25);
+      });
+
+      it('should reject invalid page parameters', async () => {
+        await expect(
+          resourceHandler.handleResource('helpscout://conversations?page=0')
+        ).rejects.toThrow('page must be a number between 1 and 10000');
       });
 
       it('should handle all filter parameters', async () => {

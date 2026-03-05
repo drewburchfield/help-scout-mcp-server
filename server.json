@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.drewburchfield/help-scout-mcp",
   "title": "Help Scout MCP Server",
-  "description": "Search Help Scout conversations, threads, and inboxes with AI assistants",
-  "version": "1.6.2",
+  "description": "Search Help Scout conversations, customers, organizations, threads, and inboxes with AI assistants",
+  "version": "1.7.0",
   "repository": {
     "url": "https://github.com/drewburchfield/help-scout-mcp-server.git",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "npm",
       "identifier": "help-scout-mcp-server",
-      "version": "1.6.2",
+      "version": "1.7.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -43,7 +43,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "docker.io/drewburchfield/help-scout-mcp-server:1.6.2",
+      "identifier": "docker.io/drewburchfield/help-scout-mcp-server:1.7.0",
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"

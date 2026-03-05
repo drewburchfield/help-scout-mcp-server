@@ -1,7 +1,7 @@
 {
   "name": "helpscout-search",
-  "description": "Search-capable MCP server for Help Scout inboxes, conversations, and threads.",
-  "version": "1.6.2",
+  "description": "Search-capable MCP server for Help Scout inboxes, conversations, customers, organizations, and threads.",
+  "version": "1.7.0",
   "mcpVersion": "1.17.4",
   "resources": [
     "helpscout://inboxes",
@@ -18,7 +18,15 @@
     "listAllInboxes",
     "advancedConversationSearch",
     "comprehensiveConversationSearch",
-    "structuredConversationFilter"
+    "structuredConversationFilter",
+    "getCustomer",
+    "listCustomers",
+    "searchCustomersByEmail",
+    "getCustomerContacts",
+    "getOrganization",
+    "listOrganizations",
+    "getOrganizationMembers",
+    "getOrganizationConversations"
   ],
   "prompts": [
     "search-last-7-days",
