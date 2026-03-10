@@ -14,6 +14,7 @@
     "searchConversations",
     "getConversationSummary",
     "getThreads",
+    "downloadAttachment",
     "getServerTime",
     "listAllInboxes",
     "advancedConversationSearch",
