@@ -1,4 +1,7 @@
 import nock from 'nock';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
 import { ToolHandler } from '../tools/index.js';
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 
@@ -37,12 +40,13 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(17);
+      expect(tools).toHaveLength(18);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
         'getConversationSummary',
         'getThreads',
+        'downloadAttachment',
         'getServerTime',
         'listAllInboxes',
         'advancedConversationSearch',
@@ -1875,6 +1879,138 @@ describe('ToolHandler', () => {
         expect(response.pagination.totalAvailable).toBe(300);
         expect(response.pagination.note).toContain('filtered count (2)');
         expect(response.pagination.note).toContain('pre-filter API total (300)');
+      });
+    });
+
+    describe('getThreads with attachments', () => {
+      it('should include attachment metadata in thread responses', async () => {
+        const mockThreadsResponse = {
+          _embedded: {
+            threads: [{
+              id: 100,
+              type: 'customer',
+              status: 'active',
+              state: 'published',
+              action: null,
+              body: 'See attached screenshot',
+              source: { type: 'email', via: 'customer' },
+              customer: { id: 1, firstName: 'Test', lastName: 'User', email: 'test@example.com' },
+              createdBy: null,
+              assignedTo: null,
+              createdAt: '2025-01-01T00:00:00Z',
+              updatedAt: '2025-01-01T00:00:00Z',
+              _embedded: {
+                attachments: [{
+                  id: 5000,
+                  filename: 'screenshot.png',
+                  mimeType: 'image/png',
+                  width: 1920,
+                  height: 1080,
+                  size: 45000,
+                }],
+              },
+            }],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        };
+
+        nock(baseURL)
+          .get('/conversations/123/threads')
+          .query(true)
+          .reply(200, mockThreadsResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'getThreads',
+            arguments: { conversationId: '123' },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        expect(response.threads[0]._embedded.attachments).toHaveLength(1);
+        expect(response.threads[0]._embedded.attachments[0]).toEqual({
+          id: 5000,
+          filename: 'screenshot.png',
+          mimeType: 'image/png',
+          width: 1920,
+          height: 1080,
+          size: 45000,
+        });
+      });
+    });
+
+    describe('downloadAttachment', () => {
+      let downloadDir: string;
+
+      beforeEach(async () => {
+        downloadDir = path.join(os.tmpdir(), 'helpscout-test-attachments-' + Date.now());
+        process.env.ATTACHMENT_DOWNLOAD_DIR = downloadDir;
+      });
+
+      afterEach(async () => {
+        delete process.env.ATTACHMENT_DOWNLOAD_DIR;
+        try {
+          await fs.rm(downloadDir, { recursive: true, force: true });
+        } catch {
+          // ignore cleanup errors
+        }
+      });
+
+      it('should download attachment and save to disk', async () => {
+        const base64Content = Buffer.from('Hello, World!').toString('base64');
+
+        nock(baseURL)
+          .get('/conversations/100/attachments/5000/data')
+          .reply(200, { data: base64Content });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'downloadAttachment',
+            arguments: {
+              conversationId: '100',
+              attachmentId: '5000',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        expect(response.success).toBe(true);
+        expect(response.filePath).toContain('5000');
+        expect(response.attachmentId).toBe('5000');
+        expect(response.conversationId).toBe('100');
+        expect(response.sizeBytes).toBe(13); // "Hello, World!" is 13 bytes
+
+        // Verify file exists on disk with correct content
+        const fileContent = await fs.readFile(response.filePath, 'utf-8');
+        expect(fileContent).toBe('Hello, World!');
+      });
+
+      it('should return error for non-existent attachment', async () => {
+        nock(baseURL)
+          .get('/conversations/100/attachments/9999/data')
+          .reply(404, { message: 'Not Found' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'downloadAttachment',
+            arguments: {
+              conversationId: '100',
+              attachmentId: '9999',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
       });
     });
 
