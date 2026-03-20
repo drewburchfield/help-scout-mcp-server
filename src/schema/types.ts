@@ -155,6 +155,64 @@ export const StructuredConversationFilterInputSchema = z.object({
   { message: 'Must use at least one unique field: assignedTo, folderId, customerIds, conversationNumber, or unique sorting. For content search, use comprehensiveConversationSearch.' }
 );
 
+// Write Operation Input Schemas
+export const CreateConversationInputSchema = z.object({
+  subject: z.string().min(1, 'Subject is required'),
+  customer: z.object({
+    email: z.string().email('Valid customer email is required'),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+  }),
+  mailboxId: z.number().int().positive('Mailbox ID must be a positive integer'),
+  type: z.enum(['email', 'phone', 'chat']).default('email'),
+  status: z.enum(['active', 'pending', 'closed']).default('active'),
+  text: z.string().min(1, 'Message body text is required'),
+  tags: z.array(z.string()).optional(),
+  assignTo: z.number().int().positive('Assignee user ID must be a positive integer').optional(),
+});
+
+export const CreateReplyInputSchema = z.object({
+  conversationId: z.number().int().positive('Conversation ID must be a positive integer'),
+  text: z.string().min(1, 'Reply text is required'),
+  draft: z.boolean().default(false),
+});
+
+export const CreateNoteInputSchema = z.object({
+  conversationId: z.number().int().positive('Conversation ID must be a positive integer'),
+  text: z.string().min(1, 'Note text is required'),
+});
+
+export const UpdateConversationStatusInputSchema = z.object({
+  conversationId: z.number().int().positive('Conversation ID must be a positive integer'),
+  status: z.enum(['active', 'pending', 'closed']),
+});
+
+export const AssignConversationInputSchema = z.object({
+  conversationId: z.number().int().positive('Conversation ID must be a positive integer'),
+  assignTo: z.number().int().positive('User ID must be a positive integer'),
+});
+
+export const ListUsersInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  size: z.number().int().min(1).max(100).default(50),
+});
+
+export const ListMailboxesInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+  size: z.number().int().min(1).max(100).default(50),
+});
+
+// Help Scout API Response Types
+export const UserSchema = z.object({
+  id: z.number(),
+  firstName: z.string(),
+  lastName: z.string(),
+  email: z.string(),
+  role: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -180,3 +238,11 @@ export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversatio
 export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;
+export type User = z.infer<typeof UserSchema>;
+export type CreateConversationInput = z.infer<typeof CreateConversationInputSchema>;
+export type CreateReplyInput = z.infer<typeof CreateReplyInputSchema>;
+export type CreateNoteInput = z.infer<typeof CreateNoteInputSchema>;
+export type UpdateConversationStatusInput = z.infer<typeof UpdateConversationStatusInputSchema>;
+export type AssignConversationInput = z.infer<typeof AssignConversationInputSchema>;
+export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
+export type ListMailboxesInput = z.infer<typeof ListMailboxesInputSchema>;

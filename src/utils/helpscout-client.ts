@@ -429,6 +429,28 @@ export class HelpScoutClient {
     return response.data;
   }
 
+  async post<T>(endpoint: string, data?: Record<string, unknown>): Promise<{ data: T; headers: Record<string, string>; status: number }> {
+    const response = await this.executeWithRetry<T>(() =>
+      this.client.post<T>(endpoint, data)
+    );
+
+    return {
+      data: response.data,
+      headers: response.headers as Record<string, string>,
+      status: response.status,
+    };
+  }
+
+  async patch(endpoint: string, data?: unknown): Promise<{ status: number }> {
+    const response = await this.executeWithRetry<void>(() =>
+      this.client.patch(endpoint, data)
+    );
+
+    return {
+      status: response.status,
+    };
+  }
+
   private getDefaultCacheTtl(endpoint: string): number {
     if (endpoint.includes('/conversations')) return 300; // 5 minutes
     if (endpoint.includes('/mailboxes')) return 1440; // 24 hours
