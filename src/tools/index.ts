@@ -121,7 +121,7 @@ export class ToolHandler {
   }
 
   async listTools(): Promise<Tool[]> {
-    return [
+    const tools: Tool[] = [
       {
         name: 'searchInboxes',
         description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
