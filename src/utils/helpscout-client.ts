@@ -430,8 +430,14 @@ export class HelpScoutClient {
   }
 
   async post<T>(endpoint: string, data?: Record<string, unknown>): Promise<{ data: T; headers: Record<string, string>; status: number }> {
-    const response = await this.executeWithRetry<T>(() =>
-      this.client.post<T>(endpoint, data)
+    // POST is non-idempotent — do not retry. A retried POST could create
+    // duplicate conversations, replies, or notes. Critically, createReply
+    // sends email to the customer, so a duplicate retry would deliver
+    // duplicate emails.
+    const noRetry: RetryConfig = { retries: 0, retryDelay: 0, maxRetryDelay: 0 };
+    const response = await this.executeWithRetry<T>(
+      () => this.client.post<T>(endpoint, data),
+      noRetry
     );
 
     if (response.status >= 400) {
@@ -447,6 +453,7 @@ export class HelpScoutClient {
   }
 
   async patch(endpoint: string, data?: unknown): Promise<{ status: number }> {
+    // PATCH for status/assignment updates is idempotent, so retries are safe.
     const response = await this.executeWithRetry<void>(() =>
       this.client.patch(endpoint, data)
     );
