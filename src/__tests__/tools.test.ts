@@ -2252,6 +2252,90 @@ describe('ToolHandler', () => {
       });
     });
 
+    describe('write operation error handling', () => {
+      it('should surface 422 validation errors from createConversation', async () => {
+        nock(baseURL)
+          .post('/conversations')
+          .reply(422, { message: 'Validation failed', errors: [{ field: 'subject', message: 'Subject is required' }] });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createConversation',
+            arguments: {
+              subject: 'Test',
+              customer: { email: 'customer@example.com' },
+              mailboxId: 1,
+              text: 'Hello',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+
+      it('should surface 401 auth errors from createReply', async () => {
+        nock(baseURL)
+          .post('/conversations/123/reply')
+          .reply(401, { message: 'Unauthorized' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createReply',
+            arguments: {
+              conversationId: 123,
+              text: 'Reply text',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+
+      it('should surface 404 errors from assignConversation', async () => {
+        nock(baseURL)
+          .patch('/conversations/999')
+          .reply(404, { message: 'Conversation not found' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'assignConversation',
+            arguments: {
+              conversationId: 999,
+              assignTo: 42,
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+
+      it('should surface 400 errors from updateConversationStatus', async () => {
+        nock(baseURL)
+          .patch('/conversations/789')
+          .reply(400, { message: 'Bad request' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'updateConversationStatus',
+            arguments: {
+              conversationId: 789,
+              status: 'closed',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+    });
+
     describe('write operations disabled', () => {
       it('should reject write tools when HELPSCOUT_ENABLE_WRITES=false', async () => {
         process.env.HELPSCOUT_ENABLE_WRITES = 'false';

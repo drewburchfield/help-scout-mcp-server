@@ -434,6 +434,11 @@ export class HelpScoutClient {
       this.client.post<T>(endpoint, data)
     );
 
+    if (response.status >= 400) {
+      const errorBody = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+      throw new Error(`Help Scout API error: ${response.status} - ${errorBody}`);
+    }
+
     return {
       data: response.data,
       headers: response.headers as Record<string, string>,
@@ -445,6 +450,11 @@ export class HelpScoutClient {
     const response = await this.executeWithRetry<void>(() =>
       this.client.patch(endpoint, data)
     );
+
+    if (response.status >= 400) {
+      const errorBody = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+      throw new Error(`Help Scout API error: ${response.status} - ${errorBody}`);
+    }
 
     return {
       status: response.status,
