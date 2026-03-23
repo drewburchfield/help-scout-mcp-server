@@ -445,6 +445,12 @@ export class HelpScoutClient {
       throw new Error(`Help Scout API error: ${response.status} - ${errorBody}`);
     }
 
+    // Invalidate read cache after successful write. Without this, subsequent
+    // reads (e.g., getThreads after createReply) return stale cached data.
+    // An LLM agent seeing stale data might conclude the write failed and
+    // retry, causing duplicate emails or duplicate resources.
+    cache.clear();
+
     return {
       data: response.data,
       headers: response.headers as Record<string, string>,
@@ -462,6 +468,9 @@ export class HelpScoutClient {
       const errorBody = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
       throw new Error(`Help Scout API error: ${response.status} - ${errorBody}`);
     }
+
+    // Invalidate read cache after successful write.
+    cache.clear();
 
     return {
       status: response.status,

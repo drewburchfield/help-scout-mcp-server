@@ -173,6 +173,9 @@ export const CreateConversationInputSchema = z.object({
 
 export const CreateReplyInputSchema = z.object({
   conversationId: z.number().int().positive('Conversation ID must be a positive integer'),
+  customer: z.object({
+    email: z.string().email('Valid customer email is required'),
+  }).optional().describe('Customer to send the reply to. If omitted, sends to the conversation\'s primary customer.'),
   text: z.string().min(1, 'Reply text is required'),
   draft: z.boolean().default(false),
 });

@@ -455,6 +455,14 @@ export class ToolHandler {
             type: 'object',
             properties: {
               conversationId: { type: 'number', description: 'Conversation ID to reply to' },
+              customer: {
+                type: 'object',
+                description: "Customer to send the reply to. If omitted, sends to the conversation's primary customer.",
+                properties: {
+                  email: { type: 'string', description: 'Customer email address' },
+                },
+                required: ['email'],
+              },
               text: { type: 'string', description: 'Reply message body text' },
               draft: { type: 'boolean', default: false, description: 'If true, saves as draft instead of sending' },
             },
@@ -1653,7 +1661,17 @@ export class ToolHandler {
     this.assertWritesEnabled('createReply');
     const input = CreateReplyInputSchema.parse(args);
 
+    // Resolve customer: use provided email or fetch from conversation
+    let customerEmail: string;
+    if (input.customer?.email) {
+      customerEmail = input.customer.email;
+    } else {
+      const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
+      customerEmail = conversation.customer.email;
+    }
+
     const body: Record<string, unknown> = {
+      customer: { email: customerEmail },
       text: input.text,
       draft: input.draft,
     };
