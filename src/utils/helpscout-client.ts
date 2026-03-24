@@ -73,11 +73,14 @@ export class HelpScoutClient {
     retryDelay: 1000, // 1 second
     maxRetryDelay: 10000, // 10 seconds
     retryCondition: (error: AxiosError) => {
-      // Retry on network errors, timeouts, and 5xx responses
-      return !error.response || 
+      // Retry on network errors, timeouts, 5xx responses, and rate limits.
+      // The error interceptor transforms AxiosError into ApiError, so also
+      // check the ApiError shape for rate limits.
+      return !error.response ||
              error.code === 'ECONNABORTED' ||
              (error.response.status >= 500 && error.response.status < 600) ||
-             error.response.status === 429; // Rate limits
+             error.response.status === 429 ||
+             (error as unknown as ApiError).code === 'RATE_LIMIT';
     }
   };
 
@@ -156,17 +159,23 @@ export class HelpScoutClient {
           break;
         }
         
-        // Handle rate limits specially
-        if (lastError.response?.status === 429) {
-          const retryAfter = parseInt(lastError.response.headers['retry-after'] || '60', 10) * 1000;
+        // Handle rate limits specially — check both raw AxiosError (has .response)
+        // and transformed ApiError (has .code === 'RATE_LIMIT' and .retryAfter)
+        const isRateLimit = lastError.response?.status === 429
+          || ((lastError as unknown as ApiError).code === 'RATE_LIMIT');
+        if (isRateLimit) {
+          const retryAfterSecs = lastError.response?.headers?.['retry-after']
+            || (lastError as unknown as ApiError).retryAfter
+            || 60;
+          const retryAfter = (typeof retryAfterSecs === 'string' ? parseInt(retryAfterSecs, 10) : retryAfterSecs) * 1000;
           const delay = Math.min(retryAfter, retryConfig.maxRetryDelay);
-          
+
           logger.warn('Rate limit hit, waiting before retry', {
             attempt: attempt + 1,
             retryAfter: delay,
             requestId: lastError.config?.metadata?.requestId,
           });
-          
+
           await this.sleep(delay);
         } else {
           // Standard exponential backoff

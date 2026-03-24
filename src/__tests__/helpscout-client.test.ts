@@ -449,4 +449,84 @@ describe('HelpScoutClient', () => {
       }));
     });
   });
+
+  describe('executeWithRetry rate-limit detection', () => {
+    it('should detect rate limits from transformed ApiError (no .response)', async () => {
+      const client = new HelpScoutClient();
+
+      // Simulate what happens when the error interceptor transforms a 429
+      // AxiosError into an ApiError — it loses .response but gains .code
+      // and .retryAfter
+      const apiError = {
+        code: 'RATE_LIMIT',
+        message: 'Rate limit exceeded',
+        retryAfter: 2,
+        details: {},
+      };
+
+      let attemptCount = 0;
+      const operation = () => {
+        attemptCount++;
+        return Promise.reject(apiError);
+      };
+
+      const retryConfig = {
+        retries: 1,
+        retryDelay: 100,
+        maxRetryDelay: 5000,
+        retryCondition: () => true,
+      };
+
+      try {
+        await (client as any).executeWithRetry(operation, retryConfig);
+      } catch {
+        // Expected to throw after exhausting retries
+      }
+
+      // Should have attempted twice (initial + 1 retry)
+      expect(attemptCount).toBe(2);
+    });
+
+    it('should use retryAfter from ApiError for delay calculation', async () => {
+      const client = new HelpScoutClient();
+
+      const apiError = {
+        code: 'RATE_LIMIT',
+        message: 'Rate limit exceeded',
+        retryAfter: 1, // 1 second
+        details: {},
+      };
+
+      const sleepCalls: number[] = [];
+      const originalSleep = (client as any).sleep.bind(client);
+      (client as any).sleep = (ms: number) => {
+        sleepCalls.push(ms);
+        // Don't actually sleep in tests
+        return Promise.resolve();
+      };
+
+      let attemptCount = 0;
+      const operation = () => {
+        attemptCount++;
+        return Promise.reject(apiError);
+      };
+
+      const retryConfig = {
+        retries: 1,
+        retryDelay: 100,
+        maxRetryDelay: 10000,
+        retryCondition: () => true,
+      };
+
+      try {
+        await (client as any).executeWithRetry(operation, retryConfig);
+      } catch {
+        // Expected
+      }
+
+      // Should have slept with the retryAfter value (1s = 1000ms), not exponential backoff
+      expect(sleepCalls).toHaveLength(1);
+      expect(sleepCalls[0]).toBe(1000);
+    });
+  });
 });
