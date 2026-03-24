@@ -429,6 +429,63 @@ export class HelpScoutClient {
     return response.data;
   }
 
+  /**
+   * Build a structured ApiError from a non-throwing 4xx response.
+   * Because validateStatus treats 4xx as successful, these responses bypass
+   * the Axios error interceptor (and thus transformError). This method
+   * produces the same structured ApiError that transformError would, so the
+   * MCP error layer can map it to the correct error code.
+   */
+  private buildApiErrorFromResponse(response: AxiosResponse): ApiError {
+    const requestId = response.config?.metadata?.requestId || 'unknown';
+    const status = response.status;
+    const responseData = (typeof response.data === 'object' ? response.data : {}) as Record<string, unknown>;
+
+    if (status === 401) {
+      this.accessToken = null;
+      return {
+        code: 'UNAUTHORIZED',
+        message: 'Help Scout authentication failed. Please check your API credentials.',
+        details: { requestId, suggestion: 'Verify HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are valid' },
+      };
+    }
+    if (status === 403) {
+      return {
+        code: 'UNAUTHORIZED',
+        message: 'Access forbidden. Insufficient permissions for this Help Scout resource.',
+        details: { requestId, suggestion: 'Check if your OAuth2 app has access to this mailbox or resource' },
+      };
+    }
+    if (status === 404) {
+      return {
+        code: 'NOT_FOUND',
+        message: 'Help Scout resource not found. The requested conversation, mailbox, or thread does not exist.',
+        details: { requestId, suggestion: 'Verify the ID is correct and the resource exists' },
+      };
+    }
+    if (status === 429) {
+      const retryAfter = parseInt(String(response.headers?.['retry-after'] || '60'), 10);
+      return {
+        code: 'RATE_LIMIT',
+        message: `Help Scout API rate limit exceeded. Please wait ${retryAfter} seconds before retrying.`,
+        retryAfter,
+        details: { requestId, suggestion: 'Reduce request frequency or implement request batching' },
+      };
+    }
+    if (status === 422) {
+      return {
+        code: 'INVALID_INPUT',
+        message: `Help Scout API validation error: ${responseData.message || 'Invalid request data'}`,
+        details: { requestId, validationErrors: responseData.errors || responseData, suggestion: 'Check the request parameters match Help Scout API requirements' },
+      };
+    }
+    return {
+      code: 'INVALID_INPUT',
+      message: `Help Scout API client error: ${responseData.message || 'Invalid request'}`,
+      details: { requestId, statusCode: status, apiResponse: responseData },
+    };
+  }
+
   async post<T>(endpoint: string, data?: Record<string, unknown>): Promise<{ data: T; headers: Record<string, string>; status: number }> {
     // POST is non-idempotent — do not retry. A retried POST could create
     // duplicate conversations, replies, or notes. Critically, createReply
@@ -441,8 +498,7 @@ export class HelpScoutClient {
     );
 
     if (response.status >= 400) {
-      const errorBody = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      throw new Error(`Help Scout API error: ${response.status} - ${errorBody}`);
+      throw this.buildApiErrorFromResponse(response);
     }
 
     // Invalidate read cache after successful write. Without this, subsequent
@@ -460,13 +516,17 @@ export class HelpScoutClient {
 
   async patch(endpoint: string, data?: unknown): Promise<{ status: number }> {
     // PATCH for status/assignment updates is idempotent, so retries are safe.
+    // Use validateStatus that rejects 429 so rate-limit responses enter the
+    // catch path in executeWithRetry, enabling automatic backoff with
+    // Retry-After support.
     const response = await this.executeWithRetry<void>(() =>
-      this.client.patch(endpoint, data)
+      this.client.patch(endpoint, data, {
+        validateStatus: (status: number) => status < 429 || (status > 429 && status < 500),
+      })
     );
 
     if (response.status >= 400) {
-      const errorBody = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
-      throw new Error(`Help Scout API error: ${response.status} - ${errorBody}`);
+      throw this.buildApiErrorFromResponse(response);
     }
 
     // Invalidate read cache after successful write.

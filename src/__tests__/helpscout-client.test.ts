@@ -328,12 +328,125 @@ describe('HelpScoutClient', () => {
 
     it('should add request IDs and timing', async () => {
       const client = new HelpScoutClient();
-      
+
       // Test that the axios instance has interceptors configured
       const axiosClient = (client as any).client;
-      
+
       expect(axiosClient.interceptors.request.handlers).toHaveLength(1);
       expect(axiosClient.interceptors.response.handlers).toHaveLength(1);
+    });
+  });
+
+  describe('buildApiErrorFromResponse', () => {
+    let client: HelpScoutClient;
+
+    beforeEach(() => {
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+      client = new HelpScoutClient();
+    });
+
+    function mockResponse(status: number, data: unknown = {}, headers: Record<string, string> = {}) {
+      return {
+        status,
+        data,
+        headers,
+        config: { metadata: { requestId: 'test-req' } },
+      };
+    }
+
+    it('should return UNAUTHORIZED for 401', () => {
+      const error = (client as any).buildApiErrorFromResponse(mockResponse(401));
+      expect(error.code).toBe('UNAUTHORIZED');
+      expect(error.details.requestId).toBe('test-req');
+    });
+
+    it('should clear access token on 401', () => {
+      (client as any).accessToken = 'old-token';
+      (client as any).buildApiErrorFromResponse(mockResponse(401));
+      expect((client as any).accessToken).toBeNull();
+    });
+
+    it('should return UNAUTHORIZED for 403', () => {
+      const error = (client as any).buildApiErrorFromResponse(mockResponse(403));
+      expect(error.code).toBe('UNAUTHORIZED');
+    });
+
+    it('should return NOT_FOUND for 404', () => {
+      const error = (client as any).buildApiErrorFromResponse(mockResponse(404));
+      expect(error.code).toBe('NOT_FOUND');
+    });
+
+    it('should return RATE_LIMIT for 429 with retryAfter', () => {
+      const error = (client as any).buildApiErrorFromResponse(
+        mockResponse(429, {}, { 'retry-after': '30' })
+      );
+      expect(error.code).toBe('RATE_LIMIT');
+      expect(error.retryAfter).toBe(30);
+    });
+
+    it('should default retryAfter to 60 when header missing', () => {
+      const error = (client as any).buildApiErrorFromResponse(mockResponse(429));
+      expect(error.code).toBe('RATE_LIMIT');
+      expect(error.retryAfter).toBe(60);
+    });
+
+    it('should return INVALID_INPUT for 422 with validation details', () => {
+      const data = { message: 'Validation failed', errors: { subject: 'required' } };
+      const error = (client as any).buildApiErrorFromResponse(mockResponse(422, data));
+      expect(error.code).toBe('INVALID_INPUT');
+      expect(error.message).toContain('Validation failed');
+      expect(error.details.validationErrors).toEqual({ subject: 'required' });
+    });
+
+    it('should return INVALID_INPUT for other 4xx', () => {
+      const error = (client as any).buildApiErrorFromResponse(mockResponse(400, { message: 'Bad request' }));
+      expect(error.code).toBe('INVALID_INPUT');
+      expect(error.message).toContain('Bad request');
+      expect(error.details.statusCode).toBe(400);
+    });
+  });
+
+  describe('patch validateStatus', () => {
+    it('should configure validateStatus to reject 429 for rate-limit retries', () => {
+      const client = new HelpScoutClient();
+
+      // Spy on the underlying axios client's patch method to capture the config
+      const axiosClient = (client as any).client;
+      let capturedConfig: any;
+      const originalPatch = axiosClient.patch.bind(axiosClient);
+      axiosClient.patch = (_url: string, _data: unknown, config: any) => {
+        capturedConfig = config;
+        // Reject to prevent actual request and stop executeWithRetry
+        return Promise.reject(new Error('intercepted'));
+      };
+
+      // Call patch — it will fail but we only care about the config passed
+      (client as any).patch('/test', {}).catch(() => {});
+
+      // Wait a tick for the async call to execute
+      return new Promise<void>(resolve => setImmediate(() => {
+        expect(capturedConfig).toBeDefined();
+        const validate = capturedConfig.validateStatus;
+
+        // 2xx should be accepted
+        expect(validate(200)).toBe(true);
+        expect(validate(204)).toBe(true);
+
+        // Other 4xx should be accepted (handled by buildApiErrorFromResponse)
+        expect(validate(400)).toBe(true);
+        expect(validate(401)).toBe(true);
+        expect(validate(404)).toBe(true);
+        expect(validate(422)).toBe(true);
+
+        // 429 should be REJECTED so it enters the retry catch path
+        expect(validate(429)).toBe(false);
+
+        // 5xx should be rejected (default behavior)
+        expect(validate(500)).toBe(false);
+        expect(validate(503)).toBe(false);
+
+        resolve();
+      }));
     });
   });
 });
