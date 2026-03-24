@@ -48,6 +48,7 @@ import {
   Conversation,
   Thread,
   ServerTime,
+  User,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
@@ -55,6 +56,13 @@ import {
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
   StructuredConversationFilterInputSchema,
+  CreateConversationInputSchema,
+  CreateReplyInputSchema,
+  CreateNoteInputSchema,
+  UpdateConversationStatusInputSchema,
+  AssignConversationInputSchema,
+  ListUsersInputSchema,
+  ListMailboxesInputSchema,
 } from '../schema/types.js';
 
 export class ToolHandler {
@@ -113,7 +121,7 @@ export class ToolHandler {
   }
 
   async listTools(): Promise<Tool[]> {
-    return [
+    const tools: Tool[] = [
       {
         name: 'searchInboxes',
         description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
@@ -409,6 +417,120 @@ export class ToolHandler {
         },
       },
     ];
+
+    // Write tools (opt-in via HELPSCOUT_ENABLE_WRITES, defaults to true)
+    if (this.isWriteEnabled()) {
+      tools.push(
+        {
+          name: 'createConversation',
+          description: 'Create a new Help Scout conversation (ticket). Requires a subject, customer email, mailbox ID, and message body.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              subject: { type: 'string', description: 'Conversation subject line' },
+              customer: {
+                type: 'object',
+                description: 'Customer details',
+                properties: {
+                  email: { type: 'string', description: 'Customer email address (required)' },
+                  firstName: { type: 'string', description: 'Customer first name' },
+                  lastName: { type: 'string', description: 'Customer last name' },
+                },
+                required: ['email'],
+              },
+              mailboxId: { type: 'number', description: 'Mailbox ID to create conversation in. Use listMailboxes to find IDs.' },
+              type: { type: 'string', enum: ['email', 'phone', 'chat'], default: 'email', description: 'Conversation type' },
+              status: { type: 'string', enum: ['active', 'pending', 'closed'], default: 'active', description: 'Initial status' },
+              text: { type: 'string', description: 'Message body text' },
+              tags: { type: 'array', items: { type: 'string' }, description: 'Tags to apply' },
+              assignTo: { type: 'number', description: 'User ID to assign to. Use listUsers to find IDs.' },
+            },
+            required: ['subject', 'customer', 'mailboxId', 'text'],
+          },
+        },
+        {
+          name: 'createReply',
+          description: 'Send a reply to an existing Help Scout conversation. By default sends immediately (not draft).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              conversationId: { type: 'number', description: 'Conversation ID to reply to' },
+              customer: {
+                type: 'object',
+                description: "Customer to send the reply to. If omitted, sends to the conversation's primary customer.",
+                properties: {
+                  email: { type: 'string', description: 'Customer email address' },
+                },
+                required: ['email'],
+              },
+              text: { type: 'string', description: 'Reply message body text' },
+              draft: { type: 'boolean', default: false, description: 'If true, saves as draft instead of sending' },
+            },
+            required: ['conversationId', 'text'],
+          },
+        },
+        {
+          name: 'createNote',
+          description: 'Add an internal note to a Help Scout conversation. Notes are only visible to agents, not customers.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              conversationId: { type: 'number', description: 'Conversation ID to add note to' },
+              text: { type: 'string', description: 'Note text' },
+            },
+            required: ['conversationId', 'text'],
+          },
+        },
+        {
+          name: 'updateConversationStatus',
+          description: 'Change the status of a Help Scout conversation (active, pending, or closed).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              conversationId: { type: 'number', description: 'Conversation ID to update' },
+              status: { type: 'string', enum: ['active', 'pending', 'closed'], description: 'New status' },
+            },
+            required: ['conversationId', 'status'],
+          },
+        },
+        {
+          name: 'assignConversation',
+          description: 'Assign a Help Scout conversation to a specific user. Use listUsers to find user IDs.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              conversationId: { type: 'number', description: 'Conversation ID to assign' },
+              assignTo: { type: 'number', description: 'User ID to assign to. Use listUsers to find IDs.' },
+            },
+            required: ['conversationId', 'assignTo'],
+          },
+        },
+        {
+          name: 'listUsers',
+          description: 'List Help Scout users. Useful for finding user IDs for assignment.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+              size: { type: 'number', minimum: 1, maximum: 100, default: 50, description: 'Results per page' },
+            },
+          },
+        },
+        {
+          name: 'listMailboxes',
+          description: 'List Help Scout mailboxes with full details. Useful for finding mailbox IDs for conversation creation.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+              size: { type: 'number', minimum: 1, maximum: 100, default: 50, description: 'Results per page' },
+            },
+          },
+        },
+      );
+    }
+
+    return tools;
   }
 
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -491,6 +613,27 @@ export class ToolHandler {
           break;
         case 'structuredConversationFilter':
           result = await this.structuredConversationFilter(request.params.arguments || {});
+          break;
+        case 'createConversation':
+          result = await this.createConversation(request.params.arguments || {});
+          break;
+        case 'createReply':
+          result = await this.createReply(request.params.arguments || {});
+          break;
+        case 'createNote':
+          result = await this.createNote(request.params.arguments || {});
+          break;
+        case 'updateConversationStatus':
+          result = await this.updateConversationStatus(request.params.arguments || {});
+          break;
+        case 'assignConversation':
+          result = await this.assignConversation(request.params.arguments || {});
+          break;
+        case 'listUsers':
+          result = await this.listUsers(request.params.arguments || {});
+          break;
+        case 'listMailboxes':
+          result = await this.listMailboxes(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1435,6 +1578,251 @@ export class ToolHandler {
           note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
         }, null, 2),
       }],
+    };
+  }
+
+  /**
+   * Check if write operations are enabled at runtime.
+   * Reads directly from env to support dynamic toggling.
+   */
+  private isWriteEnabled(): boolean {
+    return process.env.HELPSCOUT_ENABLE_WRITES !== 'false';
+  }
+
+  /**
+   * Guard that ensures write operations are enabled.
+   * Throws if HELPSCOUT_ENABLE_WRITES is set to 'false'.
+   */
+  private assertWritesEnabled(toolName: string): void {
+    if (!this.isWriteEnabled()) {
+      throw new Error(
+        `Write operation "${toolName}" is disabled. Set HELPSCOUT_ENABLE_WRITES=true (or remove the variable) to enable write operations.`
+      );
+    }
+  }
+
+  private async createConversation(args: unknown): Promise<CallToolResult> {
+    this.assertWritesEnabled('createConversation');
+    const input = CreateConversationInputSchema.parse(args);
+
+    const body: Record<string, unknown> = {
+      subject: input.subject,
+      customer: {
+        email: input.customer.email,
+        ...(input.customer.firstName && { firstName: input.customer.firstName }),
+        ...(input.customer.lastName && { lastName: input.customer.lastName }),
+      },
+      mailboxId: input.mailboxId,
+      type: input.type,
+      status: input.status,
+      threads: [
+        {
+          type: 'customer',
+          customer: {
+            email: input.customer.email,
+          },
+          text: input.text,
+        },
+      ],
+    };
+
+    if (input.tags && input.tags.length > 0) {
+      body.tags = input.tags;
+    }
+    if (input.assignTo) {
+      body.assignTo = input.assignTo;
+    }
+
+    const response = await helpScoutClient.post('/conversations', body);
+
+    // Extract conversation ID from Location header
+    const locationHeader = response.headers['location'] || response.headers['Location'] || '';
+    const conversationId = locationHeader.split('/').pop() || 'unknown';
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            conversationId,
+            message: `Conversation created successfully`,
+            status: input.status,
+            subject: input.subject,
+            customer: input.customer.email,
+            mailboxId: input.mailboxId,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async createReply(args: unknown): Promise<CallToolResult> {
+    this.assertWritesEnabled('createReply');
+    const input = CreateReplyInputSchema.parse(args);
+
+    // Resolve customer: use provided email or fetch from conversation
+    let customerEmail: string;
+    if (input.customer?.email) {
+      customerEmail = input.customer.email;
+    } else {
+      const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
+      customerEmail = conversation.customer.email;
+    }
+
+    const body: Record<string, unknown> = {
+      customer: { email: customerEmail },
+      text: input.text,
+      draft: input.draft,
+    };
+
+    await helpScoutClient.post(`/conversations/${input.conversationId}/reply`, body);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            conversationId: input.conversationId,
+            message: input.draft ? 'Reply saved as draft' : 'Reply sent successfully',
+            draft: input.draft,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async createNote(args: unknown): Promise<CallToolResult> {
+    this.assertWritesEnabled('createNote');
+    const input = CreateNoteInputSchema.parse(args);
+
+    const body: Record<string, unknown> = {
+      text: input.text,
+    };
+
+    await helpScoutClient.post(`/conversations/${input.conversationId}/notes`, body);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            conversationId: input.conversationId,
+            message: 'Note added successfully',
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async updateConversationStatus(args: unknown): Promise<CallToolResult> {
+    this.assertWritesEnabled('updateConversationStatus');
+    const input = UpdateConversationStatusInputSchema.parse(args);
+
+    await helpScoutClient.patch(`/conversations/${input.conversationId}`, {
+      op: 'replace',
+      path: '/status',
+      value: input.status,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            conversationId: input.conversationId,
+            message: `Conversation status updated to "${input.status}"`,
+            status: input.status,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async assignConversation(args: unknown): Promise<CallToolResult> {
+    this.assertWritesEnabled('assignConversation');
+    const input = AssignConversationInputSchema.parse(args);
+
+    await helpScoutClient.patch(`/conversations/${input.conversationId}`, {
+      op: 'replace',
+      path: '/assignTo',
+      value: input.assignTo,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            conversationId: input.conversationId,
+            message: `Conversation assigned to user ${input.assignTo}`,
+            assignedTo: input.assignTo,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async listUsers(args: unknown): Promise<CallToolResult> {
+    const input = ListUsersInputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<User>>('/users', {
+      page: input.page,
+      size: input.size,
+    });
+
+    const users = response._embedded?.users || [];
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            users: users.map(user => ({
+              id: user.id,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+            })),
+            totalUsers: response.page?.totalElements || users.length,
+            pagination: response.page,
+            usage: 'Use the "id" field from these results when assigning conversations with assignConversation',
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async listMailboxes(args: unknown): Promise<CallToolResult> {
+    const input = ListMailboxesInputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
+      page: input.page,
+      size: input.size,
+    });
+
+    const mailboxes = response._embedded?.mailboxes || [];
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            mailboxes: mailboxes.map(mailbox => ({
+              id: mailbox.id,
+              name: mailbox.name,
+              email: mailbox.email,
+            })),
+            totalMailboxes: response.page?.totalElements || mailboxes.length,
+            pagination: response.page,
+            usage: 'Use the "id" field from these results when creating conversations with createConversation',
+          }, null, 2),
+        },
+      ],
     };
   }
 }

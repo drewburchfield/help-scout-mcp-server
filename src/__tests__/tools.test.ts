@@ -11,6 +11,7 @@ describe('ToolHandler', () => {
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+    process.env.HELPSCOUT_ENABLE_WRITES = 'true';
     
     nock.cleanAll();
     
@@ -34,10 +35,11 @@ describe('ToolHandler', () => {
   });
 
   describe('listTools', () => {
-    it('should return all available tools', async () => {
+    it('should return all available tools including write tools', async () => {
+      process.env.HELPSCOUT_ENABLE_WRITES = 'true';
       const tools = await toolHandler.listTools();
-      
-      expect(tools).toHaveLength(9);
+
+      expect(tools).toHaveLength(16);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -47,8 +49,28 @@ describe('ToolHandler', () => {
         'listAllInboxes',
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
-        'structuredConversationFilter'
+        'structuredConversationFilter',
+        'createConversation',
+        'createReply',
+        'createNote',
+        'updateConversationStatus',
+        'assignConversation',
+        'listUsers',
+        'listMailboxes',
       ]);
+    });
+
+    it('should exclude write tools when HELPSCOUT_ENABLE_WRITES is false', async () => {
+      process.env.HELPSCOUT_ENABLE_WRITES = 'false';
+      const freshHandler = new ToolHandler();
+      const tools = await freshHandler.listTools();
+
+      expect(tools).toHaveLength(9);
+      expect(tools.map(t => t.name)).not.toContain('createConversation');
+      expect(tools.map(t => t.name)).not.toContain('createReply');
+      expect(tools.map(t => t.name)).not.toContain('createNote');
+      // Restore for other tests
+      delete process.env.HELPSCOUT_ENABLE_WRITES;
     });
 
     it('should have proper tool schemas', async () => {
@@ -1959,6 +1981,387 @@ describe('ToolHandler', () => {
         expect(response.clientSideFilteringApplied).toBeDefined();
         expect(response.clientSideFilteringApplied).toContain('createdBefore filter applied');
       }, 30000);
+    });
+  });
+
+  describe('Write Operations', () => {
+    beforeEach(() => {
+      process.env.HELPSCOUT_ENABLE_WRITES = 'true';
+    });
+
+    describe('createConversation', () => {
+      it('should create a conversation and return the ID from the Location header', async () => {
+        nock(baseURL)
+          .post('/conversations')
+          .reply(201, '', {
+            'Location': 'https://api.helpscout.net/v2/conversations/12345',
+          });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createConversation',
+            arguments: {
+              subject: 'Test conversation',
+              customer: { email: 'customer@example.com', firstName: 'John' },
+              mailboxId: 1,
+              text: 'Hello, I need help.',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBeUndefined();
+
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.success).toBe(true);
+        expect(response.conversationId).toBe('12345');
+        expect(response.subject).toBe('Test conversation');
+        expect(response.customer).toBe('customer@example.com');
+      });
+
+      it('should reject invalid input', async () => {
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createConversation',
+            arguments: {
+              subject: '',
+              customer: { email: 'not-an-email' },
+              mailboxId: -1,
+              text: '',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+    });
+
+    describe('createReply', () => {
+      it('should send a reply (not draft by default)', async () => {
+        nock(baseURL)
+          .post('/conversations/123/reply')
+          .reply(201);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createReply',
+            arguments: {
+              conversationId: 123,
+              text: 'Thank you for reaching out.',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.success).toBe(true);
+        expect(response.draft).toBe(false);
+        expect(response.message).toBe('Reply sent successfully');
+      });
+
+      it('should save a reply as draft when draft=true', async () => {
+        nock(baseURL)
+          .post('/conversations/123/reply')
+          .reply(201);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createReply',
+            arguments: {
+              conversationId: 123,
+              text: 'Draft reply content.',
+              draft: true,
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.success).toBe(true);
+        expect(response.draft).toBe(true);
+        expect(response.message).toBe('Reply saved as draft');
+      });
+    });
+
+    describe('createNote', () => {
+      it('should add an internal note', async () => {
+        nock(baseURL)
+          .post('/conversations/456/notes')
+          .reply(201);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createNote',
+            arguments: {
+              conversationId: 456,
+              text: 'Internal note for the team.',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.success).toBe(true);
+        expect(response.conversationId).toBe(456);
+        expect(response.message).toBe('Note added successfully');
+      });
+    });
+
+    describe('updateConversationStatus', () => {
+      it('should update conversation status', async () => {
+        nock(baseURL)
+          .patch('/conversations/789')
+          .reply(204);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'updateConversationStatus',
+            arguments: {
+              conversationId: 789,
+              status: 'closed',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.success).toBe(true);
+        expect(response.status).toBe('closed');
+      });
+    });
+
+    describe('assignConversation', () => {
+      it('should assign a conversation to a user', async () => {
+        nock(baseURL)
+          .patch('/conversations/100')
+          .reply(204);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'assignConversation',
+            arguments: {
+              conversationId: 100,
+              assignTo: 42,
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+        expect(response.success).toBe(true);
+        expect(response.assignedTo).toBe(42);
+      });
+    });
+
+    describe('listUsers', () => {
+      it('should list users with pagination', async () => {
+        const mockResponse = {
+          _embedded: {
+            users: [
+              { id: 1, firstName: 'Jane', lastName: 'Smith', email: 'jane@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
+              { id: 2, firstName: 'Bob', lastName: 'Jones', email: 'bob@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
+            ],
+          },
+          page: { size: 50, totalElements: 2, totalPages: 1, number: 1 },
+        };
+
+        nock(baseURL)
+          .get('/users')
+          .query({ page: 1, size: 50 })
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'listUsers',
+            arguments: {},
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+
+        if (result.isError) {
+          const errorResponse = JSON.parse(textContent.text);
+          expect(errorResponse.error).toBeDefined();
+          return;
+        }
+
+        const response = JSON.parse(textContent.text);
+        expect(response.users).toHaveLength(2);
+        expect(response.users[0]).toHaveProperty('id', 1);
+        expect(response.users[0]).toHaveProperty('firstName', 'Jane');
+        expect(response.totalUsers).toBe(2);
+        expect(response.usage).toContain('assignConversation');
+      });
+    });
+
+    describe('listMailboxes', () => {
+      it('should list mailboxes with pagination', async () => {
+        const mockResponse = {
+          _embedded: {
+            mailboxes: [
+              { id: 10, name: 'Support', email: 'support@example.com', slug: 'support', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        };
+
+        nock(baseURL)
+          .get('/mailboxes')
+          .query({ page: 1, size: 50 })
+          .reply(200, mockResponse);
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'listMailboxes',
+            arguments: {},
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+
+        if (result.isError) {
+          const errorResponse = JSON.parse(textContent.text);
+          expect(errorResponse.error).toBeDefined();
+          return;
+        }
+
+        const response = JSON.parse(textContent.text);
+        expect(response.mailboxes).toHaveLength(1);
+        expect(response.mailboxes[0]).toHaveProperty('id', 10);
+        expect(response.mailboxes[0]).toHaveProperty('name', 'Support');
+        expect(response.totalMailboxes).toBe(1);
+        expect(response.usage).toContain('createConversation');
+      });
+    });
+
+    describe('write operation error handling', () => {
+      it('should surface 422 validation errors from createConversation', async () => {
+        nock(baseURL)
+          .post('/conversations')
+          .reply(422, { message: 'Validation failed', errors: [{ field: 'subject', message: 'Subject is required' }] });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createConversation',
+            arguments: {
+              subject: 'Test',
+              customer: { email: 'customer@example.com' },
+              mailboxId: 1,
+              text: 'Hello',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+
+      it('should surface 401 auth errors from createReply', async () => {
+        nock(baseURL)
+          .post('/conversations/123/reply')
+          .reply(401, { message: 'Unauthorized' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createReply',
+            arguments: {
+              conversationId: 123,
+              text: 'Reply text',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+
+      it('should surface 404 errors from assignConversation', async () => {
+        nock(baseURL)
+          .patch('/conversations/999')
+          .reply(404, { message: 'Conversation not found' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'assignConversation',
+            arguments: {
+              conversationId: 999,
+              assignTo: 42,
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+
+      it('should surface 400 errors from updateConversationStatus', async () => {
+        nock(baseURL)
+          .patch('/conversations/789')
+          .reply(400, { message: 'Bad request' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'updateConversationStatus',
+            arguments: {
+              conversationId: 789,
+              status: 'closed',
+            },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBe(true);
+      });
+    });
+
+    describe('write operations disabled', () => {
+      it('should reject write tools when HELPSCOUT_ENABLE_WRITES=false', async () => {
+        process.env.HELPSCOUT_ENABLE_WRITES = 'false';
+        const freshHandler = new ToolHandler();
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'createConversation',
+            arguments: {
+              subject: 'Test',
+              customer: { email: 'test@test.com' },
+              mailboxId: 1,
+              text: 'Test message',
+            },
+          },
+        };
+
+        const result = await freshHandler.callTool(request);
+        expect(result.isError).toBe(true);
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        expect(textContent.text).toContain('disabled');
+
+        // Restore
+        delete process.env.HELPSCOUT_ENABLE_WRITES;
+      });
     });
   });
 });
