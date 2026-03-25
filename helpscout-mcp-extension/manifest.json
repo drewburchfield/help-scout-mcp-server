@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
-  "version": "1.6.2",
-  "description": "Connect Claude and other AI assistants to your Help Scout data with enterprise-grade security and advanced search capabilities.",
-  "long_description": "Connect your AI assistant to Help Scout for intelligent customer support analysis.\n\n**Search & Analysis:**\n• Advanced conversation search with query syntax\n• Multi-status search across active, pending, and closed\n• Boolean queries with content and subject filtering\n• Conversation summaries and full thread retrieval\n• Direct ticket lookup by number\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional content redaction for privacy\n• Built-in caching and rate limiting\n• Automatic retry with exponential backoff",
+  "version": "1.7.0",
+  "description": "Connect Claude and other AI assistants to your Help Scout conversations, customers, organizations, and inbox data.",
+  "long_description": "Connect your AI assistant to Help Scout for customer support investigation and account-level analysis.\n\n**Search & Analysis:**\n• Advanced conversation search with query syntax\n• Multi-status search across active, pending, and closed\n• Direct ticket lookup by number\n• Customer lookup by name, email, and organization\n• Organization-level customer and conversation traversal\n• Conversation summaries and full thread retrieval\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional content redaction for privacy\n• Built-in caching and rate limiting\n• Automatic retry with exponential backoff",
   "author": {
     "name": "Drew Burchfield",
     "url": "https://github.com/drewburchfield"
@@ -130,6 +130,38 @@
     {
       "name": "structuredConversationFilter",
       "description": "Structural filtering by assignedTo, folderId, customerIds, conversationNumber, or advanced sorting - use after discovering IDs from content search"
+    },
+    {
+      "name": "getCustomer",
+      "description": "Get a customer profile by ID with embedded contact details and address lookup"
+    },
+    {
+      "name": "listCustomers",
+      "description": "List customers by name or advanced query syntax using the v2 Customers API"
+    },
+    {
+      "name": "searchCustomersByEmail",
+      "description": "Search customers by email address using the cursor-based v3 Customers API"
+    },
+    {
+      "name": "getCustomerContacts",
+      "description": "Fetch customer contact sub-resources including emails, phones, chats, websites, social profiles, and address"
+    },
+    {
+      "name": "getOrganization",
+      "description": "Get an organization profile by ID with optional counts and properties"
+    },
+    {
+      "name": "listOrganizations",
+      "description": "List organizations with Help Scout's supported sort modes"
+    },
+    {
+      "name": "getOrganizationMembers",
+      "description": "List customers associated with an organization"
+    },
+    {
+      "name": "getOrganizationConversations",
+      "description": "List conversations associated with an organization"
     }
   ],
   "prompts": [

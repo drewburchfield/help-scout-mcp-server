@@ -29,7 +29,6 @@ describe('Schema Validation', () => {
       expect(parsed.searchIn).toEqual(['both']);
       expect(parsed.timeframeDays).toBe(60);
       expect(parsed.limitPerStatus).toBe(25);
-      expect(parsed.includeVariations).toBe(true);
     });
 
     it('should accept custom statuses', () => {
