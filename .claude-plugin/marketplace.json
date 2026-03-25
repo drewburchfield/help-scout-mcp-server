@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "HelpScout MCP server with navigator plugin for Claude Code",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "helpscout-navigator",
       "source": {"source": "url", "url": "https://github.com/drewburchfield/helpscout-navigator.git"},
-      "description": "HelpScout support ticket search with guidance for correct tool usage. Bundles HelpScout MCP server - auto-starts when plugin is enabled.",
-      "version": "1.0.10",
+      "description": "HelpScout support ticket, customer, and organization tools with navigation guidance. Bundles HelpScout MCP server (17 tools) - auto-starts when plugin is enabled.",
+      "version": "1.1.0",
       "author": {"name": "Drew Burchfield"},
       "category": "productivity",
       "homepage": "https://github.com/drewburchfield/helpscout-navigator"
