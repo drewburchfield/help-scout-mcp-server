@@ -989,21 +989,41 @@ export class ToolHandler {
         status: conversation.status,
         createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt,
-        customer: conversation.customer,
-        assignee: conversation.assignee,
+        customer: config.security.allowPii ? conversation.customer : (conversation.customer ? {
+          id: conversation.customer.id,
+          email: conversation.customer.email != null ? '[redacted]' : conversation.customer.email,
+          firstName: conversation.customer.firstName != null ? '[redacted]' : conversation.customer.firstName,
+          lastName: conversation.customer.lastName != null ? '[redacted]' : conversation.customer.lastName,
+        } : null),
+        assignee: config.security.allowPii ? conversation.assignee : (conversation.assignee ? {
+          id: conversation.assignee.id,
+          firstName: '[redacted]',
+          lastName: '[redacted]',
+          email: '[redacted]',
+        } : null),
         tags: conversation.tags,
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
         body: config.security.allowPii ? firstCustomerMessage.body : PII_REDACTED_BODY,
         createdAt: firstCustomerMessage.createdAt,
-        customer: firstCustomerMessage.customer,
+        customer: config.security.allowPii ? firstCustomerMessage.customer : (firstCustomerMessage.customer ? {
+          id: firstCustomerMessage.customer.id,
+          email: firstCustomerMessage.customer.email != null ? '[redacted]' : firstCustomerMessage.customer.email,
+          firstName: firstCustomerMessage.customer.firstName != null ? '[redacted]' : firstCustomerMessage.customer.firstName,
+          lastName: firstCustomerMessage.customer.lastName != null ? '[redacted]' : firstCustomerMessage.customer.lastName,
+        } : null),
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
         body: config.security.allowPii ? latestStaffReply.body : PII_REDACTED_BODY,
         createdAt: latestStaffReply.createdAt,
-        createdBy: latestStaffReply.createdBy,
+        createdBy: config.security.allowPii ? latestStaffReply.createdBy : (latestStaffReply.createdBy ? {
+          id: latestStaffReply.createdBy.id,
+          firstName: '[redacted]',
+          lastName: '[redacted]',
+          email: '[redacted]',
+        } : null),
       } : null,
     };
 

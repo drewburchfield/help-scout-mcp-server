@@ -93,3 +93,6 @@ scripts/*.state.json
 
 # Sidecar projects
 meridian-sim/
+
+tests/
+*.tgz
