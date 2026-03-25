@@ -46,7 +46,7 @@ describe('Customer & Organization Tools', () => {
 
   describe('getCustomer', () => {
     it('should fetch a customer profile with address', async () => {
-      const scope = nock(baseURL)
+      nock(baseURL)
         .get('/customers/123')
         .query(true)
         .reply(200, {
