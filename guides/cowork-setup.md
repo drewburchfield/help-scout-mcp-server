@@ -20,7 +20,7 @@ You'll need two values from Help Scout: an **App ID** and an **App Secret**.
 2. Go to **My Apps** (click your profile icon in the lower left, then **My Apps**)
 3. Click **Create Private App**
 4. Give it a name (e.g., "Claude AI")
-5. Under scopes, check **Read** access for **Mailboxes** and **Conversations**
+5. Under scopes, check **Read** access for **Mailboxes**, **Conversations**, **Customers**, and **Organizations**
 6. Click **Create** and copy the **App ID** and **App Secret**
 
 Keep these values handy for the next step.
