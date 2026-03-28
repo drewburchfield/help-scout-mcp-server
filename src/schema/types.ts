@@ -286,8 +286,8 @@ export const ListAllInboxesInputSchema = z.object({
 });
 
 export const DownloadAttachmentInputSchema = z.object({
-  conversationId: z.string(),
-  attachmentId: z.string(),
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
+  attachmentId: z.string().regex(/^\d+$/, 'Attachment ID must be numeric'),
 });
 
 // Response Types
