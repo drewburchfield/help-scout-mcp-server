@@ -1103,7 +1103,7 @@ export class ToolHandler {
     const response = await helpScoutClient.get<{ data: string }>(
       `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`,
       undefined,
-      { ttl: 0 }  // Don't cache attachment data
+      { ttl: -1 }  // Don't cache attachment data (ttl: 0 is falsy, falls through to default in cache.set)
     );
 
     // Decode base64 to binary
