@@ -6,6 +6,10 @@ import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { PII_REDACTED_BODY } from '../utils/constants.js';
 import { z } from 'zod';
+import { promises as fs } from 'fs';
+import { randomUUID } from 'crypto';
+import os from 'os';
+import path from 'path';
 import {
   Inbox,
   Conversation,
@@ -30,6 +34,7 @@ import {
   ListOrganizationsInputSchema,
   GetOrganizationMembersInputSchema,
   GetOrganizationConversationsInputSchema,
+  DownloadAttachmentInputSchema,
 } from '../schema/types.js';
 
 /**
@@ -253,6 +258,24 @@ export class ToolHandler {
             },
           },
           required: ['conversationId'],
+        },
+      },
+      {
+        name: 'downloadAttachment',
+        description: 'Download an attachment from a conversation thread to disk. Returns the local file path. Use getThreads first to discover attachment IDs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID containing the attachment',
+            },
+            attachmentId: {
+              type: 'string',
+              description: 'The attachment ID from getThreads response (_embedded.attachments[].id)',
+            },
+          },
+          required: ['conversationId', 'attachmentId'],
         },
       },
       {
@@ -599,6 +622,9 @@ export class ToolHandler {
           break;
         case 'getThreads':
           result = await this.getThreads(request.params.arguments || {});
+          break;
+        case 'downloadAttachment':
+          result = await this.downloadAttachment(request.params.arguments || {});
           break;
         case 'getServerTime':
           result = await this.getServerTime();
@@ -1065,6 +1091,51 @@ export class ToolHandler {
             threads: processedThreads,
             pagination: response.page,
             nextCursor: response._links?.next?.href,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async downloadAttachment(args: unknown): Promise<CallToolResult> {
+    const input = DownloadAttachmentInputSchema.parse(args);
+
+    // Fetch base64-encoded attachment data from Help Scout API
+    const response = await helpScoutClient.get<{ data: string }>(
+      `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`,
+      undefined,
+      { skipCache: true }
+    );
+
+    // Decode base64 to binary
+    const buffer = Buffer.from(response.data, 'base64');
+
+    // Determine and resolve download directory to an absolute path
+    const downloadDir = path.resolve(
+      process.env.ATTACHMENT_DOWNLOAD_DIR
+        || config.attachments.downloadDir
+        || path.join(os.tmpdir(), 'helpscout-attachments')
+    );
+
+    // Ensure directory exists
+    await fs.mkdir(downloadDir, { recursive: true });
+
+    // Write file to disk with unique name to avoid collisions
+    const filename = `${input.attachmentId}-${randomUUID()}`;
+    const filePath = path.join(downloadDir, filename);
+    await fs.writeFile(filePath, buffer);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            filePath,
+            conversationId: input.conversationId,
+            attachmentId: input.attachmentId,
+            sizeBytes: buffer.length,
+            downloadDir,
           }, null, 2),
         },
       ],
