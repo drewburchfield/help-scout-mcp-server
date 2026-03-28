@@ -87,7 +87,7 @@ export const ThreadSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   _embedded: z.object({
-    attachments: z.array(AttachmentSchema),
+    attachments: z.array(AttachmentSchema).optional().default([]),
   }).optional(),
 });
 

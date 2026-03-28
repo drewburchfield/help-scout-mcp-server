@@ -413,24 +413,29 @@ export class HelpScoutClient {
     };
   }
 
-  async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {
-    const cacheKey = `GET:${endpoint}`;
-    const cachedResult = cache.get<T>(cacheKey, params);
-    
-    if (cachedResult) {
-      return cachedResult;
+  async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number; skipCache?: boolean }): Promise<T> {
+    if (!cacheOptions?.skipCache) {
+      const cacheKey = `GET:${endpoint}`;
+      const cachedResult = cache.get<T>(cacheKey, params);
+      
+      if (cachedResult) {
+        return cachedResult;
+      }
     }
 
     const response = await this.executeWithRetry<T>(() => 
       this.client.get<T>(endpoint, { params })
     );
     
-    if (cacheOptions?.ttl || cacheOptions?.ttl === 0) {
-      cache.set(cacheKey, params, response.data, { ttl: cacheOptions.ttl });
-    } else {
-      // Default cache TTL based on endpoint
-      const defaultTtl = this.getDefaultCacheTtl(endpoint);
-      cache.set(cacheKey, params, response.data, { ttl: defaultTtl });
+    if (!cacheOptions?.skipCache) {
+      const cacheKey = `GET:${endpoint}`;
+      if (cacheOptions?.ttl || cacheOptions?.ttl === 0) {
+        cache.set(cacheKey, params, response.data, { ttl: cacheOptions.ttl });
+      } else {
+        // Default cache TTL based on endpoint
+        const defaultTtl = this.getDefaultCacheTtl(endpoint);
+        cache.set(cacheKey, params, response.data, { ttl: defaultTtl });
+      }
     }
     
     return response.data;

@@ -7,6 +7,7 @@ import { config } from '../utils/config.js';
 import { PII_REDACTED_BODY } from '../utils/constants.js';
 import { z } from 'zod';
 import { promises as fs } from 'fs';
+import { randomUUID } from 'crypto';
 import os from 'os';
 import path from 'path';
 import {
@@ -1103,22 +1104,24 @@ export class ToolHandler {
     const response = await helpScoutClient.get<{ data: string }>(
       `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`,
       undefined,
-      { ttl: -1 }  // Don't cache attachment data (ttl: 0 is falsy, falls through to default in cache.set)
+      { skipCache: true }
     );
 
     // Decode base64 to binary
     const buffer = Buffer.from(response.data, 'base64');
 
-    // Determine download directory
-    const downloadDir = process.env.ATTACHMENT_DOWNLOAD_DIR
-      || config.attachments.downloadDir
-      || path.join(os.tmpdir(), 'helpscout-attachments');
+    // Determine and resolve download directory to an absolute path
+    const downloadDir = path.resolve(
+      process.env.ATTACHMENT_DOWNLOAD_DIR
+        || config.attachments.downloadDir
+        || path.join(os.tmpdir(), 'helpscout-attachments')
+    );
 
     // Ensure directory exists
     await fs.mkdir(downloadDir, { recursive: true });
 
-    // Write file to disk
-    const filename = `${input.attachmentId}-${Date.now()}`;
+    // Write file to disk with unique name to avoid collisions
+    const filename = `${input.attachmentId}-${randomUUID()}`;
     const filePath = path.join(downloadDir, filename);
     await fs.writeFile(filePath, buffer);
 
