@@ -273,6 +273,64 @@ export const ListAllInboxesInputSchema = z.object({
   limit: z.number().min(1).max(100).default(100),
 });
 
+// Write Operation Input Schemas
+export const CreateReplyInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+  text: z.string().min(1, 'Reply text is required'),
+  customer: z.object({
+    email: z.string().email('Valid customer email is required'),
+  }),
+  draft: z.boolean().default(true),
+  cc: z.array(z.string().email('Each CC entry must be a valid email')).optional(),
+  bcc: z.array(z.string().email('Each BCC entry must be a valid email')).optional(),
+});
+
+export const UpdateConversationStatusInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+  status: z.enum(['active', 'pending', 'closed']),
+});
+
+export const CreateNoteInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+  text: z.string().min(1, 'Note text is required'),
+});
+
+export const CreateConversationInputSchema = z.object({
+  subject: z.string().min(1, 'Subject is required'),
+  customer: z.object({
+    email: z.string().email('Valid customer email is required'),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+  }),
+  mailboxId: z.string().min(1, 'Mailbox ID is required'),
+  text: z.string().min(1, 'Message text is required'),
+  draft: z.boolean().default(true),
+  tags: z.array(z.string()).optional(),
+  assignTo: z.string().optional().describe('User ID to assign the conversation to'),
+});
+
+export const AssignConversationInputSchema = z.object({
+  conversationId: z.string().min(1, 'conversationId is required'),
+  assigneeId: z.string().min(1, 'Assignee user ID is required'),
+});
+
+export const ListUsersInputSchema = z.object({
+  page: z.number().min(1).default(1),
+});
+
+export const ListMailboxesInputSchema = z.object({
+  page: z.number().min(1).default(1),
+});
+
+export const UserSchema = z.object({
+  id: z.number(),
+  firstName: z.string(),
+  lastName: z.string(),
+  email: z.string(),
+  role: z.string().optional(),
+  type: z.string().optional(),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -308,5 +366,13 @@ export type GetOrganizationMembersInput = z.infer<typeof GetOrganizationMembersI
 export type GetOrganizationConversationsInput = z.infer<typeof GetOrganizationConversationsInputSchema>;
 export type GetCustomerContactsInput = z.infer<typeof GetCustomerContactsInputSchema>;
 export type ListAllInboxesInput = z.infer<typeof ListAllInboxesInputSchema>;
+export type CreateReplyInput = z.infer<typeof CreateReplyInputSchema>;
+export type UpdateConversationStatusInput = z.infer<typeof UpdateConversationStatusInputSchema>;
+export type CreateNoteInput = z.infer<typeof CreateNoteInputSchema>;
+export type CreateConversationInput = z.infer<typeof CreateConversationInputSchema>;
+export type AssignConversationInput = z.infer<typeof AssignConversationInputSchema>;
+export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
+export type ListMailboxesInput = z.infer<typeof ListMailboxesInputSchema>;
+export type User = z.infer<typeof UserSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

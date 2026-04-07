@@ -77,7 +77,8 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
 
 1. Go to **Help Scout** > **My Apps** > **Create Private App**
 2. Select at minimum: **Read** access to Mailboxes, Conversations, Customers, and Organizations
-3. Copy your **App ID** and **App Secret**
+3. For write tools: also grant **Write** access to Conversations
+4. Copy your **App ID** and **App Secret**
 
 > Help Scout uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
 
@@ -110,6 +111,22 @@ Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `
 | Full message history | `getThreads` | "Show me the complete thread" |
 | Current server time | `getServerTime` | Used for time-relative searches |
 
+### Write Tools (Opt-in)
+
+These tools require `HELPSCOUT_ENABLE_WRITES=true` and are hidden when writes are disabled.
+
+| Task | Tool | Example |
+|------|------|---------|
+| Reply to a conversation | `createReply` | "Draft a reply to ticket #123" |
+| Change ticket status | `updateConversationStatus` | "Close ticket #123" |
+| Add internal note | `createNote` | "Add a note to ticket #123" |
+
+**Safety defaults:**
+- `createReply` defaults to **draft mode** (`draft: true`). Drafts must be manually sent from the Help Scout UI.
+- Setting `draft: false` sends a real email immediately and **cannot be undone**.
+- `createNote` creates internal notes only visible to support agents, never sent to customers.
+- Status changes may trigger Help Scout automations (e.g., satisfaction surveys on close).
+
 Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in their instructions automatically, so no lookup step is needed.
 
 ## Configuration
@@ -120,6 +137,7 @@ Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in
 | `HELPSCOUT_APP_SECRET` | App Secret from Help Scout My Apps | Required |
 | `HELPSCOUT_DEFAULT_INBOX_ID` | Scope searches to a specific inbox | None (all inboxes) |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
+| `HELPSCOUT_ENABLE_WRITES` | Enable write tools (reply, note, status update) | `false` |
 | `REDACT_MESSAGE_CONTENT` | Hide message bodies in responses | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |

@@ -352,6 +352,18 @@ export class HelpScoutClient {
       };
     }
 
+    if (error.response?.status === 412) {
+      return {
+        code: 'INVALID_INPUT',
+        message: 'Help Scout precondition failed. The conversation may have reached the 100-thread limit, or a company policy prevents updates to old conversations.',
+        details: {
+          requestId,
+          statusCode: 412,
+          suggestion: 'Check the conversation thread count and company policies in Help Scout settings',
+        },
+      };
+    }
+
     if (error.response?.status === 422) {
       const responseData = error.response.data as Record<string, any> || {};
       return {
@@ -411,6 +423,55 @@ export class HelpScoutClient {
         suggestion: 'Check your network connection and Help Scout service status',
       },
     };
+  }
+
+  /**
+   * Check response status and throw a structured error for 4xx responses.
+   * Needed because validateStatus allows 4xx through without throwing.
+   */
+  private checkResponseStatus(response: AxiosResponse): void {
+    if (response.status >= 400 && response.status < 500) {
+      const error = new Error(`Request failed with status ${response.status}`) as any;
+      error.response = response;
+      error.config = response.config;
+      throw this.transformError(error as AxiosError);
+    }
+  }
+
+  async post<T = void>(endpoint: string, data: Record<string, unknown>): Promise<T> {
+    // POST is not idempotent — never retry to prevent duplicate creates (emails, notes, conversations)
+    const noRetryConfig: RetryConfig = { retries: 0, retryDelay: 0, maxRetryDelay: 0 };
+    const response = await this.executeWithRetry<T>(
+      () => this.client.post<T>(endpoint, data),
+      noRetryConfig
+    );
+
+    this.checkResponseStatus(response);
+    this.invalidateCacheAfterWrite(endpoint);
+
+    return response.data;
+  }
+
+  async patch<T = void>(endpoint: string, data: Record<string, unknown>): Promise<T> {
+    const response = await this.executeWithRetry<T>(() =>
+      this.client.patch<T>(endpoint, data)
+    );
+
+    this.checkResponseStatus(response);
+    this.invalidateCacheAfterWrite(endpoint);
+
+    return response.data;
+  }
+
+  /**
+   * Invalidate cache after a write operation to ensure subsequent reads return fresh data.
+   */
+  private invalidateCacheAfterWrite(endpoint: string): void {
+    const match = endpoint.match(/\/conversations/);
+    if (match) {
+      logger.debug('Invalidating cache after write operation', { endpoint });
+      cache.clear();
+    }
   }
 
   async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {

@@ -34,9 +34,11 @@ describe('ToolHandler', () => {
   });
 
   describe('listTools', () => {
-    it('should return all available tools', async () => {
+    it('should return all available tools (read-only when writes disabled)', async () => {
+      delete process.env.HELPSCOUT_ENABLE_WRITES;
       const tools = await toolHandler.listTools();
-      
+
+      // 17 read-only tools when writes are disabled
       expect(tools).toHaveLength(17);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
@@ -57,6 +59,10 @@ describe('ToolHandler', () => {
         'getOrganizationMembers',
         'getOrganizationConversations',
       ]);
+      // Write tools should NOT be present
+      expect(tools.map(t => t.name)).not.toContain('createReply');
+      expect(tools.map(t => t.name)).not.toContain('createNote');
+      expect(tools.map(t => t.name)).not.toContain('updateConversationStatus');
     });
 
     it('should have proper tool schemas', async () => {

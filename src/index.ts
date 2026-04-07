@@ -10,7 +10,7 @@ import {
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { validateConfig } from './utils/config.js';
+import { validateConfig, config } from './utils/config.js';
 import { logger } from './utils/logger.js';
 import { helpScoutClient, type PaginatedResponse } from './utils/helpscout-client.js';
 import { resourceHandler } from './resources/index.js';
@@ -108,7 +108,21 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 ## Notes
 - Always use inbox IDs from the list above (not names)
 - All search tools default to active+pending+closed statuses
-- Use getServerTime for date-relative queries`;
+- Use getServerTime for date-relative queries
+${config.writes.enabled ? `
+## Write Tools (ENABLED)
+| Task | Tool |
+|------|------|
+| Reply to a conversation | createReply (defaults to draft mode) |
+| Change ticket status | updateConversationStatus |
+| Add internal note | createNote |
+
+### Safety
+- **createReply defaults to draft=true** — drafts must be sent manually from Help Scout UI
+- Setting draft=false sends a real email immediately and CANNOT be undone
+- Notes are internal only and never visible to customers
+- Status changes may trigger Help Scout automations` : ''}`;
+
 
       logger.info('Inbox discovery successful', { inboxCount: inboxes.length });
       return { instructions, inboxes };

@@ -23,6 +23,9 @@ export interface Config {
   security: {
     allowPii: boolean;
   };
+  writes: {
+    enabled: boolean;
+  };
   connectionPool: {
     maxSockets: number;
     maxFreeSockets: number;
@@ -52,6 +55,9 @@ export const config: Config = {
     // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies
     // ALLOW_PII=true is backwards compat (always shows content)
     allowPii: process.env.REDACT_MESSAGE_CONTENT !== 'true' || process.env.ALLOW_PII === 'true',
+  },
+  writes: {
+    enabled: process.env.HELPSCOUT_ENABLE_WRITES === 'true',
   },
   connectionPool: {
     maxSockets: parseInt(process.env.HTTP_MAX_SOCKETS || '50', 10),
@@ -90,6 +96,11 @@ export function validateConfig(): void {
       'Optional configuration:\n' +
       '  - HELPSCOUT_DEFAULT_INBOX_ID: Default inbox for scoped searches (improves LLM context)'
     );
+  }
+
+  // Log write access status
+  if (config.writes.enabled) {
+    console.error('Help Scout write access ENABLED (HELPSCOUT_ENABLE_WRITES=true)');
   }
 
   // Enforce HTTPS for API base URL to prevent credential exposure
