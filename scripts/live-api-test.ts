@@ -2,7 +2,7 @@
 /**
  * Live API Test Script for Help Scout MCP Server
  *
- * Tests all 9 MCP tools against the live Help Scout API to verify functionality.
+ * Tests the current MCP tool surface against the live Help Scout API to verify functionality.
  * Requires valid HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET in .env
  *
  * Usage:

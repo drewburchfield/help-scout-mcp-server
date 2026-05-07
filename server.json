@@ -1,0 +1,67 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.drewburchfield/help-scout-mcp",
+  "title": "Help Scout MCP Server",
+  "description": "Search Help Scout conversations, customers, organizations, threads, and inboxes with AI assistants",
+  "version": "1.7.0",
+  "repository": {
+    "url": "https://github.com/drewburchfield/help-scout-mcp-server.git",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "help-scout-mcp-server",
+      "version": "1.7.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "HELPSCOUT_APP_ID",
+          "description": "Help Scout OAuth2 App ID (also accepts HELPSCOUT_CLIENT_ID)",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "HELPSCOUT_APP_SECRET",
+          "description": "Help Scout OAuth2 App Secret (also accepts HELPSCOUT_CLIENT_SECRET)",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "REDACT_MESSAGE_CONTENT",
+          "description": "Hide message bodies in responses for compliance (true/false)",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/drewburchfield/help-scout-mcp-server:1.7.0",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "HELPSCOUT_APP_ID",
+          "description": "Help Scout OAuth2 App ID",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "HELPSCOUT_APP_SECRET",
+          "description": "Help Scout OAuth2 App Secret",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

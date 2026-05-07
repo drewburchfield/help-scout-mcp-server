@@ -413,7 +413,6 @@ describe('HelpScoutClient', () => {
       // Spy on the underlying axios client's patch method to capture the config
       const axiosClient = (client as any).client;
       let capturedConfig: any;
-      const originalPatch = axiosClient.patch.bind(axiosClient);
       axiosClient.patch = (_url: string, _data: unknown, config: any) => {
         capturedConfig = config;
         // Reject to prevent actual request and stop executeWithRetry
@@ -498,16 +497,13 @@ describe('HelpScoutClient', () => {
       };
 
       const sleepCalls: number[] = [];
-      const originalSleep = (client as any).sleep.bind(client);
       (client as any).sleep = (ms: number) => {
         sleepCalls.push(ms);
         // Don't actually sleep in tests
         return Promise.resolve();
       };
 
-      let attemptCount = 0;
       const operation = () => {
-        attemptCount++;
         return Promise.reject(apiError);
       };
 

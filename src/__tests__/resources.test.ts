@@ -1,6 +1,7 @@
 import nock from 'nock';
 import { ResourceHandler } from '../resources/index.js';
 import { cache } from '../utils/cache.js';
+import { config } from '../utils/config.js';
 
 describe('ResourceHandler', () => {
   let resourceHandler: ResourceHandler;
@@ -103,6 +104,12 @@ describe('ResourceHandler', () => {
         const resource = await resourceHandler.handleResource('helpscout://inboxes?page=2&size=10');
         expect(resource).toBeDefined();
       });
+
+      it('should reject invalid size parameters above Help Scout limits', async () => {
+        await expect(
+          resourceHandler.handleResource('helpscout://inboxes?size=51')
+        ).rejects.toThrow('size must be a number between 1 and 50');
+      });
     });
 
     describe('helpscout://conversations', () => {
@@ -177,6 +184,12 @@ describe('ResourceHandler', () => {
         const data = JSON.parse(resource.text as string);
         expect(data.pagination.number).toBe(2);
         expect(data.pagination.size).toBe(25);
+      });
+
+      it('should reject invalid page parameters', async () => {
+        await expect(
+          resourceHandler.handleResource('helpscout://conversations?page=0')
+        ).rejects.toThrow('page must be a number between 1 and 10000');
       });
 
       it('should handle all filter parameters', async () => {
@@ -269,6 +282,88 @@ describe('ResourceHandler', () => {
         await expect(
           resourceHandler.handleResource('helpscout://threads')
         ).rejects.toThrow('conversationId parameter is required');
+      });
+
+      it('should redact thread bodies when allowPii is false', async () => {
+        const originalAllowPii = config.security.allowPii;
+        config.security.allowPii = false;
+
+        try {
+          const mockResponse = {
+            _embedded: {
+              threads: [
+                {
+                  id: 1,
+                  type: 'customer',
+                  body: 'Sensitive customer message with PII',
+                  createdAt: '2023-01-01T00:00:00Z'
+                },
+                {
+                  id: 2,
+                  type: 'message',
+                  body: 'Staff reply with details',
+                  createdAt: '2023-01-01T01:00:00Z'
+                }
+              ]
+            },
+            page: { size: 50, totalElements: 2 },
+            _links: {}
+          };
+
+          nock(baseURL)
+            .get('/conversations/123/threads')
+            .query({ page: 1, size: 50 })
+            .reply(200, mockResponse);
+
+          const resource = await resourceHandler.handleResource(
+            'helpscout://threads?conversationId=123'
+          );
+
+          const data = JSON.parse(resource.text as string);
+          expect(data.threads).toHaveLength(2);
+          expect(data.threads[0].body).toBe('[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]');
+          expect(data.threads[1].body).toBe('[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]');
+          expect(data.threads[0].id).toBe(1);
+          expect(data.threads[0].type).toBe('customer');
+        } finally {
+          config.security.allowPii = originalAllowPii;
+        }
+      });
+
+      it('should show thread bodies when allowPii is true', async () => {
+        const originalAllowPii = config.security.allowPii;
+        config.security.allowPii = true;
+
+        try {
+          const mockResponse = {
+            _embedded: {
+              threads: [
+                {
+                  id: 1,
+                  type: 'customer',
+                  body: 'Visible customer message',
+                  createdAt: '2023-01-01T00:00:00Z'
+                }
+              ]
+            },
+            page: { size: 50, totalElements: 1 },
+            _links: {}
+          };
+
+          nock(baseURL)
+            .get('/conversations/456/threads')
+            .query({ page: 1, size: 50 })
+            .reply(200, mockResponse);
+
+          const resource = await resourceHandler.handleResource(
+            'helpscout://threads?conversationId=456'
+          );
+
+          const data = JSON.parse(resource.text as string);
+          expect(data.threads[0].body).toBe('Visible customer message');
+        } finally {
+          config.security.allowPii = originalAllowPii;
+        }
       });
 
       it('should handle empty threads response', async () => {

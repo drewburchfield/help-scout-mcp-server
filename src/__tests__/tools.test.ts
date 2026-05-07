@@ -39,7 +39,7 @@ describe('ToolHandler', () => {
       process.env.HELPSCOUT_ENABLE_WRITES = 'true';
       const tools = await toolHandler.listTools();
 
-      expect(tools).toHaveLength(16);
+      expect(tools).toHaveLength(24);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -50,6 +50,14 @@ describe('ToolHandler', () => {
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
         'structuredConversationFilter',
+        'getCustomer',
+        'listCustomers',
+        'searchCustomersByEmail',
+        'getCustomerContacts',
+        'getOrganization',
+        'listOrganizations',
+        'getOrganizationMembers',
+        'getOrganizationConversations',
         'createConversation',
         'createReply',
         'createNote',
@@ -65,7 +73,7 @@ describe('ToolHandler', () => {
       const freshHandler = new ToolHandler();
       const tools = await freshHandler.listTools();
 
-      expect(tools).toHaveLength(9);
+      expect(tools).toHaveLength(17);
       expect(tools.map(t => t.name)).not.toContain('createConversation');
       expect(tools.map(t => t.name)).not.toContain('createReply');
       expect(tools.map(t => t.name)).not.toContain('createNote');
@@ -1423,13 +1431,6 @@ describe('ToolHandler', () => {
         expect(response.pagination.note).toContain('[WARNING] 1 status(es) failed');
         expect(response.pagination.note).toContain('Totals reflect successful statuses only');
       }, 30000);
-
-      // Note: Testing UNAUTHORIZED fail-fast in multi-status search is blocked by a known
-      // upstream issue: validateStatus < 500 in helpscout-client.ts means 401 responses
-      // are treated as successful (not rejected), so they never reach the Promise.allSettled
-      // rejection handler. The defensive code in the rejection handler (throwing on
-      // UNAUTHORIZED/INVALID_INPUT) is correct but only activates once validateStatus is fixed.
-      // See: NAS-465 (validateStatus swallows 4xx errors)
 
       it('should apply createdBefore filtering to multi-status merged results', async () => {
         nock.cleanAll();

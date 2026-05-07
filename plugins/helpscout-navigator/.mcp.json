@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "helpscout": {
+      "command": "npx",
+      "args": ["-y", "help-scout-mcp-server"],
+      "env": {
+        "HELPSCOUT_APP_ID": "${HELPSCOUT_APP_ID}",
+        "HELPSCOUT_APP_SECRET": "${HELPSCOUT_APP_SECRET}",
+        "REDACT_MESSAGE_CONTENT": "${REDACT_MESSAGE_CONTENT:-false}"
+      }
+    }
+  }
+}

@@ -2,13 +2,15 @@
 
 [![npm version](https://badge.fury.io/js/help-scout-mcp-server.svg)](https://badge.fury.io/js/help-scout-mcp-server) [![Docker](https://img.shields.io/docker/v/drewburchfield/help-scout-mcp-server?logo=docker&label=docker)](https://hub.docker.com/r/drewburchfield/help-scout-mcp-server) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/drewburchfield/help-scout-mcp-server) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An [MCP server](https://modelcontextprotocol.io) that gives AI assistants direct access to your Help Scout inboxes, conversations, and threads. Search tickets, pull context, spot patterns, and get answers without leaving your editor or chat window.
+An [MCP server](https://modelcontextprotocol.io) that gives AI assistants direct access to your Help Scout inboxes, conversations, customers, organizations, and threads. Search tickets, pull customer and account context, spot patterns, and get answers without leaving your editor or chat window.
 
 Built by a Help Scout customer who wanted to give his support team superpowers. If you handle customer conversations in Help Scout and want AI to help you work faster, this is for you.
 
 ## What You Can Do
 
 - **Search conversations** by keyword, date range, status, tag, email domain, or ticket number
+- **Look up customers** by name, advanced query syntax, or exact email address
+- **Explore organizations** with direct customer and conversation traversal
 - **Pull full thread history** into context before drafting a reply
 - **Get conversation summaries** with the original customer message and latest staff response
 - **Monitor inbox activity** across multiple inboxes with a single query
@@ -74,7 +76,7 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
 ## Getting Your API Credentials
 
 1. Go to **Help Scout** > **My Apps** > **Create Private App**
-2. Select at minimum: **Read** access to Mailboxes and Conversations
+2. Select at minimum: **Read** access to Mailboxes, Conversations, Customers, and Organizations
 3. Copy your **App ID** and **App Secret**
 
 > Help Scout uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
@@ -96,6 +98,14 @@ Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `
 | Find by keyword | `comprehensiveConversationSearch` | "Find conversations about billing errors" |
 | Look up a ticket number | `structuredConversationFilter` | "Show me ticket #42839" |
 | Complex filters | `advancedConversationSearch` | "All @acme.com conversations tagged urgent" |
+| Browse customers | `listCustomers` | "Show customers named Jane" |
+| Find a customer by email | `searchCustomersByEmail` | "Find customer jane@acme.com" |
+| Inspect a customer profile | `getCustomer` | "Open customer 12345" |
+| Pull customer contact channels | `getCustomerContacts` | "Show contact details for customer 12345" |
+| Browse organizations | `listOrganizations` | "Show the busiest organizations" |
+| Inspect an organization | `getOrganization` | "Open organization 456" |
+| List customers in an organization | `getOrganizationMembers` | "Who belongs to organization 456?" |
+| List organization conversations | `getOrganizationConversations` | "Show support history for organization 456" |
 | Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
 | Full message history | `getThreads` | "Show me the complete thread" |
 | Current server time | `getServerTime` | Used for time-relative searches |
@@ -130,6 +140,7 @@ Works with any [MCP-compatible](https://modelcontextprotocol.io) client:
 Built with compliance-minded teams in mind:
 
 - **Optional PII redaction.** Message bodies are included by default. Set `REDACT_MESSAGE_CONTENT=true` to hide them for stricter compliance requirements.
+- **Customer and organization redaction.** Customer contact fields and organization contact/location fields are also redacted when message-content redaction is enabled.
 - **Secure authentication.** OAuth2 Client Credentials with automatic token refresh.
 - **Rate limit handling.** Automatic retry with exponential backoff on 429 responses.
 - **Scoped access.** Optional default inbox configuration limits what the AI can search.

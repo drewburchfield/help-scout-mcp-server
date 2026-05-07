@@ -1,0 +1,16 @@
+{
+  "description": "SessionStart hook - verifies HelpScout API credentials are configured",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
+            "statusMessage": "Verifying HelpScout credentials..."
+          }
+        ]
+      }
+    ]
+  }
+}

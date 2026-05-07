@@ -2,6 +2,8 @@ import { TextResourceContents, Resource } from '@modelcontextprotocol/sdk/types.
 import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js';
 import { Inbox, Conversation, Thread, ServerTime } from '../schema/types.js';
 import { logger } from '../utils/logger.js';
+import { config } from '../utils/config.js';
+import { PII_REDACTED_BODY } from '../utils/constants.js';
 
 export class ResourceHandler {
   async handleResource(uri: string): Promise<TextResourceContents> {
@@ -14,6 +16,20 @@ export class ResourceHandler {
 
     const path = url.hostname; // For custom protocols like helpscout://, the resource name is in hostname
     const searchParams = Object.fromEntries(url.searchParams.entries());
+
+    // NAS-471: Bounds checking for page/size params
+    if (searchParams.page) {
+      const page = parseInt(searchParams.page, 10);
+      if (isNaN(page) || page < 1 || page > 10000) {
+        throw new Error('page must be a number between 1 and 10000');
+      }
+    }
+    if (searchParams.size) {
+      const size = parseInt(searchParams.size, 10);
+      if (isNaN(size) || size < 1 || size > 50) {
+        throw new Error('size must be a number between 1 and 50');
+      }
+    }
 
     logger.info('Handling resource request', { uri, path, params: searchParams });
 
@@ -91,6 +107,9 @@ export class ResourceHandler {
     if (!conversationId) {
       throw new Error('conversationId parameter is required for threads resource');
     }
+    if (!/^\d+$/.test(conversationId)) {
+      throw new Error('conversationId must be a numeric value');
+    }
 
     try {
       const response = await helpScoutClient.get<PaginatedResponse<Thread>>(`/conversations/${conversationId}/threads`, {
@@ -100,12 +119,17 @@ export class ResourceHandler {
 
       const threads = response._embedded?.threads || [];
 
+      const redactedThreads = threads.map(thread => ({
+        ...thread,
+        body: config.security.allowPii ? thread.body : PII_REDACTED_BODY,
+      }));
+
       return {
         uri: `helpscout://threads?conversationId=${conversationId}`,
         mimeType: 'application/json',
         text: JSON.stringify({
           conversationId,
-          threads,
+          threads: redactedThreads,
           pagination: response.page,
           links: response._links,
         }, null, 2),
