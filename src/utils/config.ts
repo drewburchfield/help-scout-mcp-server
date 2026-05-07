@@ -23,6 +23,9 @@ export interface Config {
   security: {
     allowPii: boolean;
   };
+  writes: {
+    enabled: boolean;
+  };
   connectionPool: {
     maxSockets: number;
     maxFreeSockets: number;
@@ -52,6 +55,10 @@ export const config: Config = {
     // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies
     // ALLOW_PII=true is backwards compat (always shows content)
     allowPii: process.env.REDACT_MESSAGE_CONTENT !== 'true' || process.env.ALLOW_PII === 'true',
+  },
+  writes: {
+    // Enable write operations (create, reply, note, update, assign). Default: true
+    enabled: process.env.HELPSCOUT_ENABLE_WRITES !== 'false',
   },
   connectionPool: {
     maxSockets: parseInt(process.env.HTTP_MAX_SOCKETS || '50', 10),
