@@ -1,5 +1,6 @@
 import nock from 'nock';
 import { ToolHandler } from '../tools/index.js';
+import { config } from '../utils/config.js';
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 
 describe('ToolHandler', () => {
@@ -38,13 +39,14 @@ describe('ToolHandler', () => {
       delete process.env.HELPSCOUT_ENABLE_WRITES;
       const tools = await toolHandler.listTools();
 
-      // 18 read-only tools when writes are disabled
-      expect(tools).toHaveLength(18);
+      // 19 read-only tools when writes are disabled
+      expect(tools).toHaveLength(19);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
         'getConversationSummary',
         'getThreads',
+        'getThreadOriginalSource',
         'getServerTime',
         'listAllInboxes',
         'listTags',
@@ -685,6 +687,111 @@ describe('ToolHandler', () => {
         const response = JSON.parse(textContent.text);
         expect(response.conversationId).toBe(conversationId);
         expect(response.threads).toHaveLength(2);
+      }
+    });
+  });
+
+  describe('getThreadOriginalSource', () => {
+    // a small but realistic raw message exercising header folding (Subject)
+    // and a repeated header (Received) to verify the parser handles both
+    const rawMessage = [
+      'Received: from mx1.example.com by inbound.example.net',
+      '\twith ESMTPS id ABC123 for <support@cloud66.com>;',
+      '\tThu, 8 May 2026 10:00:00 +0000',
+      'Received: from sender.example.com by mx1.example.com',
+      '\twith ESMTPS id DEF456;',
+      '\tThu, 8 May 2026 09:59:55 +0000',
+      'From: noreply@vendor.example.com',
+      'To: support@cloud66.com',
+      'Subject: Re: Out of office',
+      ' (auto-reply)',
+      'Auto-Submitted: auto-replied',
+      'Precedence: bulk',
+      'X-Autoreply: yes',
+      '',
+      'I am out of the office until next week.',
+      '',
+      '-- vendor team',
+    ].join('\r\n');
+
+    it('should fetch RFC 822 source and return parsed headers', async () => {
+      const conversationId = '888';
+      const threadId = '777';
+
+      // Help Scout requires Accept: message/rfc822 for the raw source endpoint
+      const scope = nock(baseURL, {
+        reqheaders: {
+          accept: 'message/rfc822',
+        },
+      })
+        .get(`/conversations/${conversationId}/threads/${threadId}/original-source`)
+        .reply(200, rawMessage, { 'Content-Type': 'message/rfc822' });
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'getThreadOriginalSource',
+          arguments: { conversationId, threadId },
+        },
+      };
+
+      const result = await toolHandler.callTool(request);
+
+      expect(result.isError).toBeFalsy();
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.conversationId).toBe(conversationId);
+      expect(response.threadId).toBe(threadId);
+      // headers the noise gate Stage 1A actually checks
+      expect(response.headers['Auto-Submitted']).toBe('auto-replied');
+      expect(response.headers['Precedence']).toBe('bulk');
+      expect(response.headers['X-Autoreply']).toBe('yes');
+      // folded Subject: continuation must be merged into the original line
+      expect(response.headers['Subject']).toBe('Re: Out of office (auto-reply)');
+      // repeated header collapses to an array preserving order
+      expect(Array.isArray(response.headers['Received'])).toBe(true);
+      expect(response.headers['Received']).toHaveLength(2);
+      // body is excluded by default
+      expect(response.body).toBeUndefined();
+
+      expect(scope.isDone()).toBe(true);
+    });
+
+    it('should redact body when includeBody=true and PII redaction is enabled', async () => {
+      const conversationId = '866';
+      const threadId = '755';
+
+      // toggle redaction directly on the loaded config — env vars are read once
+      // at module load time, so other tests in the file follow this same pattern
+      const originalAllowPii = config.security.allowPii;
+      config.security.allowPii = false;
+
+      try {
+        nock(baseURL, { reqheaders: { accept: 'message/rfc822' } })
+          .get(`/conversations/${conversationId}/threads/${threadId}/original-source`)
+          .reply(200, rawMessage, { 'Content-Type': 'message/rfc822' });
+
+        const request: CallToolRequest = {
+          method: 'tools/call',
+          params: {
+            name: 'getThreadOriginalSource',
+            arguments: { conversationId, threadId, includeBody: true },
+          },
+        };
+
+        const result = await toolHandler.callTool(request);
+        expect(result.isError).toBeFalsy();
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        // headers always returned in the clear (no message-content PII risk
+        // beyond what getThreads already exposes via customer.email)
+        expect(response.headers['Auto-Submitted']).toBe('auto-replied');
+        // body present but redacted to the placeholder string
+        expect(response.body).toBe('[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]');
+      } finally {
+        config.security.allowPii = originalAllowPii;
       }
     });
   });

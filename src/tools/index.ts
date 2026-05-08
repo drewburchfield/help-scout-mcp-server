@@ -5,6 +5,7 @@ import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constrain
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { PII_REDACTED_BODY } from '../utils/constants.js';
+import { parseRfc822 } from '../utils/rfc822.js';
 import { z } from 'zod';
 import {
   Inbox,
@@ -17,6 +18,7 @@ import {
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
+  GetThreadOriginalSourceInputSchema,
   GetConversationSummaryInputSchema,
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
@@ -262,6 +264,29 @@ export class ToolHandler {
             },
           },
           required: ['conversationId'],
+        },
+      },
+      {
+        name: 'getThreadOriginalSource',
+        description: 'Get parsed email headers (Auto-Submitted, X-Autoreply, Precedence, From, Subject, etc.) from a thread\'s raw RFC 822 source. Use for auto-reply / bulk-mail detection where the thread body alone is insufficient. Body is excluded by default — pass includeBody=true to include it (subject to PII redaction).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID',
+            },
+            threadId: {
+              type: 'string',
+              description: 'The thread ID (from getThreads response)',
+            },
+            includeBody: {
+              type: 'boolean',
+              default: false,
+              description: 'Include the parsed message body alongside headers (redacted when REDACT_MESSAGE_CONTENT is set)',
+            },
+          },
+          required: ['conversationId', 'threadId'],
         },
       },
       {
@@ -778,6 +803,9 @@ export class ToolHandler {
         case 'getThreads':
           result = await this.getThreads(request.params.arguments || {});
           break;
+        case 'getThreadOriginalSource':
+          result = await this.getThreadOriginalSource(request.params.arguments || {});
+          break;
         case 'getServerTime':
           result = await this.getServerTime();
           break;
@@ -1244,7 +1272,7 @@ export class ToolHandler {
 
   private async getThreads(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsInputSchema.parse(args);
-    
+
     const response = await helpScoutClient.get<PaginatedResponse<Thread>>(
       `/conversations/${input.conversationId}/threads`,
       {
@@ -1254,7 +1282,7 @@ export class ToolHandler {
     );
 
     const threads = response._embedded?.threads || [];
-    
+
     // Redact PII if configured
     const processedThreads = threads.map(thread => ({
       ...thread,
@@ -1270,6 +1298,42 @@ export class ToolHandler {
             threads: processedThreads,
             pagination: response.page,
             nextCursor: response._links?.next?.href,
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  // SUP-974: surface raw email headers via Help Scout's per-thread
+  // original-source endpoint. Headers (Auto-Submitted, X-Autoreply, Precedence, etc.)
+  // are not part of the standard threads list response, but are needed by the
+  // support-triage noise gate's Stage 1A header checks.
+  private async getThreadOriginalSource(args: unknown): Promise<CallToolResult> {
+    const input = GetThreadOriginalSourceInputSchema.parse(args);
+
+    // Help Scout returns the raw RFC 822 message when Accept: message/rfc822 is set
+    const raw = await helpScoutClient.getRaw(
+      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`,
+      { accept: 'message/rfc822' }
+    );
+
+    const parsed = parseRfc822(raw);
+
+    // body is opt-in to keep responses small and to avoid surfacing message
+    // content callers don't need; redaction policy mirrors getThreads
+    const bodyField = input.includeBody
+      ? { body: config.security.allowPii ? parsed.body : PII_REDACTED_BODY }
+      : {};
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            conversationId: input.conversationId,
+            threadId: input.threadId,
+            headers: parsed.headers,
+            ...bodyField,
           }, null, 2),
         },
       ],

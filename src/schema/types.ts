@@ -106,6 +106,17 @@ export const GetThreadsInputSchema = z.object({
   cursor: z.string().optional(),
 });
 
+// SUP-974: expose raw email headers (Auto-Submitted, X-Autoreply, Precedence, etc.)
+// via Help Scout's per-thread original-source endpoint, so the support-triage
+// noise gate can run header-based auto-reply detection.
+export const GetThreadOriginalSourceInputSchema = z.object({
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
+  threadId: z.string().regex(/^\d+$/, 'Thread ID must be numeric'),
+  // body is excluded by default — most callers (noise gate, classifiers) only
+  // want headers, and the body is already available via getThreads
+  includeBody: z.boolean().default(false),
+});
+
 export const GetConversationSummaryInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
 });

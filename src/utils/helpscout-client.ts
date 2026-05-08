@@ -490,15 +490,15 @@ export class HelpScoutClient {
   async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {
     const cacheKey = `GET:${endpoint}`;
     const cachedResult = cache.get<T>(cacheKey, params);
-    
+
     if (cachedResult) {
       return cachedResult;
     }
 
-    const response = await this.executeWithRetry<T>(() => 
+    const response = await this.executeWithRetry<T>(() =>
       this.client.get<T>(endpoint, { params })
     );
-    
+
     if (cacheOptions?.ttl || cacheOptions?.ttl === 0) {
       cache.set(cacheKey, params, response.data, { ttl: cacheOptions.ttl });
     } else {
@@ -506,7 +506,28 @@ export class HelpScoutClient {
       const defaultTtl = this.getDefaultCacheTtl(endpoint);
       cache.set(cacheKey, params, response.data, { ttl: defaultTtl });
     }
-    
+
+    return response.data;
+  }
+
+  /**
+   * GET an endpoint that returns a non-JSON payload (e.g. raw RFC 822 email source).
+   * Bypasses JSON parsing and lets the caller specify the Accept header.
+   * Reuses the auth, retry, and connection-pool plumbing of `get`. Not cached —
+   * raw blobs are typically large and only fetched on demand.
+   */
+  async getRaw(endpoint: string, options: { accept: string }): Promise<string> {
+    const response = await this.executeWithRetry<string>(() =>
+      this.client.get<string>(endpoint, {
+        headers: { Accept: options.accept },
+        // tell axios to leave the body as a string instead of trying to JSON.parse it
+        responseType: 'text',
+        transformResponse: (data) => data,
+      })
+    );
+
+    this.checkResponseStatus(response);
+
     return response.data;
   }
 
