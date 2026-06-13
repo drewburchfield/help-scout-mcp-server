@@ -1094,8 +1094,8 @@ function printSummary(): void {
 
 async function main(): Promise<void> {
   const missingCredentials = [
-    ['HELPSCOUT_CLIENT_ID or HELPSCOUT_APP_ID', process.env.HELPSCOUT_CLIENT_ID ?? process.env.HELPSCOUT_APP_ID],
-    ['HELPSCOUT_CLIENT_SECRET or HELPSCOUT_APP_SECRET', process.env.HELPSCOUT_CLIENT_SECRET ?? process.env.HELPSCOUT_APP_SECRET],
+    ['HELPSCOUT_APP_ID or HELPSCOUT_CLIENT_ID', process.env.HELPSCOUT_APP_ID ?? process.env.HELPSCOUT_CLIENT_ID],
+    ['HELPSCOUT_APP_SECRET or HELPSCOUT_CLIENT_SECRET', process.env.HELPSCOUT_APP_SECRET ?? process.env.HELPSCOUT_CLIENT_SECRET],
   ].filter(([, value]) => !value);
 
   if (missingCredentials.length > 0) {

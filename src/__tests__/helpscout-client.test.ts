@@ -29,8 +29,8 @@ jest.mock('../utils/config.js', () => ({
   config: {
     helpscout: {
       get apiKey() { return process.env.HELPSCOUT_API_KEY || ''; },
-      get clientId() { return process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || ''; },
-      get clientSecret() { return process.env.HELPSCOUT_CLIENT_SECRET || process.env.HELPSCOUT_APP_SECRET || ''; },
+      get clientId() { return process.env.HELPSCOUT_APP_ID || process.env.HELPSCOUT_CLIENT_ID || process.env.HELPSCOUT_API_KEY || ''; },
+      get clientSecret() { return process.env.HELPSCOUT_APP_SECRET || process.env.HELPSCOUT_CLIENT_SECRET || ''; },
       get baseUrl() { return process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/'; },
     },
     cache: {
@@ -59,6 +59,7 @@ describe('HelpScoutClient', () => {
     
     // Clear any environment variables from previous tests
     delete process.env.HELPSCOUT_API_KEY;
+    delete process.env.HELPSCOUT_APP_ID;
     delete process.env.HELPSCOUT_CLIENT_ID;
     delete process.env.HELPSCOUT_CLIENT_SECRET;
     delete process.env.HELPSCOUT_APP_SECRET;
@@ -70,12 +71,19 @@ describe('HelpScoutClient', () => {
     if (pending.length > 0) {
       console.log('Pending nock interceptors:', pending);
     }
+    jest.restoreAllMocks();
     nock.recorder.clear();
     nock.cleanAll();
     nock.restore();
   });
 
   describe('authentication', () => {
+    it('rejects non-HTTPS base URLs before direct client use can authenticate', () => {
+      process.env.HELPSCOUT_BASE_URL = 'http://api.helpscout.net/v2/';
+
+      expect(() => new HelpScoutClient()).toThrow('HELPSCOUT_BASE_URL must use HTTPS');
+    });
+
     it.skip('should authenticate with OAuth2 Client Credentials', async () => {
       // SKIP: Nock has timing issues with axios OAuth2 POST requests in this test environment.
       // OAuth2 authentication is properly tested in integration tests with proper mocking.
@@ -227,6 +235,63 @@ describe('HelpScoutClient', () => {
         message: 'Help Scout API rate limit exceeded. Please wait 1 seconds before retrying.'
       });
     }, 15000); // Increase timeout to account for retries
+
+    it('honors long Retry-After delta seconds instead of capping at retry backoff max', async () => {
+      const client = new HelpScoutClient();
+      const retryError = {
+        response: {
+          status: 429,
+          headers: { 'retry-after': '60' },
+        },
+        config: {
+          metadata: { requestId: 'retry-after-delta' },
+        },
+        message: 'Rate limited',
+      };
+      const operation = jest.fn<() => Promise<any>>()
+        .mockRejectedValueOnce(retryError)
+        .mockResolvedValueOnce({ data: { ok: true } });
+      const sleep = jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect((client as any).executeWithRetry(operation, {
+        retries: 1,
+        retryDelay: 1,
+        maxRetryDelay: 10,
+        retryCondition: () => true,
+      })).resolves.toMatchObject({ data: { ok: true } });
+
+      expect(sleep).toHaveBeenCalledWith(60000);
+    });
+
+    it('honors HTTP-date Retry-After headers', async () => {
+      const now = Date.UTC(2026, 0, 1, 0, 0, 0);
+      jest.spyOn(Date, 'now').mockReturnValue(now);
+      const client = new HelpScoutClient();
+      const retryAt = new Date(now + 45000).toUTCString();
+      const retryError = {
+        response: {
+          status: 429,
+          headers: { 'retry-after': retryAt },
+        },
+        config: {
+          metadata: { requestId: 'retry-after-date' },
+        },
+        message: 'Rate limited',
+      };
+      const operation = jest.fn<() => Promise<any>>()
+        .mockRejectedValueOnce(retryError)
+        .mockResolvedValueOnce({ data: { ok: true } });
+      const sleep = jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect((client as any).executeWithRetry(operation, {
+        retries: 1,
+        retryDelay: 1,
+        maxRetryDelay: 10,
+        retryCondition: () => true,
+      })).resolves.toMatchObject({ data: { ok: true } });
+
+      expect(sleep).toHaveBeenCalledWith(45000);
+    });
 
     it('should handle 400 bad request errors', async () => {
       const client = new HelpScoutClient();

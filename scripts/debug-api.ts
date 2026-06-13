@@ -29,14 +29,16 @@ function loadEnv(): Record<string, string> {
 
 async function main() {
   const env = loadEnv();
+  const clientId = env.HELPSCOUT_APP_ID || env.HELPSCOUT_CLIENT_ID;
+  const clientSecret = env.HELPSCOUT_APP_SECRET || env.HELPSCOUT_CLIENT_SECRET;
 
   // Get token
   const tokenRes = await axios.post(
     'https://api.helpscout.net/v2/oauth2/token',
     new URLSearchParams({
       grant_type: 'client_credentials',
-      client_id: env.HELPSCOUT_CLIENT_ID,
-      client_secret: env.HELPSCOUT_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
     })
   );
 

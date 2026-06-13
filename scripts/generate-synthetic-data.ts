@@ -403,8 +403,8 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════════\n');
 
   const env = loadEnv();
-  const clientId = env.HELPSCOUT_CLIENT_ID;
-  const clientSecret = env.HELPSCOUT_CLIENT_SECRET;
+  const clientId = env.HELPSCOUT_APP_ID || env.HELPSCOUT_CLIENT_ID;
+  const clientSecret = env.HELPSCOUT_APP_SECRET || env.HELPSCOUT_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     console.error('❌ Missing credentials in .env');

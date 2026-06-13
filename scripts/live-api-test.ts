@@ -3,7 +3,8 @@
  * Live API Test Script for Help Scout MCP Server
  *
  * Tests the current MCP tool surface against the live Help Scout API to verify functionality.
- * Requires valid HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET in .env
+ * Requires valid HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET in .env.
+ * HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are also supported.
  *
  * Usage:
  *   npx tsx scripts/live-api-test.ts
@@ -54,11 +55,11 @@ class HelpScoutClient {
   private baseUrl = 'https://api.helpscout.net/v2';
 
   async authenticate(): Promise<void> {
-    const clientId = process.env.HELPSCOUT_CLIENT_ID;
-    const clientSecret = process.env.HELPSCOUT_CLIENT_SECRET;
+    const clientId = process.env.HELPSCOUT_APP_ID || process.env.HELPSCOUT_CLIENT_ID;
+    const clientSecret = process.env.HELPSCOUT_APP_SECRET || process.env.HELPSCOUT_CLIENT_SECRET;
 
     if (!clientId || !clientSecret) {
-      throw new Error('Missing HELPSCOUT_CLIENT_ID or HELPSCOUT_CLIENT_SECRET');
+      throw new Error('Missing HELPSCOUT_APP_ID/HELPSCOUT_APP_SECRET or HELPSCOUT_CLIENT_ID/HELPSCOUT_CLIENT_SECRET');
     }
 
     const response = await fetch('https://api.helpscout.net/v2/oauth2/token', {
