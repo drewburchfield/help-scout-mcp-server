@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --loader ts-node/esm
 /**
- * Comprehensive authenticated edge-case test for all 16 MCP tools.
+ * Comprehensive authenticated edge-case test for all 25 MCP tools.
  *
  * Run: node --loader ts-node/esm tests/test-all-tools-edge-cases.ts
  *
@@ -91,11 +91,11 @@ const expectGraceful = (data: any) => ({
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.error('\n=== Comprehensive Edge-Case Test Suite (16 Tools) ===\n');
+  console.error('\n=== Comprehensive Edge-Case Test Suite (25 Tools) ===\n');
   console.error('  Golden data: Customer ' + GOLDEN.customerId + ', Org ' + GOLDEN.orgId + '\n');
 
   // =========================================================================
-  // CATEGORY 1: Happy Path (all 16 tools with golden data)
+  // CATEGORY 1: Happy Path (all tools with golden data)
   // =========================================================================
 
   await test('happy', 'getServerTime', 'getServerTime', {}, (d) => ({
@@ -117,6 +117,61 @@ async function main() {
     ok: d?.results?.some((r: any) => r.name?.includes('Client')),
     detail: d?.results?.[0]?.name,
   }));
+
+  const tagsResult = await test('happy', 'listTags (page 1)', 'listTags', { page: 1 }, (d) => ({
+    ok: Array.isArray(d?.tags),
+    detail: `${d?.tags?.length || 0} tags`,
+  }));
+
+  const tagId = tagsResult?.tags?.[0]?.id ? String(tagsResult.tags[0].id) : null;
+  if (tagId) {
+    await test('happy', `getTag (ID: ${tagId})`, 'getTag', { tagId }, (d) => ({
+      ok: !!d?.tag?.id,
+      detail: d?.tag?.name,
+    }));
+  }
+
+  const usersResult = await test('happy', 'listUsers (page 1)', 'listUsers', { page: 1 }, (d) => ({
+    ok: Array.isArray(d?.users) && d.users.length > 0,
+    detail: `${d?.users?.length || 0} users`,
+  }));
+
+  const userId = usersResult?.users?.[0]?.id ? String(usersResult.users[0].id) : null;
+  await test('happy', 'getUser (me)', 'getUser', { userId: 'me' }, (d) => ({
+    ok: !!d?.user?.id,
+    detail: d?.user?.email,
+  }));
+  if (userId) {
+    await test('happy', `getUser (ID: ${userId})`, 'getUser', { userId }, (d) => ({
+      ok: !!d?.user?.id,
+      detail: d?.user?.email,
+    }));
+  }
+
+  const teamsResult = await test('happy', 'listTeams (page 1)', 'listTeams', { page: 1 }, (d) => ({
+    ok: Array.isArray(d?.teams),
+    detail: `${d?.teams?.length || 0} teams`,
+  }));
+
+  const teamId = teamsResult?.teams?.[0]?.id ? String(teamsResult.teams[0].id) : null;
+  if (teamId) {
+    await test('happy', `getTeamMembers (ID: ${teamId})`, 'getTeamMembers', { teamId }, (d) => ({
+      ok: Array.isArray(d?.members),
+      detail: `${d?.members?.length || 0} members`,
+    }));
+  }
+
+  await test('happy', 'listInboxCustomFields (golden inbox)', 'listInboxCustomFields',
+    { inboxId: GOLDEN.inboxId }, (d) => ({
+      ok: Array.isArray(d?.fields),
+      detail: `${d?.fields?.length || 0} fields`,
+    }));
+
+  await test('happy', 'listInboxFolders (golden inbox)', 'listInboxFolders',
+    { inboxId: GOLDEN.inboxId }, (d) => ({
+      ok: Array.isArray(d?.folders),
+      detail: `${d?.folders?.length || 0} folders`,
+    }));
 
   let conversationId: string | null = null;
   const convResult = await test('happy', 'searchConversations (default)', 'searchConversations', {}, (d) => ({

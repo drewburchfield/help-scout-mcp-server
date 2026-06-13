@@ -13,6 +13,11 @@ import {
   Customer,
   CustomerAddress,
   Organization,
+  Tag,
+  User,
+  Team,
+  InboxCustomField,
+  InboxFolder,
   ServerTime,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
@@ -30,6 +35,14 @@ import {
   ListOrganizationsInputSchema,
   GetOrganizationMembersInputSchema,
   GetOrganizationConversationsInputSchema,
+  ListTagsInputSchema,
+  GetTagInputSchema,
+  ListUsersInputSchema,
+  GetUserInputSchema,
+  ListTeamsInputSchema,
+  GetTeamMembersInputSchema,
+  ListInboxCustomFieldsInputSchema,
+  ListInboxFoldersInputSchema,
 } from '../schema/types.js';
 
 /**
@@ -559,6 +572,95 @@ export class ToolHandler {
           required: ['organizationId'],
         },
       },
+      {
+        name: 'listTags',
+        description: 'List Help Scout tags used across inboxes. Use to discover tag IDs and exact names before filtering conversations or reports.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Optional case-insensitive client-side tag name filter' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getTag',
+        description: 'Get a Help Scout tag by ID. Use after listTags when an exact tag record is needed.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tagId: { type: 'string', description: 'Tag ID from listTags' },
+          },
+          required: ['tagId'],
+        },
+      },
+      {
+        name: 'listUsers',
+        description: 'List Help Scout users with optional exact email or inbox filter. Use to discover assignee IDs, mentions, and roles.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', description: 'Exact user email filter' },
+            inboxId: { type: 'string', description: 'Inbox ID to find users with access to that inbox' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getUser',
+        description: 'Get a Help Scout user by ID, or pass "me" to get the authenticated resource owner.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'User ID from listUsers, or "me" for the authenticated resource owner' },
+          },
+          required: ['userId'],
+        },
+      },
+      {
+        name: 'listTeams',
+        description: 'List Help Scout teams. Use to discover team IDs before team-member lookup or team-scoped reporting.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getTeamMembers',
+        description: 'List members of a Help Scout team. Use after listTeams to discover user IDs in a team.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            teamId: { type: 'string', description: 'Team ID from listTeams' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+          required: ['teamId'],
+        },
+      },
+      {
+        name: 'listInboxCustomFields',
+        description: 'List custom field definitions for an inbox, including dropdown option IDs used by conversation filters and updates.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
+          },
+          required: ['inboxId'],
+        },
+      },
+      {
+        name: 'listInboxFolders',
+        description: 'List Help Scout folders for an inbox. Use to discover folder IDs and counts before folder-scoped lookups.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
+          },
+          required: ['inboxId'],
+        },
+      },
     ];
   }
 
@@ -670,6 +772,30 @@ export class ToolHandler {
           break;
         case 'getOrganizationConversations':
           result = await this.getOrganizationConversations(request.params.arguments || {});
+          break;
+        case 'listTags':
+          result = await this.listTags(request.params.arguments || {});
+          break;
+        case 'getTag':
+          result = await this.getTag(request.params.arguments || {});
+          break;
+        case 'listUsers':
+          result = await this.listUsers(request.params.arguments || {});
+          break;
+        case 'getUser':
+          result = await this.getUser(request.params.arguments || {});
+          break;
+        case 'listTeams':
+          result = await this.listTeams(request.params.arguments || {});
+          break;
+        case 'getTeamMembers':
+          result = await this.getTeamMembers(request.params.arguments || {});
+          break;
+        case 'listInboxCustomFields':
+          result = await this.listInboxCustomFields(request.params.arguments || {});
+          break;
+        case 'listInboxFolders':
+          result = await this.listInboxFolders(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1150,6 +1276,184 @@ export class ToolHandler {
           }, null, 2),
         },
       ],
+    };
+  }
+
+  private async listTags(args: unknown): Promise<CallToolResult> {
+    const input = ListTagsInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<Tag>>('/tags', {
+      page: input.page,
+    });
+
+    const tags = response._embedded?.tags || [];
+    const filteredTags = input.name
+      ? tags.filter(tag => tag.name.toLowerCase().includes(input.name!.toLowerCase()))
+      : tags;
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          tags: filteredTags,
+          nameFilter: input.name,
+          totalFound: filteredTags.length,
+          totalAvailable: response.page?.totalElements ?? tags.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: filteredTags.length > 0
+            ? 'Use tag.id for report filters that require IDs, or tag.name with conversation tag filters.'
+            : 'No tags matched. Omit name to list tags alphabetically across all inboxes.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getTag(args: unknown): Promise<CallToolResult> {
+    const input = GetTagInputSchema.parse(args);
+    const tag = await helpScoutClient.get<Tag>(`/tags/${input.tagId}`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          tag,
+          usage: 'Use tag.name with conversation tag filters; use tag.id for report endpoints that expect tag IDs.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listUsers(args: unknown): Promise<CallToolResult> {
+    const input = ListUsersInputSchema.parse(args);
+    const params: Record<string, unknown> = { page: input.page };
+    if (input.email) params.email = input.email;
+    if (input.inboxId) params.mailbox = Number(input.inboxId);
+
+    const response = await helpScoutClient.get<PaginatedResponse<User>>('/users', params);
+    const users = response._embedded?.users || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          users,
+          filters: {
+            email: input.email,
+            inboxId: input.inboxId,
+          },
+          totalUsers: users.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: users.length > 0
+            ? 'Use user.id for assignee filters and user.mention when composing Help Scout note/reply text.'
+            : 'No users matched these filters. Try omitting email or inboxId.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getUser(args: unknown): Promise<CallToolResult> {
+    const input = GetUserInputSchema.parse(args);
+    const path = input.userId === 'me' ? '/users/me' : `/users/${input.userId}`;
+    const user = await helpScoutClient.get<User>(path);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          user,
+          usage: 'Use user.id for assignment, assignee filters, and user/team report filters.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listTeams(args: unknown): Promise<CallToolResult> {
+    const input = ListTeamsInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<Team>>('/teams', {
+      page: input.page,
+    });
+    const teams = response._embedded?.teams || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          teams,
+          totalTeams: teams.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: teams.length > 0
+            ? 'Use team.id with getTeamMembers to discover team member user IDs.'
+            : 'No teams returned for this Help Scout account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getTeamMembers(args: unknown): Promise<CallToolResult> {
+    const input = GetTeamMembersInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<User>>(`/teams/${input.teamId}/members`, {
+      page: input.page,
+    });
+    const members = response._embedded?.users || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          teamId: input.teamId,
+          members,
+          totalMembers: members.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: members.length > 0
+            ? 'Use member.id for assignee filters or user report filters.'
+            : 'No users returned for this team.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listInboxCustomFields(args: unknown): Promise<CallToolResult> {
+    const input = ListInboxCustomFieldsInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${input.inboxId}/fields`);
+    const fields = response._embedded?.fields || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          inboxId: input.inboxId,
+          fields,
+          totalFields: fields.length,
+          pagination: response.page,
+          usage: fields.length > 0
+            ? 'Use field.id and dropdown option IDs when filtering or interpreting custom field values.'
+            : 'No custom fields returned for this inbox.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listInboxFolders(args: unknown): Promise<CallToolResult> {
+    const input = ListInboxFoldersInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<InboxFolder>>(`/mailboxes/${input.inboxId}/folders`);
+    const folders = response._embedded?.folders || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          inboxId: input.inboxId,
+          folders,
+          totalFolders: folders.length,
+          pagination: response.page,
+          usage: folders.length > 0
+            ? 'Use folder.id with structuredConversationFilter for folder-scoped lookups.'
+            : 'No folders returned for this inbox.',
+        }, null, 2),
+      }],
     };
   }
 

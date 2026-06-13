@@ -60,6 +60,26 @@ jobs:
         HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
       run: npm test -- --runInBand
 
+    - name: Run full dogfood
+      if: matrix.node-version == '20.x'
+      env:
+        HELPSCOUT_APP_ID: ${{ secrets.HELPSCOUT_APP_ID }}
+        HELPSCOUT_APP_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
+        HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
+        HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
+        HELPSCOUT_DEFAULT_INBOX_ID: '359402'
+      run: npm run dogfood:full
+
+    - name: Run authenticated edge-case test
+      if: matrix.node-version == '20.x'
+      env:
+        HELPSCOUT_APP_ID: ${{ secrets.HELPSCOUT_APP_ID }}
+        HELPSCOUT_APP_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
+        HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
+        HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
+        HELPSCOUT_DEFAULT_INBOX_ID: '359402'
+      run: npm run test:forensic
+
     - name: Docker smoke test
       run: npm run test:docker:ci
 

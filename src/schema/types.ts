@@ -218,6 +218,69 @@ export const OrganizationSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+export const TagSchema = z.object({
+  id: z.number(),
+  slug: z.string().optional(),
+  name: z.string(),
+  color: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+  ticketCount: z.number().optional(),
+});
+
+export const UserSchema = z.object({
+  id: z.number(),
+  firstName: z.string().nullable().optional(),
+  lastName: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  role: z.string().optional(),
+  timezone: z.string().nullable().optional(),
+  photoUrl: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+  type: z.string().optional(),
+  mention: z.string().nullable().optional(),
+  initials: z.string().nullable().optional(),
+  jobTitle: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  alternateEmails: z.array(z.string()).optional(),
+  companyId: z.number().optional(),
+});
+
+export const TeamSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  timezone: z.string().nullable().optional(),
+  photoUrl: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+  mention: z.string().nullable().optional(),
+  initials: z.string().nullable().optional(),
+});
+
+export const InboxCustomFieldSchema = z.object({
+  id: z.number(),
+  required: z.boolean().optional(),
+  order: z.number().optional(),
+  type: z.string(),
+  name: z.string(),
+  options: z.array(z.object({
+    id: z.number(),
+    order: z.number().optional(),
+    label: z.string(),
+  })).optional(),
+});
+
+export const InboxFolderSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  type: z.string().optional(),
+  userId: z.number().optional(),
+  totalCount: z.number().optional(),
+  activeCount: z.number().optional(),
+  updatedAt: z.string().optional(),
+});
+
 // Customer & Organization Input Schemas
 export const GetCustomerInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
@@ -274,6 +337,45 @@ export const ListAllInboxesInputSchema = z.object({
   limit: z.number().int().min(1).max(100).default(100),
 });
 
+export const ListTagsInputSchema = z.object({
+  name: z.string().optional().describe('Case-insensitive client-side filter by tag name'),
+  page: z.number().int().min(1).default(1),
+});
+
+export const GetTagInputSchema = z.object({
+  tagId: z.string().regex(/^\d+$/, 'Tag ID must be numeric').describe('Tag ID'),
+});
+
+export const ListUsersInputSchema = z.object({
+  email: z.string().optional().describe('Exact email match'),
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').optional().describe('Filter by inbox ID'),
+  page: z.number().int().min(1).default(1),
+});
+
+export const GetUserInputSchema = z.object({
+  userId: z.union([
+    z.literal('me'),
+    z.string().regex(/^\d+$/, 'User ID must be numeric or "me"'),
+  ]).describe('User ID or "me" for the authenticated resource owner'),
+});
+
+export const ListTeamsInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+});
+
+export const GetTeamMembersInputSchema = z.object({
+  teamId: z.string().regex(/^\d+$/, 'Team ID must be numeric').describe('Team ID'),
+  page: z.number().int().min(1).default(1),
+});
+
+export const ListInboxCustomFieldsInputSchema = z.object({
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
+});
+
+export const ListInboxFoldersInputSchema = z.object({
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -296,6 +398,11 @@ export type Thread = z.infer<typeof ThreadSchema>;
 export type Customer = z.infer<typeof CustomerSchema>;
 export type CustomerAddress = z.infer<typeof CustomerAddressSchema>;
 export type Organization = z.infer<typeof OrganizationSchema>;
+export type Tag = z.infer<typeof TagSchema>;
+export type User = z.infer<typeof UserSchema>;
+export type Team = z.infer<typeof TeamSchema>;
+export type InboxCustomField = z.infer<typeof InboxCustomFieldSchema>;
+export type InboxFolder = z.infer<typeof InboxFolderSchema>;
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
@@ -311,5 +418,13 @@ export type GetOrganizationMembersInput = z.infer<typeof GetOrganizationMembersI
 export type GetOrganizationConversationsInput = z.infer<typeof GetOrganizationConversationsInputSchema>;
 export type GetCustomerContactsInput = z.infer<typeof GetCustomerContactsInputSchema>;
 export type ListAllInboxesInput = z.infer<typeof ListAllInboxesInputSchema>;
+export type ListTagsInput = z.infer<typeof ListTagsInputSchema>;
+export type GetTagInput = z.infer<typeof GetTagInputSchema>;
+export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
+export type GetUserInput = z.infer<typeof GetUserInputSchema>;
+export type ListTeamsInput = z.infer<typeof ListTeamsInputSchema>;
+export type GetTeamMembersInput = z.infer<typeof GetTeamMembersInputSchema>;
+export type ListInboxCustomFieldsInput = z.infer<typeof ListInboxCustomFieldsInputSchema>;
+export type ListInboxFoldersInput = z.infer<typeof ListInboxFoldersInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

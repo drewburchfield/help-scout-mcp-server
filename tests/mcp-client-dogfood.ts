@@ -52,6 +52,14 @@ const EXPECTED_TOOLS = [
   'listOrganizations',
   'getOrganizationMembers',
   'getOrganizationConversations',
+  'listTags',
+  'getTag',
+  'listUsers',
+  'getUser',
+  'listTeams',
+  'getTeamMembers',
+  'listInboxCustomFields',
+  'listInboxFolders',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -70,6 +78,9 @@ interface DogfoodContext {
   conversationId?: string;
   conversationNumber?: number;
   assigneeId?: number;
+  tagId?: string;
+  userId?: string;
+  teamId?: string;
   createdAfter?: string;
   createdBefore?: string;
   nextCustomerCursor?: string;
@@ -80,6 +91,7 @@ interface Scenario {
   tool: ToolName;
   args: JsonObject | ((ctx: DogfoodContext) => JsonObject);
   expectError?: boolean;
+  skipIf?: (ctx: DogfoodContext) => string | undefined;
   validate: (data: unknown, result: CallToolResult, ctx: DogfoodContext) => void;
   after?: (data: unknown, result: CallToolResult, ctx: DogfoodContext) => void;
 }
@@ -213,6 +225,13 @@ function dateDaysAhead(days: number): string {
 }
 
 async function runScenario(session: McpDogfoodSession, ctx: DogfoodContext, scenario: Scenario): Promise<void> {
+  const skipReason = scenario.skipIf?.(ctx);
+  if (skipReason) {
+    results.push({ name: scenario.name, tool: scenario.tool, status: 'PASS', durationMs: 0, detail: `SKIP: ${skipReason}` });
+    process.stderr.write(`  ${scenario.tool}: ${scenario.name}... SKIP (${skipReason})\n`);
+    return;
+  }
+
   const args = typeof scenario.args === 'function' ? scenario.args(ctx) : scenario.args;
   const label = `${scenario.tool}: ${scenario.name}`;
   process.stderr.write(`  ${label}...`);
@@ -320,6 +339,115 @@ function buildScenarios(): Scenario[] {
       expectError: true,
       validate: (data) => {
         requireCondition(data !== undefined, 'Expected validation response');
+      },
+    },
+    {
+      tool: 'listTags',
+      name: 'tag discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        requireArray(data, ['tags', 'results'], 'tags');
+      },
+      after: (data, _result, ctx) => {
+        const tags = getArray(data, ['tags', 'results']) as JsonObject[];
+        const preferred = tags.find((tag) => getString(tag.name) === GOLDEN.tag) ?? tags[0];
+        if (preferred?.id) ctx.tagId = String(preferred.id);
+      },
+    },
+    {
+      tool: 'listTags',
+      name: 'tag name filter',
+      args: { name: GOLDEN.tag, page: 1 },
+      validate: (data) => {
+        requireArray(data, ['tags', 'results'], 'tags');
+      },
+    },
+    {
+      tool: 'getTag',
+      name: 'discovered tag details',
+      skipIf: (ctx) => ctx.tagId ? undefined : 'No tag available from listTags',
+      args: (ctx) => ({ tagId: ctx.tagId ?? '0' }),
+      validate: (data) => {
+        const tag = getObject(data, 'tag');
+        requireCondition(tag?.id, 'Missing tag');
+      },
+    },
+    {
+      tool: 'listUsers',
+      name: 'user discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        const users = requireArray(data, ['users', 'results'], 'users') as JsonObject[];
+        requireCondition(users.length > 0, 'No users returned');
+      },
+      after: (data, _result, ctx) => {
+        const users = getArray(data, ['users', 'results']) as JsonObject[];
+        if (users[0]?.id) ctx.userId = String(users[0].id);
+      },
+    },
+    {
+      tool: 'listUsers',
+      name: 'users by inbox filter',
+      args: (ctx) => ({ inboxId: ctx.inboxId, page: 1 }),
+      validate: (data) => {
+        requireArray(data, ['users', 'results'], 'users');
+      },
+    },
+    {
+      tool: 'getUser',
+      name: 'authenticated user shortcut',
+      args: { userId: 'me' },
+      validate: (data, _result, ctx) => {
+        const user = getObject(data, 'user');
+        requireCondition(user?.id, 'Missing user');
+        ctx.userId = String(user.id);
+      },
+    },
+    {
+      tool: 'getUser',
+      name: 'discovered user details',
+      skipIf: (ctx) => ctx.userId ? undefined : 'No user available from listUsers/getUser me',
+      args: (ctx) => ({ userId: ctx.userId ?? 'me' }),
+      validate: (data) => {
+        const user = getObject(data, 'user');
+        requireCondition(user?.id, 'Missing user');
+      },
+    },
+    {
+      tool: 'listTeams',
+      name: 'team discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        requireArray(data, ['teams', 'results'], 'teams');
+      },
+      after: (data, _result, ctx) => {
+        const teams = getArray(data, ['teams', 'results']) as JsonObject[];
+        if (teams[0]?.id) ctx.teamId = String(teams[0].id);
+      },
+    },
+    {
+      tool: 'getTeamMembers',
+      name: 'discovered team members',
+      skipIf: (ctx) => ctx.teamId ? undefined : 'No team available from listTeams',
+      args: (ctx) => ({ teamId: ctx.teamId ?? '0', page: 1 }),
+      validate: (data) => {
+        requireArray(data, ['members', 'users', 'results'], 'members');
+      },
+    },
+    {
+      tool: 'listInboxCustomFields',
+      name: 'inbox custom field definitions',
+      args: (ctx) => ({ inboxId: ctx.inboxId }),
+      validate: (data) => {
+        requireArray(data, ['fields', 'results'], 'fields');
+      },
+    },
+    {
+      tool: 'listInboxFolders',
+      name: 'inbox folders',
+      args: (ctx) => ({ inboxId: ctx.inboxId }),
+      validate: (data) => {
+        requireArray(data, ['folders', 'results'], 'folders');
       },
     },
     {
