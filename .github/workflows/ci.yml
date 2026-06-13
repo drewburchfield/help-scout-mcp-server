@@ -55,7 +55,7 @@ jobs:
         HELPSCOUT_APP_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
         HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
         HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
-      run: npm test
+      run: npm test -- --runInBand
 
     - name: Docker smoke test
       run: npm run test:docker:ci
