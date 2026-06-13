@@ -14,7 +14,7 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 - **Pull full thread history** into context before drafting a reply
 - **Get conversation summaries** with the original customer message and latest staff response
 - **Monitor inbox activity** across multiple inboxes with a single query
-- **Stay compliant** with optional PII redaction and scoped inbox access
+- **Reduce message payloads** with optional message content redaction and scoped inbox access
 
 ## Quick Start
 
@@ -120,7 +120,7 @@ Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in
 | `HELPSCOUT_APP_SECRET` | App Secret from Help Scout My Apps | Required |
 | `HELPSCOUT_DEFAULT_INBOX_ID` | Scope searches to a specific inbox | None (all inboxes) |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
-| `REDACT_MESSAGE_CONTENT` | Hide message bodies in responses | `false` |
+| `REDACT_MESSAGE_CONTENT` | Replace message bodies with placeholders | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 
@@ -137,10 +137,9 @@ Works with any [MCP-compatible](https://modelcontextprotocol.io) client:
 
 ## Security and Privacy
 
-Built with compliance-minded teams in mind:
+Built with security-minded teams in mind:
 
-- **Optional PII redaction.** Message bodies are included by default. Set `REDACT_MESSAGE_CONTENT=true` to hide them for stricter compliance requirements.
-- **Customer and organization redaction.** Customer contact fields and organization contact/location fields are also redacted when message-content redaction is enabled.
+- **Optional message content redaction.** Message bodies are included by default. Set `REDACT_MESSAGE_CONTENT=true` to replace conversation and thread bodies with placeholders for lower-context analysis. This is not a compliance boundary and does not remove all customer identifiers.
 - **Secure authentication.** OAuth2 Client Credentials with automatic token refresh.
 - **Rate limit handling.** Automatic retry with exponential backoff on 429 responses.
 - **Scoped access.** Optional default inbox configuration limits what the AI can search.

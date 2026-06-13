@@ -11,6 +11,7 @@ describe('Config Validation', () => {
       }
       return env;
     }, {} as typeof process.env);
+    delete process.env.REDACT_MESSAGE_CONTENT;
   });
 
   afterEach(() => {
@@ -66,36 +67,49 @@ describe('Config Validation', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
-    it('should handle boolean environment variables correctly', async () => {
+    it('should enable message content redaction only when REDACT_MESSAGE_CONTENT is true', async () => {
       process.env.HELPSCOUT_CLIENT_ID = 'client-id';
       process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
-      process.env.ALLOW_PII = 'true';
+      process.env.REDACT_MESSAGE_CONTENT = 'true';
       process.env.CACHE_TTL_SECONDS = '600';
       process.env.LOG_LEVEL = 'debug';
 
       jest.resetModules();
-      const { validateConfig } = await import('../utils/config.js');
+      const { config, validateConfig } = await import('../utils/config.js');
       expect(() => validateConfig()).not.toThrow();
+      expect(config.security.redactMessageContent).toBe(true);
     });
 
-    it('should handle invalid boolean values gracefully', async () => {
+    it('should leave message content visible for invalid redaction values', async () => {
       process.env.HELPSCOUT_CLIENT_ID = 'client-id';
       process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
-      process.env.ALLOW_PII = 'invalid-boolean';
+      process.env.REDACT_MESSAGE_CONTENT = 'invalid-boolean';
 
       jest.resetModules();
-      const { validateConfig } = await import('../utils/config.js');
+      const { config, validateConfig } = await import('../utils/config.js');
       expect(() => validateConfig()).not.toThrow();
+      expect(config.security.redactMessageContent).toBe(false);
     });
 
     it('should handle invalid numeric values gracefully', async () => {
       process.env.HELPSCOUT_CLIENT_ID = 'client-id';
       process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
       process.env.CACHE_TTL_SECONDS = 'not-a-number';
+      process.env.MAX_CACHE_SIZE = '100.5';
+      process.env.HTTP_MAX_SOCKETS = 'zero';
+      process.env.HTTP_MAX_FREE_SOCKETS = '-1';
+      process.env.HTTP_SOCKET_TIMEOUT = '30s';
+      process.env.HTTP_KEEP_ALIVE_MSECS = '1.5';
 
       jest.resetModules();
-      const { validateConfig } = await import('../utils/config.js');
+      const { config, validateConfig } = await import('../utils/config.js');
       expect(() => validateConfig()).not.toThrow();
+      expect(config.cache.ttlSeconds).toBe(300);
+      expect(config.cache.maxSize).toBe(10000);
+      expect(config.connectionPool.maxSockets).toBe(50);
+      expect(config.connectionPool.maxFreeSockets).toBe(10);
+      expect(config.connectionPool.timeout).toBe(30000);
+      expect(config.connectionPool.keepAliveMsecs).toBe(1000);
     });
   });
 });

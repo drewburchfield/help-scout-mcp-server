@@ -220,6 +220,44 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getOptionValue(args: string[], optionName: string): string | undefined {
+  const equalsPrefix = `${optionName}=`;
+  const equalsArg = args.find(arg => arg.startsWith(equalsPrefix));
+  if (equalsArg) {
+    return equalsArg.slice(equalsPrefix.length);
+  }
+
+  const optionIndex = args.indexOf(optionName);
+  if (optionIndex === -1) {
+    return undefined;
+  }
+
+  const value = args[optionIndex + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${optionName} requires a numeric value`);
+  }
+
+  return value;
+}
+
+function parsePositiveIntegerOption(args: string[], optionName: string, defaultValue: number): number {
+  const value = getOptionValue(args, optionName);
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+
+  const parsed = Number(value);
+  if (parsed < 1) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
 function randomChoice<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -348,8 +386,13 @@ async function createConversation(
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
-  const countArg = args.find(a => a.startsWith('--count='));
-  const count = countArg ? parseInt(countArg.split('=')[1]) : CONFIG.defaultCount;
+  let count: number;
+  try {
+    count = parsePositiveIntegerOption(args, '--count', CONFIG.defaultCount);
+  } catch (error) {
+    console.error(`❌ ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 
   console.log('═══════════════════════════════════════════════════════════');
   console.log('  Synthetic Data Generator - Attendee Support');

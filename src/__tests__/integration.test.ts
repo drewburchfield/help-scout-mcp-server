@@ -352,8 +352,9 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       // Should get API constraint validation error
       expect(errorResponse.error).toBe('API Constraint Validation Failed');
-      expect(errorResponse.details.requiredPrerequisites).toContain('searchInboxes');
-      expect(errorResponse.details.suggestions[0]).toContain('REQUIRED: Call searchInboxes first');
+      expect(errorResponse.details.requiredPrerequisites).toContain('listAllInboxes');
+      expect(errorResponse.details.suggestions[0]).toContain('server instructions');
+      expect(errorResponse.details.suggestions[0]).toContain('listAllInboxes');
 
       // Verify the error provides actionable guidance
       expect(errorResponse.helpScoutAPIRequirements.message).toContain('Help Scout API constraints');
@@ -469,7 +470,7 @@ describe('Complete User Workflows - Integration Tests', () => {
       const summaryResponse = JSON.parse((summaryResult.content[0] as any).text);
 
       expect(summaryResponse.conversation.subject).toBe('New escalation - urgent');
-      // Verify message bodies are present (PII redaction tested separately in dedicated tests)
+      // Verify message bodies are present (message content redaction is tested separately)
       expect(summaryResponse.firstCustomerMessage.body).toBeDefined();
       expect(summaryResponse.latestStaffReply.body).toBeDefined();
 

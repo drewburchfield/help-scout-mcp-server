@@ -146,6 +146,48 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getOptionValue(args: string[], optionName: string): string | undefined {
+  const equalsPrefix = `${optionName}=`;
+  const equalsArg = args.find(arg => arg.startsWith(equalsPrefix));
+  if (equalsArg) {
+    return equalsArg.slice(equalsPrefix.length);
+  }
+
+  const optionIndex = args.indexOf(optionName);
+  if (optionIndex === -1) {
+    return undefined;
+  }
+
+  const value = args[optionIndex + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${optionName} requires a numeric value`);
+  }
+
+  return value;
+}
+
+function parsePositiveIntegerOption(args: string[], optionName: string): number | undefined {
+  const value = getOptionValue(args, optionName);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+
+  const parsed = Number(value);
+  if (parsed < 1) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+
+  return parsed;
+}
+
+function isValueForOption(args: string[], index: number): boolean {
+  return args[index - 1] === '--limit';
+}
+
 // Ensure date is in proper ISO 8601 format with Z suffix
 function normalizeDate(dateStr: string): string {
   if (!dateStr) return new Date().toISOString();
@@ -394,10 +436,10 @@ async function main() {
   const args = process.argv.slice(2);
 
   // First positional arg is the source file
-  const sourceFile = args.find(a => !a.startsWith('--'));
+  const sourceFile = args.find((a, index) => !a.startsWith('--') && !isValueForOption(args, index));
   if (!sourceFile) {
-    console.error('❌ Usage: npx tsx scripts/import-conversations.ts <source-file.jsonl> [--dry-run] [--limit=N] [--resume]');
-    console.error('   Example: npx tsx scripts/import-conversations.ts ./data/conversations.jsonl --dry-run');
+    console.error('❌ Usage: npx tsx scripts/import-conversations.ts <source-file.jsonl> [--dry-run] [--limit N] [--resume]');
+    console.error('   Example: npx tsx scripts/import-conversations.ts ./data/conversations.jsonl --dry-run --limit 10');
     process.exit(1);
   }
 
@@ -410,8 +452,13 @@ async function main() {
 
   const dryRun = args.includes('--dry-run');
   const resume = args.includes('--resume');
-  const limitArg = args.find(a => a.startsWith('--limit='));
-  const limit = limitArg ? parseInt(limitArg.split('=')[1]) : undefined;
+  let limit: number | undefined;
+  try {
+    limit = parsePositiveIntegerOption(args, '--limit');
+  } catch (error) {
+    console.error(`❌ ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 
   console.log('═══════════════════════════════════════════════════════════');
   console.log('  Help Scout Conversation Import');

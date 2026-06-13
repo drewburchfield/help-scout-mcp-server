@@ -1,5 +1,6 @@
 import { HelpScoutClient } from '../utils/helpscout-client.js';
 import nock from 'nock';
+import { cache } from '../utils/cache.js';
 
 // Mock logger to reduce test output noise
 jest.mock('../utils/logger.js', () => ({
@@ -25,6 +26,7 @@ describe('HelpScout Client - Connection Pooling', () => {
     nock.cleanAll();
     nock.restore();
     nock.activate();
+    cache.clear();
     
     // Mock OAuth2 authentication endpoint
     nock(baseURL)
@@ -42,6 +44,7 @@ describe('HelpScout Client - Connection Pooling', () => {
       await client.closePool();
     }
     nock.cleanAll();
+    cache.clear();
   });
 
   describe('Connection Pool Configuration', () => {

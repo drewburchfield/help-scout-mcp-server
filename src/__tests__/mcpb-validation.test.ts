@@ -41,9 +41,9 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
 
     it('should have proper server configuration', () => {
       expect(manifest.server.type).toBe('node');
-      expect(manifest.server.entry_point).toBe('build/server/index.js');
+      expect(manifest.server.entry_point).toBe('build/server/cli.js');
       expect(manifest.server.mcp_config.command).toBe('node');
-      expect(manifest.server.mcp_config.args).toContain('${__dirname}/build/server/index.js');
+      expect(manifest.server.mcp_config.args).toContain('${__dirname}/build/server/cli.js');
     });
 
     it('should have OAuth2 authentication configuration', () => {
@@ -129,13 +129,14 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
 
   describe('Build Structure Validation', () => {
     it('should have correct entry point file', () => {
-      const entryPoint = path.join(buildDir, 'server/index.js');
+      const entryPoint = path.join(buildDir, 'server/cli.js');
       expect(fs.existsSync(entryPoint)).toBe(true);
       
       // Verify it's a valid JavaScript file
       const content = fs.readFileSync(entryPoint, 'utf8');
-      expect(content).toContain('export');
-      expect(content.length).toBeGreaterThan(1000); // Should be substantial
+      expect(content).toContain('main');
+      expect(content).toContain('./index.js');
+      expect(content).toContain('Failed to start application');
     });
 
     it('should have production package.json with correct dependencies', () => {
@@ -175,9 +176,19 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       });
     });
 
+    it('should derive production dependencies from package.json', () => {
+      const rootPackageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+      const prodPackageJson = JSON.parse(fs.readFileSync(path.join(buildDir, 'package.json'), 'utf8'));
+      const buildScript = fs.readFileSync(path.join(process.cwd(), 'scripts/build-mcpb.js'), 'utf8');
+
+      expect(prodPackageJson.dependencies).toEqual(rootPackageJson.dependencies);
+      expect(buildScript).toContain('dependencies: packageJson.dependencies');
+    });
+
     it('should have all server modules built', () => {
       const serverDir = path.join(buildDir, 'server');
       const expectedFiles = [
+        'cli.js',
         'index.js',
         'tools/index.js',
         'resources/index.js', 

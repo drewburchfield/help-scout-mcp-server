@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -17,6 +16,10 @@ import { resourceHandler } from './resources/index.js';
 import { toolHandler } from './tools/index.js';
 import { promptHandler } from './prompts/index.js';
 import type { Inbox } from './schema/types.js';
+
+function getArgumentKeys(args: unknown): string[] {
+  return args && typeof args === 'object' ? Object.keys(args as Record<string, unknown>) : [];
+}
 
 export class HelpScoutMCPServer {
   private server: Server;
@@ -66,11 +69,20 @@ export class HelpScoutMCPServer {
       // Validate config before attempting API calls
       validateConfig();
 
-      const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-        page: 1,
-        size: 100,
-      });
-      const inboxes = response._embedded?.mailboxes || [];
+      const inboxes: Inbox[] = [];
+      let page = 1;
+      let totalPages = 1;
+
+      do {
+        const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
+          page,
+          size: 100,
+        });
+
+        inboxes.push(...(response._embedded?.mailboxes || []));
+        totalPages = response.page?.totalPages ?? page;
+        page++;
+      } while (page <= totalPages);
 
       const inboxList = inboxes.map(inbox =>
         `  - "${inbox.name}" (ID: ${inbox.id})`
@@ -119,7 +131,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
       const safeError = rawError
         .replace(/[A-Za-z0-9_-]{20,}/g, '[REDACTED]') // Redact long alphanumeric strings (tokens/keys)
         .replace(/\/[^\s]+/g, '[PATH]'); // Redact file paths
-      logger.warn('Inbox auto-discovery failed, using fallback instructions', { error: rawError });
+      logger.warn('Inbox auto-discovery failed, using fallback instructions', { error: safeError });
 
       return {
         instructions: `Help Scout MCP Server - Read-only access to conversations.
@@ -168,8 +180,12 @@ Note: Inbox auto-discovery failed (${safeError}). Use listAllInboxes tool to see
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       logger.debug('Calling tool', { 
         name: request.params.name, 
-        arguments: request.params.arguments 
+        argumentKeys: getArgumentKeys(request.params.arguments),
       });
+      const meta = request.params._meta as { userQuery?: unknown } | undefined;
+      if (typeof meta?.userQuery === 'string' && meta.userQuery.trim()) {
+        toolHandler.setUserContext(meta.userQuery);
+      }
       return await toolHandler.callTool(request);
     });
 
@@ -189,7 +205,7 @@ Note: Inbox auto-discovery failed (${safeError}). Use listAllInboxes tool to see
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
       logger.debug('Getting prompt', { 
         name: request.params.name, 
-        arguments: request.params.arguments 
+        argumentKeys: getArgumentKeys(request.params.arguments),
       });
       return await promptHandler.getPrompt(request);
     });
@@ -267,7 +283,7 @@ async function shutdown(server: HelpScoutMCPServer): Promise<void> {
 }
 
 // Main execution
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const server = await HelpScoutMCPServer.create();
   
   // Setup signal handlers for graceful shutdown
@@ -296,18 +312,4 @@ async function main(): Promise<void> {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
-}
-
-// Start the server when this module is executed directly (either via `node dist/index.js` or via an npm bin stub such as `npx help-scout-mcp-server`)
-// Use a simpler approach that Jest can handle - check if we're in a test environment
-const isTestEnvironment = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID !== undefined;
-const invokedFromCLI = !isTestEnvironment;
-
-if (invokedFromCLI) {
-  main().catch((error) => {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error('Failed to start application', { error: errorMessage });
-    console.error('Application startup failed:', errorMessage);
-    process.exit(1);
-  });
 }

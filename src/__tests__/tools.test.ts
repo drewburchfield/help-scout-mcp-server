@@ -303,7 +303,45 @@ describe('ToolHandler', () => {
       const textContent = result.content[0] as { type: 'text'; text: string };
       const response = JSON.parse(textContent.text);
       expect(response.error).toBe('API Constraint Validation Failed');
-      expect(response.details.requiredPrerequisites).toContain('searchInboxes');
+      expect(response.details.requiredPrerequisites).toContain('listAllInboxes');
+      expect(response.details.suggestions[0]).toContain('server instructions');
+    });
+
+    it('uses successful listAllInboxes calls as prior context for inbox-name validation', async () => {
+      nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 100 })
+        .reply(200, {
+          _embedded: {
+            mailboxes: [
+              { id: 1, name: 'Support Inbox', email: 'support@example.com' }
+            ]
+          },
+          page: { size: 100, totalElements: 1 }
+        });
+
+      await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listAllInboxes',
+          arguments: {}
+        }
+      });
+
+      toolHandler.setUserContext('search the support inbox for urgent tickets');
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: { query: 'urgent' }
+        }
+      });
+
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      expect(response.error).toBe('API Constraint Validation Failed');
+      expect(response.details.requiredPrerequisites).toBeUndefined();
+      expect(response.details.suggestions[0]).toContain('Use the inbox ID from the listAllInboxes results');
     });
 
     it('should handle validation failures without prerequisites', async () => {

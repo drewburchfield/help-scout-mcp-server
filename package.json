@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "help-scout-mcp-server": "dist/index.js"
+    "help-scout-mcp-server": "dist/cli.js"
   },
   "files": [
     "dist/",
@@ -17,15 +17,18 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "start": "node dist/cli.js",
+    "dev": "node --loader ts-node/esm src/cli.ts",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "security": "semgrep --config .semgrep.yml .",
     "security:ci": "semgrep ci",
     "test": "jest",
-    "test:mcp": "node tests/test-mcp-client.cjs",
-    "test:forensic": "node tests/test-forensic-scenarios.cjs",
+    "test:mcp": "npm run dogfood:mcp",
+    "dogfood:mcp": "npm run build && node --loader ts-node/esm tests/mcp-client-dogfood.ts",
+    "dogfood:workflows": "npm run build && node --loader ts-node/esm tests/integration-workflows.ts",
+    "dogfood:full": "npm run dogfood:mcp && npm run dogfood:workflows",
+    "test:forensic": "node --loader ts-node/esm tests/test-all-tools-edge-cases.ts",
     "test:docker": "node tests/test-docker.cjs",
     "test:docker:ci": "node tests/test-docker-ci.cjs",
     "clean": "rimraf dist",
@@ -33,11 +36,11 @@
     "version:minor": "node scripts/bump-version.cjs minor",
     "version:major": "node scripts/bump-version.cjs major",
     "prepublishOnly": "npm run clean && npm run build",
-    "prepack": "npm run build",
+    "prepack": "npm run clean && npm run build",
     "mcpb:build": "node scripts/build-mcpb.js",
     "mcpb:pack": "npm run mcpb:build && cd helpscout-mcp-extension && npx @anthropic-ai/mcpb pack",
     "build:all": "npm run build && npm run mcpb:build",
-    "sync:plugin": "rm -rf plugins/helpscout-navigator && git clone --depth 1 https://github.com/drewburchfield/helpscout-navigator.git plugins/helpscout-navigator && rm -rf plugins/helpscout-navigator/.git"
+    "sync:plugin": "node scripts/sync-plugin.cjs"
   },
   "keywords": [
     "mcp",
@@ -70,13 +73,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.27.1",
-    "axios": "^1.6.2",
+    "axios": "^1.17.0",
     "dotenv": "^16.3.1",
     "lru-cache": "^10.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@anthropic-ai/mcpb": "2.0.1",
+    "@anthropic-ai/mcpb": "2.1.2",
     "@types/jest": "^29.5.8",
     "@types/nock": "^10.0.3",
     "@types/node": "^20.10.4",
@@ -87,7 +90,7 @@
     "nock": "^14.0.5",
     "rimraf": "^5.0.5",
     "ts-jest": "^29.1.1",
-    "tsx": "^4.6.2",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
   "engines": {
@@ -95,9 +98,10 @@
   },
   "overrides": {
     "cross-spawn": "^7.0.6",
-    "brace-expansion": "^2.0.2",
+    "brace-expansion": "^2.1.1",
     "minimatch": "^9.0.7",
-    "hono": "4.12.4",
-    "@hono/node-server": "1.19.10"
+    "hono": "4.12.25",
+    "@hono/node-server": "1.19.13",
+    "@inquirer/editor": "4.2.16"
   }
 }

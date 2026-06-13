@@ -59,15 +59,15 @@ export class HelpScoutAPIConstraints {
     // CONSTRAINT 1: Inbox name mentioned but no inboxId provided
     const inboxMentioned = this.detectInboxMention(userQuery);
     const hasInboxId = args.inboxId && typeof args.inboxId === 'string';
-    const hasSearchedInboxes = previousCalls.includes('searchInboxes');
+    const hasListedInboxes = previousCalls.includes('listAllInboxes') || previousCalls.includes('searchInboxes');
     
     if (inboxMentioned && !hasInboxId) {
       errors.push('User mentioned an inbox by name but no inboxId provided');
-      if (!hasSearchedInboxes) {
-        requiredPrerequisites.push('searchInboxes');
-        suggestions.push('REQUIRED: Call searchInboxes first to find the inbox ID when user mentions inbox names like "support", "sales", "billing", etc.');
+      if (!hasListedInboxes) {
+        requiredPrerequisites.push('listAllInboxes');
+        suggestions.push('REQUIRED: Use inbox IDs from server instructions or call listAllInboxes when user mentions inbox names like "support", "sales", "billing", etc.');
       } else {
-        suggestions.push('Use the inbox ID from your previous searchInboxes call');
+        suggestions.push('Use the inbox ID from the listAllInboxes results');
       }
     }
     
@@ -77,7 +77,7 @@ export class HelpScoutAPIConstraints {
     const hasTag = args.tag && typeof args.tag === 'string';
     
     if ((hasQuery || hasTag) && !hasStatus) {
-      suggestions.push('PERFORMANCE WARNING: Searching without status defaults to "active" only. Consider using comprehensiveConversationSearch for better results.');
+      suggestions.push('TIP: Keyword or tag searches without a status search all default statuses. Use comprehensiveConversationSearch when you need explicit multi-status control.');
     }
     
     // CONSTRAINT 3: API parameter mapping validation
@@ -85,7 +85,7 @@ export class HelpScoutAPIConstraints {
       // Validate inbox ID format (Help Scout inbox IDs are typically numeric)
       if (!/^\d+$/.test(args.inboxId)) {
         errors.push('Invalid inbox ID format - should be numeric');
-        suggestions.push('Inbox IDs from Help Scout are numeric strings. Use searchInboxes to get the correct ID.');
+        suggestions.push('Inbox IDs from Help Scout are numeric strings. Use server instructions or listAllInboxes to get the correct ID.');
       }
     }
     
@@ -121,12 +121,15 @@ export class HelpScoutAPIConstraints {
     // Same inbox validation as regular search
     const inboxMentioned = this.detectInboxMention(userQuery);
     const hasInboxId = args.inboxId && typeof args.inboxId === 'string';
-    const hasSearchedInboxes = previousCalls.includes('searchInboxes');
+    const hasListedInboxes = previousCalls.includes('listAllInboxes') || previousCalls.includes('searchInboxes');
     
     if (inboxMentioned && !hasInboxId) {
-      if (!hasSearchedInboxes) {
-        requiredPrerequisites.push('searchInboxes');
-        suggestions.push('REQUIRED: Call searchInboxes first when user mentions specific inbox names');
+      errors.push('User mentioned an inbox by name but no inboxId provided');
+      if (!hasListedInboxes) {
+        requiredPrerequisites.push('listAllInboxes');
+        suggestions.push('REQUIRED: Use inbox IDs from server instructions or call listAllInboxes when user mentions specific inbox names');
+      } else {
+        suggestions.push('Use the inbox ID from the listAllInboxes results');
       }
     }
     
@@ -246,7 +249,7 @@ export class HelpScoutAPIConstraints {
  * Common Help Scout API error patterns and solutions
  */
 export const API_ERROR_SOLUTIONS = {
-  'Invalid mailbox ID': 'Use searchInboxes to get valid inbox IDs',
+  'Invalid mailbox ID': 'Use server instructions or listAllInboxes to get valid inbox IDs',
   'No conversations found': 'Try different status values or broader search terms',
   'Invalid date format': 'Use ISO 8601 format: YYYY-MM-DDTHH:mm:ssZ',
   'Missing conversation ID': 'Get conversation ID from search results first',

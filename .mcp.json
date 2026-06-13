@@ -2,7 +2,7 @@
   "mcpServers": {
     "helpscout": {
       "command": "node",
-      "args": ["dist/index.js"],
+      "args": ["dist/cli.js"],
       "env": {
         "HELPSCOUT_APP_ID": "${HELPSCOUT_APP_ID}",
         "HELPSCOUT_APP_SECRET": "${HELPSCOUT_APP_SECRET}",

@@ -4,7 +4,7 @@ import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
-import { PII_REDACTED_BODY } from '../utils/constants.js';
+import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
 import { z } from 'zod';
 import {
   Inbox,
@@ -118,11 +118,24 @@ export class ToolHandler {
     return `(${existingQuery}) AND ${clause}`;
   }
 
+  private normalizeApiDateParam(date: string | undefined): string | undefined {
+    return date?.replace(/\.\d{3}(Z|[+-]\d{2}:\d{2})$/, '$1');
+  }
+
+  private appendQueryClause(existingQuery: string | undefined, clause: string): string {
+    return existingQuery ? `(${existingQuery}) AND (${clause})` : `(${clause})`;
+  }
+
   /**
    * Set the current user query for context-aware validation
    */
   setUserContext(userQuery: string): void {
     this.currentUserQuery = userQuery;
+  }
+
+  private getToolCallUserQuery(args: Record<string, unknown>): string | undefined {
+    const userQuery = args.__userQuery;
+    return typeof userQuery === 'string' && userQuery.trim() ? userQuery : undefined;
   }
 
   async listTools(): Promise<Tool[]> {
@@ -540,14 +553,17 @@ export class ToolHandler {
     logger.info('Tool call started', {
       requestId,
       toolName: request.params.name,
-      arguments: request.params.arguments,
+      argumentKeys: Object.keys(request.params.arguments || {}),
     });
+
+    const args = request.params.arguments || {};
+    const userQuery = this.getToolCallUserQuery(args) ?? this.currentUserQuery;
 
     // REVERSE LOGIC VALIDATION: Check API constraints before making the call
     const validationContext: ToolCallContext = {
       toolName: request.params.name,
-      arguments: request.params.arguments || {},
-      userQuery: this.currentUserQuery,
+      arguments: args,
+      userQuery,
       previousCalls: [...this.callHistory]
     };
 
@@ -757,7 +773,8 @@ export class ToolHandler {
 
     const queryWithDate = this.appendCreatedAtFilter(
       baseParams.query as string | undefined,
-      input.createdAfter
+      input.createdAfter,
+      input.createdBefore
     );
     if (queryWithDate) baseParams.query = queryWithDate;
 
@@ -989,41 +1006,21 @@ export class ToolHandler {
         status: conversation.status,
         createdAt: conversation.createdAt,
         updatedAt: conversation.updatedAt,
-        customer: config.security.allowPii ? conversation.customer : (conversation.customer ? {
-          id: conversation.customer.id,
-          email: conversation.customer.email != null ? '[redacted]' : conversation.customer.email,
-          firstName: conversation.customer.firstName != null ? '[redacted]' : conversation.customer.firstName,
-          lastName: conversation.customer.lastName != null ? '[redacted]' : conversation.customer.lastName,
-        } : null),
-        assignee: config.security.allowPii ? conversation.assignee : (conversation.assignee ? {
-          id: conversation.assignee.id,
-          firstName: '[redacted]',
-          lastName: '[redacted]',
-          email: '[redacted]',
-        } : null),
+        customer: conversation.customer,
+        assignee: conversation.assignee,
         tags: conversation.tags,
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
-        body: config.security.allowPii ? firstCustomerMessage.body : PII_REDACTED_BODY,
+        body: config.security.redactMessageContent ? REDACTED_MESSAGE_BODY : firstCustomerMessage.body,
         createdAt: firstCustomerMessage.createdAt,
-        customer: config.security.allowPii ? firstCustomerMessage.customer : (firstCustomerMessage.customer ? {
-          id: firstCustomerMessage.customer.id,
-          email: firstCustomerMessage.customer.email != null ? '[redacted]' : firstCustomerMessage.customer.email,
-          firstName: firstCustomerMessage.customer.firstName != null ? '[redacted]' : firstCustomerMessage.customer.firstName,
-          lastName: firstCustomerMessage.customer.lastName != null ? '[redacted]' : firstCustomerMessage.customer.lastName,
-        } : null),
+        customer: firstCustomerMessage.customer,
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
-        body: config.security.allowPii ? latestStaffReply.body : PII_REDACTED_BODY,
+        body: config.security.redactMessageContent ? REDACTED_MESSAGE_BODY : latestStaffReply.body,
         createdAt: latestStaffReply.createdAt,
-        createdBy: config.security.allowPii ? latestStaffReply.createdBy : (latestStaffReply.createdBy ? {
-          id: latestStaffReply.createdBy.id,
-          firstName: '[redacted]',
-          lastName: '[redacted]',
-          email: '[redacted]',
-        } : null),
+        createdBy: latestStaffReply.createdBy,
       } : null,
     };
 
@@ -1048,12 +1045,12 @@ export class ToolHandler {
       }
     );
 
-    const threads = response._embedded?.threads || [];
+    const threads = (response._embedded?.threads || []).slice(0, input.limit);
     
-    // Redact PII if configured
+    // Redact message bodies if configured.
     const processedThreads = threads.map(thread => ({
       ...thread,
-      body: config.security.allowPii ? thread.body : PII_REDACTED_BODY,
+      body: config.security.redactMessageContent ? REDACTED_MESSAGE_BODY : thread.body,
     }));
 
     return {
@@ -1184,7 +1181,8 @@ export class ToolHandler {
 
     const queryWithDate = this.appendCreatedAtFilter(
       queryParams.query as string | undefined,
-      input.createdAfter
+      input.createdAfter,
+      input.createdBefore
     );
     if (queryWithDate) queryParams.query = queryWithDate;
 
@@ -1450,7 +1448,8 @@ export class ToolHandler {
   }) {
     const queryWithDate = this.appendCreatedAtFilter(
       params.searchQuery,
-      params.createdAfter
+      params.createdAfter,
+      params.createdBefore
     );
 
     const queryParams: Record<string, unknown> = {
@@ -1555,13 +1554,22 @@ export class ToolHandler {
     };
 
     // Apply unique structural filters
-    if (input.assignedTo !== undefined) queryParams.assigned_to = input.assignedTo;
+    if (input.assignedTo !== undefined && input.assignedTo !== -1) {
+      queryParams.assigned_to = input.assignedTo;
+    }
     if (input.folderId !== undefined) queryParams.folder = input.folderId;
     if (input.conversationNumber !== undefined) queryParams.number = input.conversationNumber;
 
+    if (input.assignedTo === -1) {
+      queryParams.query = this.appendQueryClause(queryParams.query as string | undefined, 'assigned:"Unassigned"');
+    }
+
     // Apply customerIds via query syntax if provided
     if (input.customerIds && input.customerIds.length > 0) {
-      queryParams.query = `(${input.customerIds.map(id => `customerIds:${id}`).join(' OR ')})`;
+      queryParams.query = this.appendQueryClause(
+        queryParams.query as string | undefined,
+        input.customerIds.map(id => `customerIds:${id}`).join(' OR ')
+      );
     }
 
     // Apply combination filters
@@ -1570,11 +1578,12 @@ export class ToolHandler {
     // Send status=all explicitly (Help Scout defaults to active-only when omitted)
     queryParams.status = input.status || 'all';
     if (input.tag) queryParams.tag = input.tag;
-    if (input.modifiedSince) queryParams.modifiedSince = input.modifiedSince;
+    if (input.modifiedSince) queryParams.modifiedSince = this.normalizeApiDateParam(input.modifiedSince);
 
     const queryWithDate = this.appendCreatedAtFilter(
       queryParams.query as string | undefined,
-      input.createdAfter
+      input.createdAfter,
+      input.createdBefore
     );
     if (queryWithDate) queryParams.query = queryWithDate;
 
@@ -1616,54 +1625,12 @@ export class ToolHandler {
 
   // ── Customer Tools (NAS-680, NAS-727) ──
 
-  private redactAddress(address: CustomerAddress): Record<string, unknown> {
-    if (config.security.allowPii) return address as unknown as Record<string, unknown>;
-    return {
-      city: address.city != null ? '[redacted]' : address.city,
-      state: address.state != null ? '[redacted]' : address.state,
-      postalCode: address.postalCode != null ? '[redacted]' : address.postalCode,
-      lines: address.lines ? address.lines.map(() => '[redacted]') : undefined,
-      country: address.country, // Country is not PII
-    };
+  private formatAddress(address: CustomerAddress): Record<string, unknown> {
+    return address as unknown as Record<string, unknown>;
   }
 
-  private redactCustomer(customer: Customer): Record<string, unknown> {
-    if (config.security.allowPii) return customer as unknown as Record<string, unknown>;
-
-    const { background, firstName, lastName, jobTitle, location, photoUrl, age, _embedded, ...rest } = customer;
-    const redacted: Record<string, unknown> = {
-      ...rest,
-      firstName: firstName != null ? '[redacted]' : firstName,
-      lastName: lastName != null ? '[redacted]' : lastName,
-      jobTitle: jobTitle != null ? '[redacted]' : jobTitle,
-      location: location != null ? '[redacted]' : location,
-      photoUrl: photoUrl != null ? '[redacted]' : photoUrl,
-      age: age != null ? '[redacted]' : age,
-      background: background != null ? '[redacted]' : background,
-    };
-
-    if (_embedded) {
-      const embeddedCopy = { ..._embedded };
-      for (const key of ['emails', 'phones', 'chats', 'social_profiles', 'websites'] as const) {
-        const entries = embeddedCopy[key];
-        if (entries) {
-          (embeddedCopy as Record<string, unknown>)[key] = entries.map(item => ({
-            ...item,
-            value: '[redacted]',
-          }));
-        }
-      }
-      if (embeddedCopy.properties) {
-        embeddedCopy.properties = embeddedCopy.properties.map(prop => ({
-          ...prop,
-          value: prop.value != null ? '[redacted]' : prop.value,
-          text: prop.text != null ? '[redacted]' : prop.text,
-        }));
-      }
-      redacted._embedded = embeddedCopy;
-    }
-
-    return redacted;
+  private formatCustomer(customer: Customer): Record<string, unknown> {
+    return customer as unknown as Record<string, unknown>;
   }
 
   private async getCustomer(args: unknown): Promise<CallToolResult> {
@@ -1705,9 +1672,9 @@ export class ToolHandler {
       }
     }
 
-    const result: Record<string, unknown> = this.redactCustomer(customer);
+    const result: Record<string, unknown> = this.formatCustomer(customer);
     if (address) {
-      result.address = this.redactAddress(address);
+      result.address = this.formatAddress(address);
     }
     if (addressNote) {
       result.addressNote = addressNote;
@@ -1736,7 +1703,7 @@ export class ToolHandler {
       lastName: input.lastName,
       query: input.query,
       mailbox: input.mailbox,
-      modifiedSince: input.modifiedSince,
+      modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
     };
 
     const response = await helpScoutClient.get<PaginatedResponse<Customer>>('/customers', params);
@@ -1745,10 +1712,10 @@ export class ToolHandler {
     // Slim view: strip _links and _embedded to keep response concise for browsing.
     // Use getCustomer for the full profile with all sub-resources.
     const slimResults = customers.map(c => {
-      const redacted = this.redactCustomer(c);
+      const formatted = this.formatCustomer(c);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { _links, _embedded, ...slim } = redacted;
-      // Extract primary email from _embedded for slim view (redacted if PII protection is on)
+      const { _links, _embedded, ...slim } = formatted;
+      // Extract primary email from _embedded for slim view.
       const emails = (_embedded as Record<string, unknown[]> | undefined)?.emails;
       if (Array.isArray(emails) && emails.length > 0) {
         slim.primaryEmail = (emails[0] as Record<string, unknown>).value;
@@ -1778,8 +1745,8 @@ export class ToolHandler {
       firstName: input.firstName,
       lastName: input.lastName,
       query: input.query,
-      modifiedSince: input.modifiedSince,
-      createdSince: input.createdSince,
+      modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
+      createdSince: this.normalizeApiDateParam(input.createdSince),
       cursor: input.cursor,
     };
 
@@ -1815,9 +1782,9 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: customers.map(c => this.redactCustomer(c)),
+          results: customers.map(c => this.formatCustomer(c)),
           returnedCount: customers.length,
-          searchedEmail: config.security.allowPii ? input.email : '[redacted]',
+          searchedEmail: input.email,
           nextCursor,
           note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
           usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
@@ -1861,19 +1828,18 @@ export class ToolHandler {
     const websites = extract(websitesRes, 'websites');
     const address = extract(addressRes, 'address');
 
-    const redactValue = (v: string) => config.security.allowPii ? v : '[redacted]';
-    const redactEntry = (e: { id: number; value: string; type?: string }) => ({
-      id: e.id, value: redactValue(e.value), ...(e.type ? { type: e.type } : {}),
+    const formatEntry = (e: { id: number; value: string; type?: string }) => ({
+      id: e.id, value: e.value, ...(e.type ? { type: e.type } : {}),
     });
 
     const result: Record<string, unknown> = {
       customerId: cid,
-      emails: emails.data ? (emails.data._embedded?.emails || []).map(redactEntry) : [],
-      phones: phones.data ? (phones.data._embedded?.phones || []).map(redactEntry) : [],
-      chats: chats.data ? (chats.data._embedded?.chats || []).map(redactEntry) : [],
-      socialProfiles: social.data ? (social.data._embedded?.social_profiles || []).map(redactEntry) : [],
-      websites: websites.data ? (websites.data._embedded?.websites || []).map(e => ({ id: e.id, value: redactValue(e.value) })) : [],
-      address: address.data ? this.redactAddress(address.data as CustomerAddress) : null,
+      emails: emails.data ? (emails.data._embedded?.emails || []).map(formatEntry) : [],
+      phones: phones.data ? (phones.data._embedded?.phones || []).map(formatEntry) : [],
+      chats: chats.data ? (chats.data._embedded?.chats || []).map(formatEntry) : [],
+      socialProfiles: social.data ? (social.data._embedded?.social_profiles || []).map(formatEntry) : [],
+      websites: websites.data ? (websites.data._embedded?.websites || []).map(e => ({ id: e.id, value: e.value })) : [],
+      address: address.data ? this.formatAddress(address.data as CustomerAddress) : null,
     };
 
     // Collect any partial errors
@@ -1907,18 +1873,8 @@ export class ToolHandler {
 
   // ── Organization Tools (NAS-684, NAS-712) ──
 
-  private redactOrganization(org: Organization): Record<string, unknown> {
-    if (config.security.allowPii) return org as unknown as Record<string, unknown>;
-
-    return {
-      ...org,
-      website: org.website != null ? '[redacted]' : org.website,
-      domains: org.domains ? org.domains.map(() => '[redacted]') : org.domains,
-      phones: org.phones ? org.phones.map(() => '[redacted]') : org.phones,
-      location: org.location != null ? '[redacted]' : org.location,
-      note: org.note != null ? '[redacted]' : org.note,
-      description: org.description != null ? '[redacted]' : org.description,
-    };
+  private formatOrganization(org: Organization): Record<string, unknown> {
+    return org as unknown as Record<string, unknown>;
   }
 
   private async getOrganization(args: unknown): Promise<CallToolResult> {
@@ -1933,7 +1889,7 @@ export class ToolHandler {
       params
     );
 
-    const orgResult = this.redactOrganization(org);
+    const orgResult = this.formatOrganization(org);
 
     return {
       content: [{
@@ -1961,7 +1917,7 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: organizations.map(org => this.redactOrganization(org)),
+          results: organizations.map(org => this.formatOrganization(org)),
           returnedCount: organizations.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
@@ -1989,7 +1945,7 @@ export class ToolHandler {
         type: 'text',
         text: JSON.stringify({
           organizationId: input.organizationId,
-          members: customers.map(c => this.redactCustomer(c)),
+          members: customers.map(c => this.formatCustomer(c)),
           returnedCount: customers.length,
           pagination: response.page,
           nextCursor: response._links?.next?.href,
@@ -2021,18 +1977,8 @@ export class ToolHandler {
             number: c.number,
             subject: c.subject,
             status: c.status,
-            customer: config.security.allowPii ? c.customer : (c.customer ? {
-              id: c.customer.id,
-              email: c.customer.email != null ? '[redacted]' : c.customer.email,
-              firstName: c.customer.firstName != null ? '[redacted]' : c.customer.firstName,
-              lastName: c.customer.lastName != null ? '[redacted]' : c.customer.lastName,
-            } : null),
-            assignee: config.security.allowPii ? c.assignee : (c.assignee ? {
-              id: c.assignee.id,
-              firstName: '[redacted]',
-              lastName: '[redacted]',
-              email: '[redacted]',
-            } : null),
+            customer: c.customer,
+            assignee: c.assignee,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
             closedAt: c.closedAt,

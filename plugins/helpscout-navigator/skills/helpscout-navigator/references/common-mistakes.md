@@ -265,11 +265,11 @@ getConversationSummary({ conversationId: "12345678" })
 // Returns: { body: "[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]" }
 ```
 
-**Why it fails:** The standalone MCP server has content redaction enabled by default.
+**Why it fails:** The MCP server was configured with message content redaction enabled.
 
 **Note:** This plugin defaults to `REDACT_MESSAGE_CONTENT=false` (content visible). If you see redacted content, you may be using a different MCP configuration.
 
-To enable redaction for privacy, set:
+To replace message bodies with placeholders, set:
 ```bash
 export REDACT_MESSAGE_CONTENT=true
 ```

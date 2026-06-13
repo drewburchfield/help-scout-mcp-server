@@ -3,7 +3,28 @@ import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js
 import { Inbox, Conversation, Thread, ServerTime } from '../schema/types.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
-import { PII_REDACTED_BODY } from '../utils/constants.js';
+import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
+
+function parseResourceIntegerParam(
+  params: Record<string, string>,
+  key: 'page' | 'size',
+  defaultValue: number,
+  min: number,
+  max: number
+): number {
+  const rawValue = params[key] ?? String(defaultValue);
+
+  if (!/^\d+$/.test(rawValue)) {
+    throw new Error(`${key} must be a number between ${min} and ${max}`);
+  }
+
+  const parsed = Number(rawValue);
+  if (parsed < min || parsed > max) {
+    throw new Error(`${key} must be a number between ${min} and ${max}`);
+  }
+
+  return parsed;
+}
 
 export class ResourceHandler {
   async handleResource(uri: string): Promise<TextResourceContents> {
@@ -16,20 +37,6 @@ export class ResourceHandler {
 
     const path = url.hostname; // For custom protocols like helpscout://, the resource name is in hostname
     const searchParams = Object.fromEntries(url.searchParams.entries());
-
-    // NAS-471: Bounds checking for page/size params
-    if (searchParams.page) {
-      const page = parseInt(searchParams.page, 10);
-      if (isNaN(page) || page < 1 || page > 10000) {
-        throw new Error('page must be a number between 1 and 10000');
-      }
-    }
-    if (searchParams.size) {
-      const size = parseInt(searchParams.size, 10);
-      if (isNaN(size) || size < 1 || size > 50) {
-        throw new Error('size must be a number between 1 and 50');
-      }
-    }
 
     logger.info('Handling resource request', { uri, path, params: searchParams });
 
@@ -50,8 +57,8 @@ export class ResourceHandler {
   private async getInboxesResource(params: Record<string, string>): Promise<TextResourceContents> {
     try {
       const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-        page: parseInt(params.page || '1', 10),
-        size: parseInt(params.size || '50', 10),
+        page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
+        size: parseResourceIntegerParam(params, 'size', 50, 1, 50),
       });
 
       const inboxes = response._embedded?.mailboxes || [];
@@ -74,8 +81,8 @@ export class ResourceHandler {
   private async getConversationsResource(params: Record<string, string>): Promise<TextResourceContents> {
     try {
       const queryParams: Record<string, unknown> = {
-        page: parseInt(params.page || '1', 10),
-        size: parseInt(params.size || '50', 10),
+        page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
+        size: parseResourceIntegerParam(params, 'size', 50, 1, 50),
       };
 
       if (params.mailbox) queryParams.mailbox = params.mailbox;
@@ -113,15 +120,15 @@ export class ResourceHandler {
 
     try {
       const response = await helpScoutClient.get<PaginatedResponse<Thread>>(`/conversations/${conversationId}/threads`, {
-        page: parseInt(params.page || '1', 10),
-        size: parseInt(params.size || '50', 10),
+        page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
+        size: parseResourceIntegerParam(params, 'size', 50, 1, 50),
       });
 
       const threads = response._embedded?.threads || [];
 
-      const redactedThreads = threads.map(thread => ({
+      const processedThreads = threads.map(thread => ({
         ...thread,
-        body: config.security.allowPii ? thread.body : PII_REDACTED_BODY,
+        body: config.security.redactMessageContent ? REDACTED_MESSAGE_BODY : thread.body,
       }));
 
       return {
@@ -129,7 +136,7 @@ export class ResourceHandler {
         mimeType: 'application/json',
         text: JSON.stringify({
           conversationId,
-          threads: redactedThreads,
+          threads: processedThreads,
           pagination: response.page,
           links: response._links,
         }, null, 2),

@@ -31,6 +31,7 @@ jest.mock('../resources/index.js', () => ({
 jest.mock('../tools/index.js', () => ({
   toolHandler: {
     listTools: jest.fn(() => Promise.resolve([])),
+    setUserContext: jest.fn(),
     callTool: jest.fn(() => Promise.resolve({ content: [{ type: 'text', text: 'test' }] })),
   },
 }));
@@ -141,6 +142,31 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       // Server should be created with instructions containing discovered inboxes
       const serverCall = Server.mock.calls[Server.mock.calls.length - 1];
       expect(serverCall[1].instructions).toContain('Test Inbox');
+    });
+
+    it('should discover all inbox pages before building instructions', async () => {
+      const { helpScoutClient } = require('../utils/helpscout-client.js');
+      const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
+
+      helpScoutClient.get
+        .mockResolvedValueOnce({
+          _embedded: { mailboxes: [{ id: 1, name: 'Inbox One' }] },
+          page: { number: 1, totalPages: 2 },
+        })
+        .mockResolvedValueOnce({
+          _embedded: { mailboxes: [{ id: 2, name: 'Inbox Two' }] },
+          page: { number: 2, totalPages: 2 },
+        });
+
+      await HelpScoutMCPServer.create();
+
+      expect(helpScoutClient.get).toHaveBeenCalledWith('/mailboxes', { page: 1, size: 100 });
+      expect(helpScoutClient.get).toHaveBeenCalledWith('/mailboxes', { page: 2, size: 100 });
+
+      const serverCall = Server.mock.calls[Server.mock.calls.length - 1];
+      expect(serverCall[1].instructions).toContain('Inbox One');
+      expect(serverCall[1].instructions).toContain('Inbox Two');
+      expect(serverCall[1].instructions).toContain('Available Inboxes (2 total)');
     });
   });
 
@@ -327,7 +353,7 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       const request = { 
         params: { 
           name: 'searchInboxes', 
-          arguments: { query: 'test' } 
+          arguments: { query: 'sensitive@example.com' }
         } 
       };
       const result = await handler(request);
@@ -336,8 +362,35 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       expect(toolHandler.callTool).toHaveBeenCalledWith(request);
       expect(logger.debug).toHaveBeenCalledWith('Calling tool', { 
         name: 'searchInboxes', 
-        arguments: { query: 'test' } 
+        argumentKeys: ['query'],
       });
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        'Calling tool',
+        expect.objectContaining({ arguments: expect.objectContaining({ query: 'sensitive@example.com' }) }),
+      );
+    });
+
+    it('should pass MCP user query metadata into tool context before calling tools', async () => {
+      const { toolHandler } = require('../tools/index.js');
+
+      const callToolCall = mockServer.setRequestHandler.mock.calls.find(
+        call => call[0].method === 'tools/call'
+      );
+      expect(callToolCall).toBeDefined();
+
+      const handler = callToolCall[1];
+      const request = {
+        params: {
+          name: 'searchConversations',
+          arguments: { query: 'urgent' },
+          _meta: { userQuery: 'find urgent tickets in the support inbox' },
+        }
+      };
+
+      await handler(request);
+
+      expect(toolHandler.setUserContext).toHaveBeenCalledWith('find urgent tickets in the support inbox');
+      expect(toolHandler.callTool).toHaveBeenCalledWith(request);
     });
 
     it('should handle resource reads with proper logging', async () => {
@@ -390,8 +443,12 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       expect(promptHandler.getPrompt).toHaveBeenCalledWith(request);
       expect(logger.debug).toHaveBeenCalledWith('Getting prompt', { 
         name: 'search-last-7-days', 
-        arguments: { inboxId: '123' } 
+        argumentKeys: ['inboxId'],
       });
+      expect(logger.debug).not.toHaveBeenCalledWith(
+        'Getting prompt',
+        expect.objectContaining({ arguments: expect.objectContaining({ inboxId: '123' }) }),
+      );
     });
   });
 
