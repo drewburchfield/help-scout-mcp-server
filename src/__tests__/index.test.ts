@@ -352,7 +352,7 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       const request = { 
         params: { 
           name: 'searchInboxes', 
-          arguments: { query: 'sensitive@example.com' } 
+          arguments: { query: 'sensitive@example.com' }
         } 
       };
       const result = await handler(request);
