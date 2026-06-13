@@ -65,7 +65,7 @@ describe('HelpScoutAPIConstraints', () => {
       const context: ToolCallContext = {
         toolName: 'searchConversations',
         arguments: { query: 'urgent refund' },
-        userQuery: 'find messages about urgent refunds',  // Use words not in inbox keywords
+        userQuery: 'find messages about urgent refunds',
         previousCalls: []
       };
 
@@ -73,6 +73,21 @@ describe('HelpScoutAPIConstraints', () => {
 
       expect(result.isValid).toBe(true);
       expect(result.suggestions.some(s => s.includes('comprehensiveConversationSearch'))).toBe(true);
+    });
+
+    it('should allow global searches that contain generic support topics', () => {
+      const context: ToolCallContext = {
+        toolName: 'searchConversations',
+        arguments: { query: 'billing issues' },
+        userQuery: 'find all conversations about billing issues in support history',
+        previousCalls: []
+      };
+
+      const result = HelpScoutAPIConstraints.validateToolCall(context);
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).not.toContain('User mentioned an inbox by name but no inboxId provided');
+      expect(result.requiredPrerequisites).toBeUndefined();
     });
 
     it('should validate comprehensiveConversationSearch searchTerms', () => {
@@ -110,9 +125,8 @@ describe('HelpScoutAPIConstraints', () => {
       'search in the support inbox',
       'find messages from billing mailbox',
       'check sales queue',
-      'look at technical support',
       'customer service inbox',
-      'general help desk'
+      'general help desk inbox'
     ];
 
     testCases.forEach(query => {

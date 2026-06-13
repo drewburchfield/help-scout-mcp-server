@@ -112,6 +112,38 @@ describe('HelpScoutClient', () => {
       // It should make a POST request to /oauth2/token with client credentials
       // and receive an access_token and expires_in response
     });
+
+    it('should retry transient OAuth2 token failures before API requests', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(500, { message: 'temporary auth failure' })
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'retried-token',
+          expires_in: 7200,
+        });
+
+      const apiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', 'Bearer retried-token')
+        .reply(200, { _embedded: { mailboxes: [] } });
+
+      const client = new HelpScoutClient();
+      jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect(client.get('/mailboxes', { page: 1, size: 1 })).resolves.toEqual({
+        _embedded: { mailboxes: [] },
+      });
+
+      expect(authScope.isDone()).toBe(true);
+      expect(apiScope.isDone()).toBe(true);
+      await client.closePool();
+    });
   });
 
   describe('error handling', () => {

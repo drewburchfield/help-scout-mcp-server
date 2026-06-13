@@ -244,9 +244,9 @@ When analyzing across multiple inboxes:
 
     const prompt = `To search for conversations from the last 7 days, follow these steps:
 
-1. First, get the current server time:
+1. First, get the current MCP host time:
    \`\`\`
-   Use the "getServerTime" tool to get the current timestamp
+   Use the "getServerTime" tool to get the current MCP host timestamp
    \`\`\`
 
 2. Calculate the date 7 days ago from the current time.
@@ -301,7 +301,7 @@ This will return conversations created in the last 7 days, sorted by creation da
 
     const prompt = `To find conversations with urgent or priority tags, follow these steps:
 
-1. Get current server time using the "getServerTime" tool.
+1. Get current MCP host time using the "getServerTime" tool.
 
 2. ${inboxId ? '' : 'CRITICAL: If the user mentioned a specific inbox by name (e.g., "support inbox"), use inbox IDs from the server instructions. If the list may be stale, call "listAllInboxes" to refresh available inbox IDs.\n\n3. '}Search for conversations with urgent-related tags using the "searchConversations" tool.${timeFilter}
 
@@ -373,7 +373,7 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 
     const prompt = `To show activity in inbox "${inboxId}" over the last ${hours} hours, follow these steps:
 
-1. Get current server time using the "getServerTime" tool.
+1. Get current MCP host time using the "getServerTime" tool.
 
 2. Calculate the timestamp ${hours} hours ago from the current time.
    - Subtract ${hours} hours from the current timestamp

@@ -42,6 +42,12 @@ function parseIntegerEnv(name: string, defaultValue: number, min = 0): number {
   return Number.isInteger(parsed) && parsed >= min ? parsed : defaultValue;
 }
 
+function parseLogLevel(defaultValue = 'info'): string {
+  const rawValue = process.env.LOG_LEVEL?.trim();
+  const levels = ['error', 'warn', 'info', 'debug'];
+  return rawValue && levels.includes(rawValue) ? rawValue : defaultValue;
+}
+
 export const config: Config = {
   helpscout: {
     // OAuth2 authentication (Client Credentials flow)
@@ -56,7 +62,7 @@ export const config: Config = {
     maxSize: parseIntegerEnv('MAX_CACHE_SIZE', 10000, 1),
   },
   logging: {
-    level: process.env.LOG_LEVEL || 'info',
+    level: parseLogLevel(),
   },
   security: {
     // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies.
@@ -72,8 +78,14 @@ export const config: Config = {
 };
 
 export function validateConfig(): void {
-  // Check if user is trying to use deprecated Personal Access Token
-  if (process.env.HELPSCOUT_API_KEY?.startsWith('Bearer ')) {
+  const hasOAuth2 = Boolean(
+    config.helpscout.clientId &&
+    config.helpscout.clientSecret &&
+    !config.helpscout.clientId.startsWith('Bearer ')
+  );
+
+  // Check if user is trying to use deprecated Personal Access Token as the only credential.
+  if (process.env.HELPSCOUT_API_KEY?.startsWith('Bearer ') && !hasOAuth2) {
     throw new Error(
       'Personal Access Tokens are no longer supported.\n\n' +
       'Help Scout API now requires OAuth2 Client Credentials.\n' +
@@ -86,8 +98,6 @@ export function validateConfig(): void {
       'Get OAuth2 credentials: Help Scout → My Apps → Create Private App'
     );
   }
-
-  const hasOAuth2 = (config.helpscout.clientId && config.helpscout.clientSecret);
 
   if (!hasOAuth2) {
     throw new Error(

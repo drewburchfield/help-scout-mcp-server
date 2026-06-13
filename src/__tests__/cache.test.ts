@@ -65,6 +65,16 @@ describe('Cache', () => {
       cache.set(key, params, value);
       expect(cache.get(key, params)).toEqual(value);
     });
+
+    it('should not return entries written with zero TTL', () => {
+      const key = 'zero-ttl';
+      const params = {};
+      const value = { data: 'test' };
+
+      cache.set(key, params, value, { ttl: 0 });
+
+      expect(cache.get(key, params)).toBeUndefined();
+    });
   });
 
   describe('cache management', () => {

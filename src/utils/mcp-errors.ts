@@ -1,4 +1,4 @@
-import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResult, TextResourceContents } from '@modelcontextprotocol/sdk/types.js';
 import { ApiError, ErrorSchema } from '../schema/types.js';
 import { logger } from './logger.js';
 
@@ -130,10 +130,7 @@ export function createMcpResourceError(
     resourceUri: string;
     requestId?: string;
   }
-): {
-  type: 'text';
-  text: string;
-} {
+): TextResourceContents {
   const { resourceUri, requestId } = context;
 
   // Handle our structured API errors
@@ -147,7 +144,8 @@ export function createMcpResourceError(
     });
 
     return {
-      type: 'text',
+      uri: resourceUri,
+      mimeType: 'application/json',
       text: JSON.stringify(
         {
           error: {
@@ -175,7 +173,8 @@ export function createMcpResourceError(
   });
 
   return {
-    type: 'text',
+    uri: resourceUri,
+    mimeType: 'application/json',
     text: JSON.stringify(
       {
         error: {

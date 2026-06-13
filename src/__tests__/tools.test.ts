@@ -70,10 +70,32 @@ describe('ToolHandler', () => {
         expect(tool.inputSchema).toHaveProperty('properties');
       });
     });
+
+    it('should expose page-based pagination for v2 paginated tools', async () => {
+      const tools = await toolHandler.listTools();
+      const byName = Object.fromEntries(tools.map(tool => [tool.name, tool]));
+      const pageBasedTools = [
+        'searchInboxes',
+        'searchConversations',
+        'getThreads',
+        'advancedConversationSearch',
+        'structuredConversationFilter',
+      ];
+
+      for (const toolName of pageBasedTools) {
+        const properties = byName[toolName].inputSchema.properties as Record<string, unknown>;
+        expect(properties.page).toEqual(expect.objectContaining({
+          type: 'number',
+          minimum: 1,
+          default: 1,
+        }));
+        expect(properties.cursor).toBeUndefined();
+      }
+    });
   });
 
   describe('getServerTime', () => {
-    it('should return server time without Help Scout API call', async () => {
+    it('should return MCP host time without Help Scout API call', async () => {
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
@@ -91,6 +113,8 @@ describe('ToolHandler', () => {
       const response = JSON.parse(textContent.text);
       expect(response).toHaveProperty('isoTime');
       expect(response).toHaveProperty('unixTime');
+      expect(response).toHaveProperty('source', 'mcp_host_clock');
+      expect(response.note).toContain('local MCP host process clock');
       expect(typeof response.isoTime).toBe('string');
       expect(typeof response.unixTime).toBe('number');
     });
@@ -183,6 +207,156 @@ describe('ToolHandler', () => {
       const response = JSON.parse(textContent.text);
       expect(response.results).toHaveLength(1);
       expect(response.results[0].name).toBe('Support Inbox');
+    });
+  });
+
+  describe('page-based v2 pagination', () => {
+    it('should pass the requested page through searchInboxes and return nextPage metadata', async () => {
+      nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 2, size: 50 })
+        .reply(200, {
+          _embedded: {
+            mailboxes: [
+              { id: 10, name: 'Support', email: 'support@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
+            ]
+          },
+          page: { size: 50, totalElements: 101, totalPages: 3, number: 2 }
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'searchInboxes',
+          arguments: { query: '', page: 2 },
+        },
+      });
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.results).toHaveLength(1);
+      expect(response.pagination).toEqual({ size: 50, totalElements: 101, totalPages: 3, number: 2 });
+      expect(response.nextPage).toBe(3);
+      expect(response.nextCursor).toBeUndefined();
+    });
+
+    it('should pass the requested page through searchConversations single-status search', async () => {
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.page === '3' && params.status === 'active')
+        .reply(200, {
+          _embedded: {
+            conversations: [
+              { id: 123, subject: 'Paged', status: 'active', createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } },
+            ],
+          },
+          page: { size: 50, totalElements: 201, totalPages: 5, number: 3 }
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: { status: 'active', page: 3 },
+        },
+      });
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.results).toHaveLength(1);
+      expect(response.pagination).toEqual({ size: 50, totalElements: 201, totalPages: 5, number: 3 });
+      expect(response.nextPage).toBe(4);
+      expect(response.nextCursor).toBeUndefined();
+    });
+
+    it('should pass the requested page through getThreads and omit v2 cursors', async () => {
+      nock(baseURL)
+        .get('/conversations/123/threads')
+        .query({ page: 2, size: 200 })
+        .reply(200, {
+          _embedded: {
+            threads: [
+              { id: 99, type: 'customer', body: 'page two', createdAt: '2023-01-01T00:00:00Z' },
+            ],
+          },
+          _links: { next: { href: '/conversations/123/threads?page=3' } },
+          page: { size: 200, totalElements: 401, totalPages: 3, number: 2 }
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getThreads',
+          arguments: { conversationId: '123', page: 2 },
+        },
+      });
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.threads).toHaveLength(1);
+      expect(response.pagination).toEqual({ size: 200, totalElements: 401, totalPages: 3, number: 2 });
+      expect(response.nextPage).toBe(3);
+      expect(response.nextCursor).toBeUndefined();
+    });
+
+    it('should pass page through advancedConversationSearch and omit v2 cursors', async () => {
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.page === '2' && typeof params.query === 'string' && params.query.includes('billing'))
+        .reply(200, {
+          _embedded: {
+            conversations: [
+              { id: 456, subject: 'Billing', status: 'active', createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } },
+            ],
+          },
+          _links: { next: { href: '/conversations?page=3' } },
+          page: { size: 50, totalElements: 120, totalPages: 3, number: 2 }
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'advancedConversationSearch',
+          arguments: { tags: ['billing'], page: 2 },
+        },
+      });
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.results).toHaveLength(1);
+      expect(response.pagination).toEqual({ size: 50, totalElements: 120, totalPages: 3, number: 2 });
+      expect(response.nextPage).toBe(3);
+      expect(response.nextCursor).toBeUndefined();
+    });
+
+    it('should pass page through structuredConversationFilter and omit v2 cursors', async () => {
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.page === '2' && Number(params.assigned_to) === 123)
+        .reply(200, {
+          _embedded: {
+            conversations: [
+              { id: 789, subject: 'Assigned', status: 'active', createdAt: '2023-01-01T00:00:00Z', customer: { id: 1 } },
+            ],
+          },
+          _links: { next: { href: '/conversations?page=3' } },
+          page: { size: 50, totalElements: 90, totalPages: 2, number: 2 }
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'structuredConversationFilter',
+          arguments: { assignedTo: 123, page: 2 },
+        },
+      });
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.results).toHaveLength(1);
+      expect(response.pagination).toEqual({ size: 50, totalElements: 90, totalPages: 2, number: 2 });
+      expect(response.nextPage).toBeNull();
+      expect(response.nextCursor).toBeUndefined();
     });
   });
 
@@ -283,15 +457,13 @@ describe('ToolHandler', () => {
 
   describe('API Constraints Validation - Branch Coverage', () => {
     it('should handle validation failures with required prerequisites', async () => {
-      // Set user context that mentions an inbox
-      toolHandler.setUserContext('search the support inbox for urgent tickets');
-      
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
           name: 'searchConversations',
           arguments: {
             query: 'urgent',
+            __userQuery: 'search the support inbox for urgent tickets',
             // No inboxId provided despite mentioning "support inbox"
           }
         }
@@ -328,12 +500,14 @@ describe('ToolHandler', () => {
         }
       });
 
-      toolHandler.setUserContext('search the support inbox for urgent tickets');
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
           name: 'searchConversations',
-          arguments: { query: 'urgent' }
+          arguments: {
+            query: 'urgent',
+            __userQuery: 'search the support inbox for urgent tickets',
+          }
         }
       });
 
@@ -475,14 +649,13 @@ describe('ToolHandler', () => {
     });
 
     it('should handle comprehensive search with no inbox ID when required', async () => {
-      toolHandler.setUserContext('search conversations in the support mailbox');
-
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
           name: 'comprehensiveConversationSearch',
           arguments: {
-            searchTerms: ['urgent']
+            searchTerms: ['urgent'],
+            __userQuery: 'search conversations in the support mailbox',
             // Missing inboxId despite mentioning "support mailbox"
           }
         }
@@ -498,6 +671,52 @@ describe('ToolHandler', () => {
       // In test environment, any of these outcomes is acceptable
       expect(response.error || response.details?.requiredPrerequisites || result.isError || response.totalConversationsFound !== undefined).toBeTruthy();
     }, 30000); // Extended timeout for retry logic
+
+    it('should not reuse user query context across tool calls', async () => {
+      const blockedResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: {
+            query: 'urgent',
+            __userQuery: 'search the support inbox for urgent tickets',
+          },
+        },
+      });
+      const blockedResponse = JSON.parse((blockedResult.content[0] as { type: 'text'; text: string }).text);
+      expect(blockedResponse.error).toBe('API Constraint Validation Failed');
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(true)
+        .reply(200, {
+          _embedded: {
+            conversations: [
+              {
+                id: 123,
+                subject: 'Urgent billing issue',
+                status: 'active',
+                createdAt: '2023-01-01T00:00:00Z',
+                customer: { id: 1 },
+              },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      const nextResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'searchConversations',
+          arguments: { query: 'urgent', status: 'active' },
+        },
+      });
+      const nextResponse = JSON.parse((nextResult.content[0] as { type: 'text'; text: string }).text);
+
+      expect(nextResponse.error).toBeUndefined();
+      expect(nextResponse.results).toHaveLength(1);
+      expect(nextResponse.results[0].subject).toBe('Urgent billing issue');
+    });
   });
 
   describe('getConversationSummary', () => {
@@ -915,14 +1134,13 @@ describe('ToolHandler', () => {
     }, 30000); // Extended timeout for retry logic
 
     it('should handle invalid inboxId format validation', async () => {
-      toolHandler.setUserContext('search the support inbox');
-      
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
           name: 'searchConversations',
           arguments: {
             query: 'test',
+            __userQuery: 'search the support inbox',
             inboxId: 'invalid-format'  // Should be numeric
           }
         }

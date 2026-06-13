@@ -40,7 +40,13 @@ export class Cache {
 
   set<T>(prefix: string, data: unknown, value: T, options?: CacheOptions): void {
     const key = this.generateKey(prefix, data);
-    const ttl = options?.ttl ? options.ttl * 1000 : this.defaultTtl;
+    if (options?.ttl !== undefined && options.ttl <= 0) {
+      this.cache.delete(key);
+      logger.debug('Cache skipped', { key, prefix, ttl: options.ttl });
+      return;
+    }
+
+    const ttl = options?.ttl !== undefined ? options.ttl * 1000 : this.defaultTtl;
     
     this.cache.set(key, value, { ttl });
     logger.debug('Cache set', { key, prefix, ttl: ttl / 1000 });

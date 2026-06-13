@@ -16,6 +16,7 @@ import { resourceHandler } from './resources/index.js';
 import { toolHandler } from './tools/index.js';
 import { promptHandler } from './prompts/index.js';
 import type { Inbox } from './schema/types.js';
+import { createMcpResourceError } from './utils/mcp-errors.js';
 
 function getArgumentKeys(args: unknown): string[] {
   return args && typeof args === 'object' ? Object.keys(args as Record<string, unknown>) : [];
@@ -158,10 +159,21 @@ Note: Inbox auto-discovery failed (${safeError}). Use listAllInboxes tool to see
 
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       logger.debug('Reading resource', { uri: request.params.uri });
-      const resource = await resourceHandler.handleResource(request.params.uri);
-      return {
-        contents: [resource],
-      };
+      try {
+        const resource = await resourceHandler.handleResource(request.params.uri);
+        return {
+          contents: [resource],
+        };
+      } catch (error) {
+        return {
+          contents: [
+            createMcpResourceError(error, {
+              resourceUri: request.params.uri,
+              requestId: Math.random().toString(36).substring(7),
+            }),
+          ],
+        };
+      }
     });
 
     // Tools
@@ -183,10 +195,22 @@ Note: Inbox auto-discovery failed (${safeError}). Use listAllInboxes tool to see
         argumentKeys: getArgumentKeys(request.params.arguments),
       });
       const meta = request.params._meta as { userQuery?: unknown } | undefined;
-      if (typeof meta?.userQuery === 'string' && meta.userQuery.trim()) {
-        toolHandler.setUserContext(meta.userQuery);
-      }
-      return await toolHandler.callTool(request);
+      const userQuery = typeof meta?.userQuery === 'string' && meta.userQuery.trim()
+        ? meta.userQuery
+        : undefined;
+      const requestForTool = userQuery
+        ? {
+          ...request,
+          params: {
+            ...request.params,
+            arguments: {
+              ...(request.params.arguments || {}),
+              __userQuery: userQuery,
+            },
+          },
+        }
+        : request;
+      return await toolHandler.callTool(requestForTool);
     });
 
     // Prompts
@@ -248,8 +272,7 @@ Note: Inbox auto-discovery failed (${safeError}). Use listAllInboxes tool to see
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('Failed to start server', { error: errorMessage });
-      console.error('MCP Server startup failed:', errorMessage);
-      process.exit(1);
+      throw error;
     }
   }
 

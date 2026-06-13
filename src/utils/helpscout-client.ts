@@ -68,6 +68,7 @@ export class HelpScoutClient {
   private authenticationPromise: Promise<void> | null = null;
   private httpAgent: HttpAgent;
   private httpsAgent: HttpsAgent;
+  private readonly poolConfig: ConnectionPoolConfig;
   private defaultRetryConfig: RetryConfig = {
     retries: 3,
     retryDelay: 1000, // 1 second
@@ -83,23 +84,23 @@ export class HelpScoutClient {
 
   constructor(poolConfig: Partial<ConnectionPoolConfig> = {}) {
     // Merge default pool config with any custom settings
-    const finalPoolConfig = { ...DEFAULT_POOL_CONFIG, ...poolConfig };
+    this.poolConfig = { ...DEFAULT_POOL_CONFIG, ...poolConfig };
     
     // Create HTTP agents with connection pooling
     this.httpAgent = new HttpAgent({
-      keepAlive: finalPoolConfig.keepAlive,
-      keepAliveMsecs: finalPoolConfig.keepAliveMsecs,
-      maxSockets: finalPoolConfig.maxSockets,
-      maxFreeSockets: finalPoolConfig.maxFreeSockets,
-      timeout: finalPoolConfig.timeout,
+      keepAlive: this.poolConfig.keepAlive,
+      keepAliveMsecs: this.poolConfig.keepAliveMsecs,
+      maxSockets: this.poolConfig.maxSockets,
+      maxFreeSockets: this.poolConfig.maxFreeSockets,
+      timeout: this.poolConfig.timeout,
     });
 
     this.httpsAgent = new HttpsAgent({
-      keepAlive: finalPoolConfig.keepAlive,
-      keepAliveMsecs: finalPoolConfig.keepAliveMsecs,
-      maxSockets: finalPoolConfig.maxSockets,
-      maxFreeSockets: finalPoolConfig.maxFreeSockets,
-      timeout: finalPoolConfig.timeout,
+      keepAlive: this.poolConfig.keepAlive,
+      keepAliveMsecs: this.poolConfig.keepAliveMsecs,
+      maxSockets: this.poolConfig.maxSockets,
+      maxFreeSockets: this.poolConfig.maxFreeSockets,
+      timeout: this.poolConfig.timeout,
     });
 
     // Create Axios instance with connection pooling agents
@@ -116,10 +117,10 @@ export class HelpScoutClient {
     this.setupInterceptors();
     
     logger.info('HTTP connection pool initialized', {
-      maxSockets: finalPoolConfig.maxSockets,
-      maxFreeSockets: finalPoolConfig.maxFreeSockets,
-      keepAlive: finalPoolConfig.keepAlive,
-      timeout: finalPoolConfig.timeout,
+      maxSockets: this.poolConfig.maxSockets,
+      maxFreeSockets: this.poolConfig.maxFreeSockets,
+      keepAlive: this.poolConfig.keepAlive,
+      timeout: this.poolConfig.timeout,
     });
   }
 
@@ -266,8 +267,14 @@ export class HelpScoutClient {
   private async authenticate(): Promise<void> {
     try {
       // OAuth2 Client Credentials flow (only supported method)
-      const clientId = config.helpscout.clientId;
-      const clientSecret = config.helpscout.clientSecret;
+      const currentApiKey = process.env.HELPSCOUT_API_KEY || '';
+      const clientId = process.env.HELPSCOUT_APP_ID ||
+        process.env.HELPSCOUT_CLIENT_ID ||
+        (currentApiKey.startsWith('Bearer ') ? '' : currentApiKey) ||
+        config.helpscout.clientId;
+      const clientSecret = process.env.HELPSCOUT_APP_SECRET ||
+        process.env.HELPSCOUT_CLIENT_SECRET ||
+        config.helpscout.clientSecret;
 
       if (!clientId || !clientSecret) {
         throw new Error(
@@ -276,11 +283,22 @@ export class HelpScoutClient {
         );
       }
 
-      const response = await axios.post('https://api.helpscout.net/v2/oauth2/token', {
+      const configuredBaseUrl = this.client.defaults.baseURL || config.helpscout.baseUrl;
+      const baseUrl = configuredBaseUrl.endsWith('/')
+        ? configuredBaseUrl
+        : `${configuredBaseUrl}/`;
+      const tokenUrl = new URL('oauth2/token', baseUrl).toString();
+
+      const response = await this.executeWithRetry(() => axios.post(tokenUrl, {
         grant_type: 'client_credentials',
         client_id: clientId,
         client_secret: clientSecret,
-      });
+      }, {
+        timeout: 30000,
+        httpAgent: this.httpAgent,
+        httpsAgent: this.httpsAgent,
+        validateStatus: (status) => status >= 200 && status < 300,
+      }));
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer
@@ -499,35 +517,34 @@ export class HelpScoutClient {
     logger.info('All HTTP connections closed');
   }
 
+  private closeIdleSockets(agent: HttpAgent | HttpsAgent): number {
+    let closed = 0;
+    const freeSockets = agent.freeSockets as Record<string, Array<{ destroy: () => void }>>;
+
+    for (const [socketKey, sockets] of Object.entries(freeSockets)) {
+      for (const socket of sockets || []) {
+        socket.destroy();
+        closed++;
+      }
+      delete freeSockets[socketKey];
+    }
+
+    return closed;
+  }
+
   /**
    * Clear idle connections to free up resources
    */
   clearIdleConnections(): void {
     const stats = this.getPoolStats();
-    
-    // Force destroy all agent connections by recreating them
-    this.httpAgent.destroy();
-    this.httpsAgent.destroy();
-    
-    // Recreate agents with same configuration
-    const poolConfig = {
-      keepAlive: true,
-      keepAliveMsecs: 1000,
-      maxSockets: 50,
-      maxFreeSockets: 10,
-      timeout: 30000,
-    };
-    
-    this.httpAgent = new HttpAgent(poolConfig);
-    this.httpsAgent = new HttpsAgent(poolConfig);
-
-    // Update Axios instance to use the new agents
-    this.client.defaults.httpAgent = this.httpAgent;
-    this.client.defaults.httpsAgent = this.httpsAgent;
+    const clearedHttp = this.closeIdleSockets(this.httpAgent);
+    const clearedHttps = this.closeIdleSockets(this.httpsAgent);
 
     logger.debug('Cleared idle connections', {
-      clearedHttp: stats.http.freeSockets,
-      clearedHttps: stats.https.freeSockets,
+      clearedHttp,
+      clearedHttps,
+      activeHttp: stats.http.sockets,
+      activeHttps: stats.https.sockets,
     });
   }
 

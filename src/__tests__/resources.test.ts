@@ -91,6 +91,7 @@ describe('ResourceHandler', () => {
       });
 
       it('should handle pagination parameters', async () => {
+        const requestedUri = 'helpscout://inboxes?page=2&size=10';
         const mockResponse = {
           _embedded: { mailboxes: [] },
           page: { size: 10, totalElements: 0 }
@@ -101,8 +102,8 @@ describe('ResourceHandler', () => {
           .query({ page: 2, size: 10 })
           .reply(200, mockResponse);
 
-        const resource = await resourceHandler.handleResource('helpscout://inboxes?page=2&size=10');
-        expect(resource).toBeDefined();
+        const resource = await resourceHandler.handleResource(requestedUri);
+        expect(resource.uri).toBe(requestedUri);
       });
 
       it('should reject invalid size parameters above Help Scout limits', async () => {
@@ -172,10 +173,11 @@ describe('ResourceHandler', () => {
           'helpscout://conversations?status=active&mailbox=123'
         );
         expect(resource).toBeDefined();
-        expect(resource.uri).toBe('helpscout://conversations');
+        expect(resource.uri).toBe('helpscout://conversations?status=active&mailbox=123');
       });
 
       it('should handle pagination parameters', async () => {
+        const requestedUri = 'helpscout://conversations?page=2&size=25';
         const mockResponse = {
           _embedded: { conversations: [] },
           page: { size: 25, totalElements: 0, number: 2 },
@@ -187,10 +189,9 @@ describe('ResourceHandler', () => {
           .query({ page: 2, size: 25 })
           .reply(200, mockResponse);
 
-        const resource = await resourceHandler.handleResource(
-          'helpscout://conversations?page=2&size=25'
-        );
+        const resource = await resourceHandler.handleResource(requestedUri);
         
+        expect(resource.uri).toBe(requestedUri);
         const data = JSON.parse(resource.text as string);
         expect(data.pagination.number).toBe(2);
         expect(data.pagination.size).toBe(25);
@@ -272,6 +273,7 @@ describe('ResourceHandler', () => {
       });
 
       it('should handle pagination parameters for threads', async () => {
+        const requestedUri = 'helpscout://threads?conversationId=123&page=2&size=25';
         const mockResponse = {
           _embedded: {
             threads: []
@@ -285,10 +287,9 @@ describe('ResourceHandler', () => {
           .query({ page: 2, size: 25 })
           .reply(200, mockResponse);
 
-        const resource = await resourceHandler.handleResource(
-          'helpscout://threads?conversationId=123&page=2&size=25'
-        );
+        const resource = await resourceHandler.handleResource(requestedUri);
         
+        expect(resource.uri).toBe(requestedUri);
         const data = JSON.parse(resource.text as string);
         expect(data.pagination.number).toBe(2);
         expect(data.pagination.size).toBe(25);
@@ -405,7 +406,7 @@ describe('ResourceHandler', () => {
     });
 
     describe('helpscout://clock', () => {
-      it('should return server time', async () => {
+      it('should return MCP host time', async () => {
         const resource = await resourceHandler.handleResource('helpscout://clock');
 
         expect(resource.uri).toBe('helpscout://clock');
@@ -414,17 +415,21 @@ describe('ResourceHandler', () => {
         const data = JSON.parse(resource.text as string);
         expect(data).toHaveProperty('isoTime');
         expect(data).toHaveProperty('unixTime');
+        expect(data).toHaveProperty('source', 'mcp_host_clock');
+        expect(data.note).toContain('local MCP host process clock');
         expect(typeof data.isoTime).toBe('string');
         expect(typeof data.unixTime).toBe('number');
       });
 
-      it('should ignore pagination parameters that do not apply to clock', async () => {
-        const resource = await resourceHandler.handleResource('helpscout://clock?page=abc&size=too-large');
+      it('should preserve clock request URI while ignoring parameters that do not apply', async () => {
+        const requestedUri = 'helpscout://clock?page=abc&size=too-large';
+        const resource = await resourceHandler.handleResource(requestedUri);
 
-        expect(resource.uri).toBe('helpscout://clock');
+        expect(resource.uri).toBe(requestedUri);
         const data = JSON.parse(resource.text as string);
         expect(data).toHaveProperty('isoTime');
         expect(data).toHaveProperty('unixTime');
+        expect(data).toHaveProperty('source', 'mcp_host_clock');
       });
     });
 

@@ -70,9 +70,13 @@ const TOOL_CONSTANTS = {
   } as const
 } as const;
 
+function getNextPage(page?: { number?: number; totalPages?: number }): number | null {
+  if (!page || page.number === undefined || page.totalPages === undefined) return null;
+  return page.number < page.totalPages ? page.number + 1 : null;
+}
+
 export class ToolHandler {
   private callHistory: string[] = [];
-  private currentUserQuery?: string;
 
   constructor() {
     // Direct imports, no DI needed
@@ -127,10 +131,10 @@ export class ToolHandler {
   }
 
   /**
-   * Set the current user query for context-aware validation
+   * Deprecated compatibility no-op. Pass __userQuery in tool arguments instead.
    */
-  setUserContext(userQuery: string): void {
-    this.currentUserQuery = userQuery;
+  setUserContext(_userQuery: string): void {
+    // Request-scoped context is carried by __userQuery to avoid shared mutable state.
   }
 
   private getToolCallUserQuery(args: Record<string, unknown>): string | undefined {
@@ -157,9 +161,11 @@ export class ToolHandler {
               maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
               default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
             },
-            cursor: {
-              type: 'string',
-              description: 'Pagination cursor for next page',
+            page: {
+              type: 'number',
+              minimum: 1,
+              default: 1,
+              description: 'Page number',
             },
           },
           required: ['query'],
@@ -205,9 +211,11 @@ export class ToolHandler {
               maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
               default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
             },
-            cursor: {
-              type: 'string',
-              description: 'Pagination cursor for next page',
+            page: {
+              type: 'number',
+              minimum: 1,
+              default: 1,
+              description: 'Page number',
             },
             sort: {
               type: 'string',
@@ -260,9 +268,11 @@ export class ToolHandler {
               maximum: TOOL_CONSTANTS.MAX_THREAD_SIZE,
               default: TOOL_CONSTANTS.DEFAULT_THREAD_SIZE,
             },
-            cursor: {
-              type: 'string',
-              description: 'Pagination cursor for next page',
+            page: {
+              type: 'number',
+              minimum: 1,
+              default: 1,
+              description: 'Page number',
             },
           },
           required: ['conversationId'],
@@ -270,7 +280,7 @@ export class ToolHandler {
       },
       {
         name: 'getServerTime',
-        description: 'Get current server timestamp. Use before date-relative searches to calculate time ranges.',
+        description: 'Get the current MCP host timestamp. Use before date-relative searches to calculate time ranges.',
         inputSchema: {
           type: 'object',
           properties: {},
@@ -346,6 +356,12 @@ export class ToolHandler {
               minimum: 1,
               maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
               default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
+            },
+            page: {
+              type: 'number',
+              minimum: 1,
+              default: 1,
+              description: 'Page number',
             },
           },
         },
@@ -425,7 +441,7 @@ export class ToolHandler {
             sortBy: { type: 'string', enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject'], default: 'createdAt', description: 'waitingSince/customerName/customerEmail are unique to this tool' },
             sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
             limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
-            cursor: { type: 'string' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
           },
         },
       },
@@ -553,11 +569,11 @@ export class ToolHandler {
     logger.info('Tool call started', {
       requestId,
       toolName: request.params.name,
-      argumentKeys: Object.keys(request.params.arguments || {}),
+      argumentKeys: Object.keys(request.params.arguments || {}).filter(key => key !== '__userQuery'),
     });
 
     const args = request.params.arguments || {};
-    const userQuery = this.getToolCallUserQuery(args) ?? this.currentUserQuery;
+    const userQuery = this.getToolCallUserQuery(args);
 
     // REVERSE LOGIC VALIDATION: Check API constraints before making the call
     const validationContext: ToolCallContext = {
@@ -712,7 +728,7 @@ export class ToolHandler {
   private async searchInboxes(args: unknown): Promise<CallToolResult> {
     const input = SearchInboxesInputSchema.parse(args);
     const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-      page: 1,
+      page: input.page,
       size: input.limit,
     });
 
@@ -735,7 +751,9 @@ export class ToolHandler {
             })),
             query: input.query,
             totalFound: filteredInboxes.length,
-            totalAvailable: inboxes.length,
+            totalAvailable: response.page?.totalElements ?? inboxes.length,
+            pagination: response.page,
+            nextPage: getNextPage(response.page),
             usage: filteredInboxes.length > 0 ? 
               'NEXT STEP: Use the "id" field from these results in your conversation search tools (comprehensiveConversationSearch or searchConversations)' : 
               'No inboxes matched your query. Try a different search term or use empty string "" to list all inboxes.',
@@ -752,7 +770,7 @@ export class ToolHandler {
     const input = SearchConversationsInputSchema.parse(args);
 
     const baseParams: Record<string, unknown> = {
-      page: 1,
+      page: input.page,
       size: input.limit,
       sortField: input.sort,
       sortOrder: input.order,
@@ -948,6 +966,7 @@ export class ToolHandler {
     const results = {
       results: conversations,
       pagination,
+      nextPage: input.status ? getNextPage(originalPagination as { number?: number; totalPages?: number } | undefined) : null,
       searchInfo: {
         query: input.query,
         statusesSearched: searchedStatuses,
@@ -1040,7 +1059,7 @@ export class ToolHandler {
     const response = await helpScoutClient.get<PaginatedResponse<Thread>>(
       `/conversations/${input.conversationId}/threads`,
       {
-        page: 1,
+        page: input.page,
         size: input.limit,
       }
     );
@@ -1061,7 +1080,7 @@ export class ToolHandler {
             conversationId: input.conversationId,
             threads: processedThreads,
             pagination: response.page,
-            nextCursor: response._links?.next?.href,
+            nextPage: getNextPage(response.page),
           }, null, 2),
         },
       ],
@@ -1073,6 +1092,8 @@ export class ToolHandler {
     const serverTime: ServerTime = {
       isoTime: now.toISOString(),
       unixTime: Math.floor(now.getTime() / 1000),
+      source: 'mcp_host_clock',
+      note: 'Timestamp from the local MCP host process clock, not the Help Scout API.',
     };
 
     return {
@@ -1160,7 +1181,7 @@ export class ToolHandler {
 
     // Set up query parameters
     const queryParams: Record<string, unknown> = {
-      page: 1,
+      page: input.page,
       size: input.limit || 50,
       sortField: 'createdAt',
       sortOrder: 'desc',
@@ -1216,7 +1237,7 @@ export class ToolHandler {
               tags: input.tags,
             },
             pagination: paginationInfo,
-            nextCursor: response._links?.next?.href,
+            nextPage: getNextPage(response.page),
             clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
             note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
           }, null, 2),
@@ -1547,7 +1568,7 @@ export class ToolHandler {
     const input = StructuredConversationFilterInputSchema.parse(args);
 
     const queryParams: Record<string, unknown> = {
-      page: 1,
+      page: input.page,
       size: input.limit,
       sortField: input.sortBy,
       sortOrder: input.sortOrder,
@@ -1615,7 +1636,7 @@ export class ToolHandler {
           },
           inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
           pagination: paginationInfo,
-          nextCursor: response._links?.next?.href,
+          nextPage: getNextPage(response.page),
           clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
           note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
         }, null, 2),
@@ -1730,6 +1751,7 @@ export class ToolHandler {
           results: slimResults,
           returnedCount: customers.length,
           pagination: response.page,
+          nextPage: getNextPage(response.page),
           usage: 'Use customer.id with getCustomer for full profile (includes emails, phones, address, etc.), or with structuredConversationFilter(customerIds) for their conversations.',
         }, null, 2),
       }],
@@ -1920,8 +1942,7 @@ export class ToolHandler {
           results: organizations.map(org => this.formatOrganization(org)),
           returnedCount: organizations.length,
           pagination: response.page,
-          nextCursor: response._links?.next?.href,
-          nextPage: response._links?.next?.href ? (response.page?.number ?? 0) + 1 : undefined,
+          nextPage: getNextPage(response.page),
           usage: 'Use organization.id with getOrganization for details, getOrganizationMembers for customers, or getOrganizationConversations for support history.',
         }, null, 2),
       }],
@@ -1948,8 +1969,7 @@ export class ToolHandler {
           members: customers.map(c => this.formatCustomer(c)),
           returnedCount: customers.length,
           pagination: response.page,
-          nextCursor: response._links?.next?.href,
-          nextPage: response._links?.next?.href ? (response.page?.number ?? 0) + 1 : undefined,
+          nextPage: getNextPage(response.page),
           usage: 'Use customer.id with getCustomer for full profile or structuredConversationFilter(customerIds) for their conversations.',
         }, null, 2),
       }],
@@ -1986,8 +2006,7 @@ export class ToolHandler {
           })),
           returnedCount: conversations.length,
           pagination: response.page,
-          nextCursor: response._links?.next?.href,
-          nextPage: response._links?.next?.href ? (response.page?.number ?? 0) + 1 : undefined,
+          nextPage: getNextPage(response.page),
           usage: 'Use conversation.id with getThreads to read full message history, or getConversationSummary for a quick overview.',
         }, null, 2),
       }],

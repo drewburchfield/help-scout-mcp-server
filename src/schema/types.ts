@@ -83,7 +83,7 @@ export const ThreadSchema = z.object({
 export const SearchInboxesInputSchema = z.object({
   query: z.string(),
   limit: z.number().int().min(1).max(100).default(50),
-  cursor: z.string().optional(),
+  page: z.number().int().min(1).default(1),
 });
 
 export const SearchConversationsInputSchema = z.object({
@@ -94,7 +94,7 @@ export const SearchConversationsInputSchema = z.object({
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(50),
-  cursor: z.string().optional(),
+  page: z.number().int().min(1).default(1),
   sort: z.enum(['createdAt', 'modifiedAt', 'number']).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
   fields: z.array(z.string()).optional(),
@@ -103,7 +103,7 @@ export const SearchConversationsInputSchema = z.object({
 export const GetThreadsInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
   limit: z.number().int().min(1).max(200).default(200),
-  cursor: z.string().optional(),
+  page: z.number().int().min(1).default(1),
 });
 
 export const GetConversationSummaryInputSchema = z.object({
@@ -121,6 +121,7 @@ export const AdvancedConversationSearchInputSchema = z.object({
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(50),
+  page: z.number().int().min(1).default(1),
 });
 
 export const MultiStatusConversationSearchInputSchema = z.object({
@@ -148,7 +149,7 @@ export const StructuredConversationFilterInputSchema = z.object({
   sortBy: z.enum(['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   limit: z.number().int().min(1).max(100).default(50),
-  cursor: z.string().optional(),
+  page: z.number().int().min(1).default(1),
 }).refine(
   (data) => !!(data.assignedTo !== undefined || data.folderId !== undefined || data.customerIds !== undefined || data.conversationNumber !== undefined || (data.sortBy && ['waitingSince', 'customerName', 'customerEmail'].includes(data.sortBy))),
   { message: 'Must use at least one unique field: assignedTo, folderId, customerIds, conversationNumber, or unique sorting. For content search, use comprehensiveConversationSearch.' }
@@ -277,6 +278,8 @@ export const ListAllInboxesInputSchema = z.object({
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
   unixTime: z.number(),
+  source: z.literal('mcp_host_clock'),
+  note: z.string(),
 });
 
 export const ErrorSchema = z.object({

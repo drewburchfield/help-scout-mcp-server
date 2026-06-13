@@ -56,7 +56,7 @@ export class HelpScoutAPIConstraints {
     const suggestions: string[] = [];
     const requiredPrerequisites: string[] = [];
     
-    // CONSTRAINT 1: Inbox name mentioned but no inboxId provided
+    // CONSTRAINT 1: Specific inbox reference but no inboxId provided
     const inboxMentioned = this.detectInboxMention(userQuery);
     const hasInboxId = args.inboxId && typeof args.inboxId === 'string';
     const hasListedInboxes = previousCalls.includes('listAllInboxes') || previousCalls.includes('searchInboxes');
@@ -65,7 +65,7 @@ export class HelpScoutAPIConstraints {
       errors.push('User mentioned an inbox by name but no inboxId provided');
       if (!hasListedInboxes) {
         requiredPrerequisites.push('listAllInboxes');
-        suggestions.push('REQUIRED: Use inbox IDs from server instructions or call listAllInboxes when user mentions inbox names like "support", "sales", "billing", etc.');
+        suggestions.push('REQUIRED: Use inbox IDs from server instructions or call listAllInboxes when user mentions a specific inbox, mailbox, or queue.');
       } else {
         suggestions.push('Use the inbox ID from the listAllInboxes results');
       }
@@ -184,11 +184,6 @@ export class HelpScoutAPIConstraints {
    * Detect if user query mentions an inbox by name
    */
   private static detectInboxMention(userQuery: string): boolean {
-    const inboxKeywords = [
-      'inbox', 'mailbox', 'support', 'sales', 'billing', 'technical', 'general',
-      'customer service', 'help desk', 'contact', 'feedback', 'info', 'admin'
-    ];
-    
     const lowerQuery = userQuery.toLowerCase();
     
     // Look for patterns like "support inbox", "in the sales mailbox", "billing queue"
@@ -197,14 +192,8 @@ export class HelpScoutAPIConstraints {
       /\b([\w\s]+)\s+(?:inbox|mailbox|queue)/,
       /\b(?:inbox|mailbox)\s+([\w\s]+)/
     ];
-    
-    // Check for explicit inbox keywords
-    const hasInboxKeyword = inboxKeywords.some(keyword => lowerQuery.includes(keyword));
-    
-    // Check for inbox mention patterns
-    const hasInboxPattern = patterns.some(pattern => pattern.test(lowerQuery));
-    
-    return hasInboxKeyword || hasInboxPattern;
+
+    return patterns.some(pattern => pattern.test(lowerQuery));
   }
   
   /**
