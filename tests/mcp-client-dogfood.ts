@@ -52,6 +52,9 @@ const EXPECTED_TOOLS = [
   'listOrganizations',
   'getOrganizationMembers',
   'getOrganizationConversations',
+  'listCustomerProperties',
+  'listOrganizationProperties',
+  'getOrganizationProperty',
   'listTags',
   'getTag',
   'listUsers',
@@ -81,6 +84,7 @@ interface DogfoodContext {
   tagId?: string;
   userId?: string;
   teamId?: string;
+  organizationPropertySlug?: string;
   createdAfter?: string;
   createdBefore?: string;
   nextCustomerCursor?: string;
@@ -339,6 +343,36 @@ function buildScenarios(): Scenario[] {
       expectError: true,
       validate: (data) => {
         requireCondition(data !== undefined, 'Expected validation response');
+      },
+    },
+    {
+      tool: 'listCustomerProperties',
+      name: 'customer property definition discovery',
+      args: {},
+      validate: (data) => {
+        requireArray(data, ['customerProperties', 'properties', 'results'], 'customerProperties');
+      },
+    },
+    {
+      tool: 'listOrganizationProperties',
+      name: 'organization property definition discovery',
+      args: {},
+      validate: (data) => {
+        requireArray(data, ['organizationProperties', 'properties', 'results'], 'organizationProperties');
+      },
+      after: (data, _result, ctx) => {
+        const properties = getArray(data, ['organizationProperties', 'properties', 'results']) as JsonObject[];
+        if (properties[0]?.slug) ctx.organizationPropertySlug = String(properties[0].slug);
+      },
+    },
+    {
+      tool: 'getOrganizationProperty',
+      name: 'discovered organization property details',
+      skipIf: (ctx) => ctx.organizationPropertySlug ? undefined : 'No organization property available from listOrganizationProperties',
+      args: (ctx) => ({ slug: ctx.organizationPropertySlug ?? 'missing' }),
+      validate: (data) => {
+        const property = getObject(data, 'organizationProperty');
+        requireCondition(property?.slug, 'Missing organization property');
       },
     },
     {

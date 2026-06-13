@@ -37,7 +37,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(25);
+      expect(tools).toHaveLength(28);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -56,6 +56,9 @@ describe('ToolHandler', () => {
         'listOrganizations',
         'getOrganizationMembers',
         'getOrganizationConversations',
+        'listCustomerProperties',
+        'listOrganizationProperties',
+        'getOrganizationProperty',
         'listTags',
         'getTag',
         'listUsers',
@@ -223,6 +226,98 @@ describe('ToolHandler', () => {
   });
 
   describe('operator metadata tools', () => {
+    it('should list customer property definitions', async () => {
+      nock(baseURL)
+        .get('/customer-properties')
+        .reply(200, {
+          _embedded: {
+            'customer-properties': [
+              { type: 'text', slug: 'car', name: 'Car' },
+              {
+                type: 'dropdown',
+                slug: 'plan',
+                name: 'Plan',
+                options: [
+                  { id: '556cca5f-1afc-48ef-8323-b88b55808404', label: 'Standard' },
+                  { id: '1313b25a-1150-49a4-8514-5b31f37e427f', label: 'Plus' },
+                ],
+              },
+            ],
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listCustomerProperties',
+          arguments: {},
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.customerProperties).toHaveLength(2);
+      expect(response.customerProperties[1]).toEqual(expect.objectContaining({ slug: 'plan', type: 'dropdown' }));
+      expect(response.customerProperties[1].options[0]).toEqual(expect.objectContaining({ label: 'Standard' }));
+      expect(response.usage).toContain('customer');
+    });
+
+    it('should list and get organization property definitions', async () => {
+      nock(baseURL)
+        .get('/organizations/properties')
+        .reply(200, {
+          _embedded: {
+            'organization-properties': [
+              { type: 'text', slug: 'customer-tier', name: 'Customer Tier' },
+              {
+                type: 'dropdown',
+                slug: 'industry',
+                name: 'Industry',
+                options: [
+                  { label: 'Technology' },
+                  { label: 'Healthcare' },
+                ],
+              },
+            ],
+          },
+        });
+      nock(baseURL)
+        .get('/organizations/properties/industry')
+        .reply(200, {
+          type: 'dropdown',
+          slug: 'industry',
+          name: 'Industry',
+          options: [
+            { label: 'Technology' },
+            { label: 'Healthcare' },
+          ],
+        });
+
+      const list = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listOrganizationProperties',
+          arguments: {},
+        },
+      });
+      const get = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getOrganizationProperty',
+          arguments: { slug: 'industry' },
+        },
+      });
+
+      const listResponse = JSON.parse((list.content[0] as { type: 'text'; text: string }).text);
+      const getResponse = JSON.parse((get.content[0] as { type: 'text'; text: string }).text);
+      expect(list.isError).toBeUndefined();
+      expect(get.isError).toBeUndefined();
+      expect(listResponse.organizationProperties).toHaveLength(2);
+      expect(listResponse.organizationProperties[1]).toEqual(expect.objectContaining({ slug: 'industry', type: 'dropdown' }));
+      expect(getResponse.organizationProperty).toEqual(expect.objectContaining({ slug: 'industry', name: 'Industry' }));
+      expect(getResponse.organizationProperty.options[0]).toEqual(expect.objectContaining({ label: 'Technology' }));
+    });
+
     it('should list tags with optional name filtering', async () => {
       nock(baseURL)
         .get('/tags')

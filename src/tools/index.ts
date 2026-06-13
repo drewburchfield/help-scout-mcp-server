@@ -13,6 +13,7 @@ import {
   Customer,
   CustomerAddress,
   Organization,
+  PropertyDefinition,
   Tag,
   User,
   Team,
@@ -35,6 +36,9 @@ import {
   ListOrganizationsInputSchema,
   GetOrganizationMembersInputSchema,
   GetOrganizationConversationsInputSchema,
+  ListCustomerPropertiesInputSchema,
+  ListOrganizationPropertiesInputSchema,
+  GetOrganizationPropertyInputSchema,
   ListTagsInputSchema,
   GetTagInputSchema,
   ListUsersInputSchema,
@@ -573,6 +577,33 @@ export class ToolHandler {
         },
       },
       {
+        name: 'listCustomerProperties',
+        description: 'List customer property definitions. Use to interpret custom property values embedded on customer records.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'listOrganizationProperties',
+        description: 'List organization property definitions. Use to interpret custom company property values embedded on organizations.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'getOrganizationProperty',
+        description: 'Get one organization property definition by slug. Use after listOrganizationProperties when exact option labels are needed.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            slug: { type: 'string', description: 'Organization property slug from listOrganizationProperties' },
+          },
+          required: ['slug'],
+        },
+      },
+      {
         name: 'listTags',
         description: 'List Help Scout tags used across inboxes. Use to discover tag IDs and exact names before filtering conversations or reports.',
         inputSchema: {
@@ -772,6 +803,15 @@ export class ToolHandler {
           break;
         case 'getOrganizationConversations':
           result = await this.getOrganizationConversations(request.params.arguments || {});
+          break;
+        case 'listCustomerProperties':
+          result = await this.listCustomerProperties(request.params.arguments || {});
+          break;
+        case 'listOrganizationProperties':
+          result = await this.listOrganizationProperties(request.params.arguments || {});
+          break;
+        case 'getOrganizationProperty':
+          result = await this.getOrganizationProperty(request.params.arguments || {});
           break;
         case 'listTags':
           result = await this.listTags(request.params.arguments || {});
@@ -1303,6 +1343,65 @@ export class ToolHandler {
           usage: filteredTags.length > 0
             ? 'Use tag.id for report filters that require IDs, or tag.name with conversation tag filters.'
             : 'No tags matched. Omit name to list tags alphabetically across all inboxes.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listCustomerProperties(args: unknown): Promise<CallToolResult> {
+    ListCustomerPropertiesInputSchema.parse(args);
+    const response = await helpScoutClient.get<{
+      _embedded?: { 'customer-properties'?: PropertyDefinition[] };
+    }>('/customer-properties');
+    const properties = response._embedded?.['customer-properties'] || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          customerProperties: properties,
+          totalProperties: properties.length,
+          usage: properties.length > 0
+            ? 'Use property.slug to interpret values embedded on customer records.'
+            : 'No customer property definitions returned for this account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listOrganizationProperties(args: unknown): Promise<CallToolResult> {
+    ListOrganizationPropertiesInputSchema.parse(args);
+    const response = await helpScoutClient.get<{
+      _embedded?: { 'organization-properties'?: PropertyDefinition[] };
+    }>('/organizations/properties');
+    const properties = response._embedded?.['organization-properties'] || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          organizationProperties: properties,
+          totalProperties: properties.length,
+          usage: properties.length > 0
+            ? 'Use property.slug with getOrganizationProperty, and to interpret values embedded on organization records.'
+            : 'No organization property definitions returned for this account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getOrganizationProperty(args: unknown): Promise<CallToolResult> {
+    const input = GetOrganizationPropertyInputSchema.parse(args);
+    const property = await helpScoutClient.get<PropertyDefinition>(`/organizations/properties/${input.slug}`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          organizationProperty: property,
+          usage: property.type === 'dropdown'
+            ? 'Use option labels exactly as returned when interpreting or setting organization property values.'
+            : 'Use property.slug to interpret values embedded on organization records.',
         }, null, 2),
       }],
     };
