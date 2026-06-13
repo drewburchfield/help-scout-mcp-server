@@ -49,6 +49,9 @@ jobs:
     - name: Build
       run: npm run build
 
+    - name: Build MCPB extension
+      run: npm run mcpb:build
+
     - name: Run tests
       env:
         HELPSCOUT_APP_ID: ${{ secrets.HELPSCOUT_APP_ID }}
