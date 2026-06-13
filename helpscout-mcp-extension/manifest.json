@@ -164,6 +164,18 @@
       "description": "List conversations associated with an organization"
     },
     {
+      "name": "listCustomerProperties",
+      "description": "List customer property definitions with slugs, types, and dropdown options"
+    },
+    {
+      "name": "listOrganizationProperties",
+      "description": "List organization property definitions with slugs, types, and dropdown options"
+    },
+    {
+      "name": "getOrganizationProperty",
+      "description": "Get an organization property definition by slug"
+    },
+    {
       "name": "listTags",
       "description": "List Help Scout tags with IDs, exact names, and ticket counts"
     },

@@ -218,6 +218,16 @@ export const OrganizationSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+export const PropertyDefinitionSchema = z.object({
+  type: z.enum(['text', 'number', 'url', 'date', 'dropdown']),
+  slug: z.string(),
+  name: z.string(),
+  options: z.array(z.object({
+    id: z.string().optional(),
+    label: z.string(),
+  })).optional(),
+});
+
 export const TagSchema = z.object({
   id: z.number(),
   slug: z.string().optional(),
@@ -329,6 +339,14 @@ export const GetOrganizationConversationsInputSchema = z.object({
   page: z.number().int().min(1).default(1),
 });
 
+export const ListCustomerPropertiesInputSchema = z.object({});
+
+export const ListOrganizationPropertiesInputSchema = z.object({});
+
+export const GetOrganizationPropertyInputSchema = z.object({
+  slug: z.string().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/, 'Property slug must be alphanumeric and may include hyphens or underscores'),
+});
+
 export const GetCustomerContactsInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
 });
@@ -398,6 +416,7 @@ export type Thread = z.infer<typeof ThreadSchema>;
 export type Customer = z.infer<typeof CustomerSchema>;
 export type CustomerAddress = z.infer<typeof CustomerAddressSchema>;
 export type Organization = z.infer<typeof OrganizationSchema>;
+export type PropertyDefinition = z.infer<typeof PropertyDefinitionSchema>;
 export type Tag = z.infer<typeof TagSchema>;
 export type User = z.infer<typeof UserSchema>;
 export type Team = z.infer<typeof TeamSchema>;
@@ -416,6 +435,9 @@ export type GetOrganizationInput = z.infer<typeof GetOrganizationInputSchema>;
 export type ListOrganizationsInput = z.infer<typeof ListOrganizationsInputSchema>;
 export type GetOrganizationMembersInput = z.infer<typeof GetOrganizationMembersInputSchema>;
 export type GetOrganizationConversationsInput = z.infer<typeof GetOrganizationConversationsInputSchema>;
+export type ListCustomerPropertiesInput = z.infer<typeof ListCustomerPropertiesInputSchema>;
+export type ListOrganizationPropertiesInput = z.infer<typeof ListOrganizationPropertiesInputSchema>;
+export type GetOrganizationPropertyInput = z.infer<typeof GetOrganizationPropertyInputSchema>;
 export type GetCustomerContactsInput = z.infer<typeof GetCustomerContactsInputSchema>;
 export type ListAllInboxesInput = z.infer<typeof ListAllInboxesInputSchema>;
 export type ListTagsInput = z.infer<typeof ListTagsInputSchema>;

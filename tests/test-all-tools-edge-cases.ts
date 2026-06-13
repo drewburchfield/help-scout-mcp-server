@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --loader ts-node/esm
 /**
- * Comprehensive authenticated edge-case test for all 25 MCP tools.
+ * Comprehensive authenticated edge-case test for all 28 MCP tools.
  *
  * Run: node --loader ts-node/esm tests/test-all-tools-edge-cases.ts
  *
@@ -91,7 +91,7 @@ const expectGraceful = (data: any) => ({
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.error('\n=== Comprehensive Edge-Case Test Suite (25 Tools) ===\n');
+  console.error('\n=== Comprehensive Edge-Case Test Suite (28 Tools) ===\n');
   console.error('  Golden data: Customer ' + GOLDEN.customerId + ', Org ' + GOLDEN.orgId + '\n');
 
   // =========================================================================
@@ -117,6 +117,24 @@ async function main() {
     ok: d?.results?.some((r: any) => r.name?.includes('Client')),
     detail: d?.results?.[0]?.name,
   }));
+
+  await test('happy', 'listCustomerProperties', 'listCustomerProperties', {}, (d) => ({
+    ok: Array.isArray(d?.customerProperties),
+    detail: `${d?.customerProperties?.length || 0} customer properties`,
+  }));
+
+  const orgPropertiesResult = await test('happy', 'listOrganizationProperties', 'listOrganizationProperties', {}, (d) => ({
+    ok: Array.isArray(d?.organizationProperties),
+    detail: `${d?.organizationProperties?.length || 0} organization properties`,
+  }));
+
+  const orgPropertySlug = orgPropertiesResult?.organizationProperties?.[0]?.slug;
+  if (orgPropertySlug) {
+    await test('happy', `getOrganizationProperty (${orgPropertySlug})`, 'getOrganizationProperty', { slug: orgPropertySlug }, (d) => ({
+      ok: !!d?.organizationProperty?.slug,
+      detail: d?.organizationProperty?.name,
+    }));
+  }
 
   const tagsResult = await test('happy', 'listTags (page 1)', 'listTags', { page: 1 }, (d) => ({
     ok: Array.isArray(d?.tags),
