@@ -129,13 +129,14 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
 
   describe('Build Structure Validation', () => {
     it('should have correct entry point file', () => {
-      const entryPoint = path.join(buildDir, 'server/index.js');
+      const entryPoint = path.join(buildDir, 'server/cli.js');
       expect(fs.existsSync(entryPoint)).toBe(true);
       
       // Verify it's a valid JavaScript file
       const content = fs.readFileSync(entryPoint, 'utf8');
-      expect(content).toContain('export');
-      expect(content.length).toBeGreaterThan(1000); // Should be substantial
+      expect(content).toContain('main');
+      expect(content).toContain('./index.js');
+      expect(content).toContain('Failed to start application');
     });
 
     it('should have production package.json with correct dependencies', () => {
@@ -178,6 +179,7 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
     it('should have all server modules built', () => {
       const serverDir = path.join(buildDir, 'server');
       const expectedFiles = [
+        'cli.js',
         'index.js',
         'tools/index.js',
         'resources/index.js', 
