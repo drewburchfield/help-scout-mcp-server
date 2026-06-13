@@ -678,11 +678,23 @@ export class ToolHandler {
       const duration = Date.now() - startTime;
       // Add to call history for future validation
       this.callHistory.push(request.params.name);
+
+      const firstContent = result.content?.[0];
+      if (!firstContent || firstContent.type !== 'text' || typeof firstContent.text !== 'string') {
+        return createMcpToolError(
+          new Error('Tool returned an invalid MCP response: missing text content'),
+          {
+            toolName: request.params.name,
+            requestId,
+            duration,
+          }
+        );
+      }
       
       // Enhance result with API constraint guidance (best-effort: never turn a success into a failure)
       let guidanceProvided = false;
       try {
-        const originalContent = JSON.parse((result.content[0] as any).text);
+        const originalContent = JSON.parse(firstContent.text);
         const guidance = HelpScoutAPIConstraints.generateToolGuidance(
           request.params.name,
           originalContent,
