@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S node --loader ts-node/esm
 /**
  * Seed golden test data for v1.7.0 manual testing.
  *
@@ -6,8 +6,8 @@
  * so message content redaction and field visibility can be verified end-to-end.
  *
  * Usage:
- *   npx tsx tests/seed-test-data.ts           # Create/update golden records
- *   npx tsx tests/seed-test-data.ts --cleanup  # Delete golden records
+ *   node --loader ts-node/esm tests/seed-test-data.ts           # Create/update golden records
+ *   node --loader ts-node/esm tests/seed-test-data.ts --cleanup  # Delete golden records
  */
 
 import 'dotenv/config';
@@ -479,10 +479,10 @@ async function main(): Promise<void> {
   log(`Email:        ${GOLDEN_EMAIL}`);
   log('');
   log('Verify with:');
-  log('  npx tsx tests/test-customer-org-live.ts');
+  log('  node --loader ts-node/esm tests/test-customer-org-live.ts');
   log('');
   log('Clean up with:');
-  log('  npx tsx tests/seed-test-data.ts --cleanup');
+  log('  node --loader ts-node/esm tests/seed-test-data.ts --cleanup');
 }
 
 main().catch((e) => {

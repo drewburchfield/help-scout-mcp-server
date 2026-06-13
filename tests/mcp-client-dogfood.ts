@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S node --loader ts-node/esm
 /**
  * Full MCP client dogfood harness.
  *
@@ -8,7 +8,7 @@
  *
  * Usage:
  *   npm run build
- *   npx tsx tests/mcp-client-dogfood.ts
+ *   node --loader ts-node/esm tests/mcp-client-dogfood.ts
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';

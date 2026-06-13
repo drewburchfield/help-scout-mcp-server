@@ -1,11 +1,10 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S node --loader ts-node/esm
 /**
  * Comprehensive authenticated edge-case test for all 16 MCP tools.
- * Designed by Claude + Gemini + Codex braintrust.
  *
- * Run: npx tsx tests/test-all-tools-edge-cases.ts
+ * Run: node --loader ts-node/esm tests/test-all-tools-edge-cases.ts
  *
- * Golden data required: run `npx tsx tests/seed-test-data.ts` first.
+ * Golden data required: run `node --loader ts-node/esm tests/seed-test-data.ts` first.
  */
 
 import 'dotenv/config';

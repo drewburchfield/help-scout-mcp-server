@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S node --loader ts-node/esm
 /**
  * Integration Workflow Tests
  *
@@ -6,7 +6,7 @@
  * Each scenario feeds outputs from one tool into inputs for the next,
  * verifying structural consistency and cross-reference validity.
  *
- * Usage: npx tsx tests/integration-workflows.ts
+ * Usage: node --loader ts-node/esm tests/integration-workflows.ts
  */
 
 import { spawn, ChildProcess } from 'child_process';

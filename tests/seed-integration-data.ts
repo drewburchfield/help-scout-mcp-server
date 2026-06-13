@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S node --loader ts-node/esm
 /**
  * Seed integration test conversations for Help Scout MCP workflow testing.
  *
@@ -7,8 +7,8 @@
  * search, retrieve, and thread-read against.
  *
  * Usage:
- *   npx tsx tests/seed-integration-data.ts           # Create conversations (idempotent)
- *   npx tsx tests/seed-integration-data.ts --cleanup  # Delete seeded conversations
+ *   node --loader ts-node/esm tests/seed-integration-data.ts           # Create conversations (idempotent)
+ *   node --loader ts-node/esm tests/seed-integration-data.ts --cleanup  # Delete seeded conversations
  */
 
 import 'dotenv/config';
@@ -455,7 +455,7 @@ async function main(): Promise<void> {
   }
   log('');
   log('Clean up with:');
-  log('  npx tsx tests/seed-integration-data.ts --cleanup');
+  log('  node --loader ts-node/esm tests/seed-integration-data.ts --cleanup');
 }
 
 main().catch((e) => {

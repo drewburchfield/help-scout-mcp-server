@@ -1,11 +1,11 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env -S node --loader ts-node/esm
 /**
  * Seed 15 additional customers into the Meridian Testing Corp org.
  * This populates the org members endpoint and tests pagination.
  *
  * Usage:
- *   npx tsx tests/seed-org-customers.ts           # Create customers
- *   npx tsx tests/seed-org-customers.ts --cleanup  # Delete seeded customers
+ *   node --loader ts-node/esm tests/seed-org-customers.ts           # Create customers
+ *   node --loader ts-node/esm tests/seed-org-customers.ts --cleanup  # Delete seeded customers
  */
 
 import 'dotenv/config';
@@ -161,8 +161,8 @@ async function main(): Promise<void> {
   const failed = results.filter(r => r.action.startsWith('failed')).length;
 
   console.log(`\n=== Summary: ${created} created, ${existing} existing, ${failed} failed ===`);
-  console.log(`\nVerify with: npx tsx tests/verify-stale-build-fixes.ts`);
-  console.log(`Clean up with: npx tsx tests/seed-org-customers.ts --cleanup\n`);
+  console.log(`\nVerify with: node --loader ts-node/esm tests/verify-stale-build-fixes.ts`);
+  console.log(`Clean up with: node --loader ts-node/esm tests/seed-org-customers.ts --cleanup\n`);
 }
 
 main().catch((e) => {
