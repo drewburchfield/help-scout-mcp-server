@@ -400,6 +400,27 @@ describe('ToolHandler', () => {
       const textContent = result.content[0] as { type: 'text'; text: string };
       expect(textContent.text).toContain('Unknown tool');
     });
+
+    it('should return a structured error when a tool returns no text content', async () => {
+      jest.spyOn(toolHandler as any, 'searchInboxes').mockResolvedValue({ content: [] });
+
+      const request: CallToolRequest = {
+        method: 'tools/call',
+        params: {
+          name: 'searchInboxes',
+          arguments: { query: 'support' },
+        },
+      };
+
+      const result = await toolHandler.callTool(request);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]).toHaveProperty('type', 'text');
+
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+      expect(response.error.code).toBe('TOOL_ERROR');
+      expect(response.error.message).toContain('missing text content');
+    });
   });
 
   describe('searchConversations', () => {
