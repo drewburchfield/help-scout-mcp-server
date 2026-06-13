@@ -438,6 +438,9 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
 
       const handler = readResourceCall[1];
       const result = await handler({ params: { uri: 'helpscout://threads' } });
+
+      expect(result.contents[0].uri).toBe('helpscout://threads');
+      expect(result.contents[0].mimeType).toBe('application/json');
       const payload = JSON.parse(result.contents[0].text);
 
       expect(payload.error.code).toBe('RESOURCE_ERROR');
