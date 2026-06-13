@@ -82,7 +82,7 @@ export const ThreadSchema = z.object({
 // MCP Tool Input Schemas
 export const SearchInboxesInputSchema = z.object({
   query: z.string(),
-  limit: z.number().min(1).max(100).default(50),
+  limit: z.number().int().min(1).max(100).default(50),
   cursor: z.string().optional(),
 });
 
@@ -93,7 +93,7 @@ export const SearchConversationsInputSchema = z.object({
   status: z.enum(['active', 'pending', 'closed', 'spam']).optional(),
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
-  limit: z.number().min(1).max(100).default(50),
+  limit: z.number().int().min(1).max(100).default(50),
   cursor: z.string().optional(),
   sort: z.enum(['createdAt', 'modifiedAt', 'number']).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
@@ -102,7 +102,7 @@ export const SearchConversationsInputSchema = z.object({
 
 export const GetThreadsInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
-  limit: z.number().min(1).max(200).default(200),
+  limit: z.number().int().min(1).max(200).default(200),
   cursor: z.string().optional(),
 });
 
@@ -120,7 +120,7 @@ export const AdvancedConversationSearchInputSchema = z.object({
   status: z.enum(['active', 'pending', 'closed', 'spam']).optional(),
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
-  limit: z.number().min(1).max(100).default(50),
+  limit: z.number().int().min(1).max(100).default(50),
 });
 
 export const MultiStatusConversationSearchInputSchema = z.object({
@@ -128,10 +128,10 @@ export const MultiStatusConversationSearchInputSchema = z.object({
   inboxId: z.string().optional(),
   statuses: z.array(z.enum(['active', 'pending', 'closed', 'spam'])).default(['active', 'pending', 'closed']),
   searchIn: z.array(z.enum(['body', 'subject', 'both'])).default(['both']),
-  timeframeDays: z.number().min(1).max(365).default(60),
+  timeframeDays: z.number().int().min(1).max(365).default(60),
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
-  limitPerStatus: z.number().min(1).max(100).default(25),
+  limitPerStatus: z.number().int().min(1).max(100).default(25),
 });
 
 export const StructuredConversationFilterInputSchema = z.object({
@@ -147,7 +147,7 @@ export const StructuredConversationFilterInputSchema = z.object({
   modifiedSince: z.string().optional(),
   sortBy: z.enum(['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
-  limit: z.number().min(1).max(100).default(50),
+  limit: z.number().int().min(1).max(100).default(50),
   cursor: z.string().optional(),
 }).refine(
   (data) => !!(data.assignedTo !== undefined || data.folderId !== undefined || data.customerIds !== undefined || data.conversationNumber !== undefined || (data.sortBy && ['waitingSince', 'customerName', 'customerEmail'].includes(data.sortBy))),
@@ -226,11 +226,11 @@ export const ListCustomersInputSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   query: z.string().optional().describe('Advanced query syntax, e.g. (email:"john@example.com")'),
-  mailbox: z.coerce.number().optional().describe('Filter by inbox ID'),
+  mailbox: z.coerce.number().int().optional().describe('Filter by inbox ID'),
   modifiedSince: z.string().optional().describe('ISO 8601 date'),
   sortField: z.enum(['createdAt', 'firstName', 'lastName', 'modifiedAt']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
-  page: z.number().min(1).default(1),
+  page: z.number().int().min(1).default(1),
 });
 
 export const SearchCustomersByEmailInputSchema = z.object({
@@ -252,17 +252,17 @@ export const GetOrganizationInputSchema = z.object({
 export const ListOrganizationsInputSchema = z.object({
   sortField: z.enum(['name', 'customerCount', 'conversationCount', 'lastInteractionAt']).default('lastInteractionAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
-  page: z.number().min(1).default(1),
+  page: z.number().int().min(1).default(1),
 });
 
 export const GetOrganizationMembersInputSchema = z.object({
   organizationId: z.string().regex(/^\d+$/, 'Organization ID must be numeric').describe('Organization ID'),
-  page: z.number().min(1).default(1),
+  page: z.number().int().min(1).default(1),
 });
 
 export const GetOrganizationConversationsInputSchema = z.object({
   organizationId: z.string().regex(/^\d+$/, 'Organization ID must be numeric').describe('Organization ID'),
-  page: z.number().min(1).default(1),
+  page: z.number().int().min(1).default(1),
 });
 
 export const GetCustomerContactsInputSchema = z.object({
@@ -270,7 +270,7 @@ export const GetCustomerContactsInputSchema = z.object({
 });
 
 export const ListAllInboxesInputSchema = z.object({
-  limit: z.number().min(1).max(100).default(100),
+  limit: z.number().int().min(1).max(100).default(100),
 });
 
 // Response Types

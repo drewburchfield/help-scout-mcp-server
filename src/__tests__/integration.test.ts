@@ -469,7 +469,7 @@ describe('Complete User Workflows - Integration Tests', () => {
       const summaryResponse = JSON.parse((summaryResult.content[0] as any).text);
 
       expect(summaryResponse.conversation.subject).toBe('New escalation - urgent');
-      // Verify message bodies are present (PII redaction tested separately in dedicated tests)
+      // Verify message bodies are present (message content redaction is tested separately)
       expect(summaryResponse.firstCustomerMessage.body).toBeDefined();
       expect(summaryResponse.latestStaffReply.body).toBeDefined();
 

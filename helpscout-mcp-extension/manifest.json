@@ -4,7 +4,7 @@
   "display_name": "Help Scout MCP Server",
   "version": "1.7.0",
   "description": "Connect Claude and other AI assistants to your Help Scout conversations, customers, organizations, and inbox data.",
-  "long_description": "Connect your AI assistant to Help Scout for customer support investigation and account-level analysis.\n\n**Search & Analysis:**\n• Advanced conversation search with query syntax\n• Multi-status search across active, pending, and closed\n• Direct ticket lookup by number\n• Customer lookup by name, email, and organization\n• Organization-level customer and conversation traversal\n• Conversation summaries and full thread retrieval\n\n**Enterprise Security:**\n• OAuth2 Client Credentials authentication\n• Optional content redaction for privacy\n• Built-in caching and rate limiting\n• Automatic retry with exponential backoff",
+  "long_description": "Connect your AI assistant to Help Scout for customer support investigation and account-level analysis.\n\n**Search & Analysis:**\n• Advanced conversation search with query syntax\n• Multi-status search across active, pending, and closed\n• Direct ticket lookup by number\n• Customer lookup by name, email, and organization\n• Organization-level customer and conversation traversal\n• Conversation summaries and full thread retrieval\n\n**Security:**\n• OAuth2 Client Credentials authentication\n• Optional message content redaction\n• Built-in caching and rate limiting\n• Automatic retry with exponential backoff",
   "author": {
     "name": "Drew Burchfield",
     "url": "https://github.com/drewburchfield"
@@ -18,11 +18,11 @@
   "screenshots": [],
   "server": {
     "type": "node",
-    "entry_point": "build/server/index.js",
+    "entry_point": "build/server/cli.js",
     "mcp_config": {
       "command": "node",
       "args": [
-        "${__dirname}/build/server/index.js"
+        "${__dirname}/build/server/cli.js"
       ],
       "env": {
         "HELPSCOUT_APP_ID": "${user_config.app_id}",
@@ -68,7 +68,7 @@
     "redact_message_content": {
       "type": "boolean",
       "title": "Redact Message Content",
-      "description": "Hide message bodies in responses for privacy",
+      "description": "Replace message bodies with placeholders in responses",
       "default": false,
       "required": false
     },

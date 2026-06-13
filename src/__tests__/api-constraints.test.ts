@@ -87,6 +87,21 @@ describe('HelpScoutAPIConstraints', () => {
       expect(result.isValid).toBe(false);
       expect(result.errors).toContain('searchTerms is required and must be a non-empty array');
     });
+
+    it('should block comprehensiveConversationSearch when an inbox is named without inboxId', () => {
+      const context: ToolCallContext = {
+        toolName: 'comprehensiveConversationSearch',
+        arguments: { searchTerms: ['urgent'] },
+        userQuery: 'find urgent conversations in the support inbox',
+        previousCalls: []
+      };
+
+      const result = HelpScoutAPIConstraints.validateToolCall(context);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('User mentioned an inbox by name but no inboxId provided');
+      expect(result.requiredPrerequisites).toContain('searchInboxes');
+    });
   });
 
   describe('inbox mention detection', () => {

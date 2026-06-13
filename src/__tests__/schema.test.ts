@@ -1,6 +1,14 @@
 import { 
+  GetOrganizationConversationsInputSchema,
+  GetOrganizationMembersInputSchema,
+  GetThreadsInputSchema,
+  ListAllInboxesInputSchema,
+  ListCustomersInputSchema,
+  ListOrganizationsInputSchema,
   MultiStatusConversationSearchInputSchema,
   SearchConversationsInputSchema,
+  SearchInboxesInputSchema,
+  StructuredConversationFilterInputSchema,
 } from '../schema/types.js';
 
 describe('Schema Validation', () => {
@@ -88,6 +96,22 @@ describe('Schema Validation', () => {
       }).toThrow();
     });
 
+    it('should reject fractional numeric controls', () => {
+      expect(() => {
+        MultiStatusConversationSearchInputSchema.parse({
+          searchTerms: ['test'],
+          timeframeDays: 30.5
+        });
+      }).toThrow();
+
+      expect(() => {
+        MultiStatusConversationSearchInputSchema.parse({
+          searchTerms: ['test'],
+          limitPerStatus: 10.5
+        });
+      }).toThrow();
+    });
+
     it('should accept date overrides', () => {
       const input = {
         searchTerms: ['test'],
@@ -130,6 +154,32 @@ describe('Schema Validation', () => {
           status: 'invalid'
         });
       }).toThrow();
+    });
+
+    it('should reject fractional limit values', () => {
+      expect(() => {
+        SearchConversationsInputSchema.parse({
+          limit: 25.7
+        });
+      }).toThrow();
+    });
+  });
+
+  describe('integer-only numeric tool inputs', () => {
+    it('should reject fractional paging and limit values', () => {
+      const cases = [
+        () => SearchInboxesInputSchema.parse({ query: '', limit: 1.5 }),
+        () => GetThreadsInputSchema.parse({ conversationId: '123', limit: 1.5 }),
+        () => StructuredConversationFilterInputSchema.parse({ assignedTo: -1, limit: 1.5 }),
+        () => ListCustomersInputSchema.parse({ page: 1.5 }),
+        () => ListCustomersInputSchema.parse({ mailbox: 123.5 }),
+        () => ListOrganizationsInputSchema.parse({ page: 1.5 }),
+        () => GetOrganizationMembersInputSchema.parse({ organizationId: '123', page: 1.5 }),
+        () => GetOrganizationConversationsInputSchema.parse({ organizationId: '123', page: 1.5 }),
+        () => ListAllInboxesInputSchema.parse({ limit: 1.5 }),
+      ];
+
+      cases.forEach(parse => expect(parse).toThrow());
     });
   });
 });

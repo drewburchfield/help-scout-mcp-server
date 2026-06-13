@@ -41,7 +41,7 @@ jest.mock('../utils/config.js', () => ({
       level: 'info',
     },
     security: {
-      allowPii: false,
+      redactMessageContent: false,
     },
   },
   validateConfig: jest.fn(),
@@ -57,14 +57,6 @@ describe('HelpScoutClient', () => {
     nock.restore();
     nock.activate();
     
-    // Enable debug for failing tests
-    if (process.env.NODE_ENV !== 'production') {
-      nock.recorder.rec({
-        dont_print: true,
-        output_objects: true
-      });
-    }
-    
     // Clear any environment variables from previous tests
     delete process.env.HELPSCOUT_API_KEY;
     delete process.env.HELPSCOUT_CLIENT_ID;
@@ -78,7 +70,9 @@ describe('HelpScoutClient', () => {
     if (pending.length > 0) {
       console.log('Pending nock interceptors:', pending);
     }
+    nock.recorder.clear();
     nock.cleanAll();
+    nock.restore();
   });
 
   describe('authentication', () => {

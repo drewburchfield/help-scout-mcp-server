@@ -124,9 +124,12 @@ export class HelpScoutAPIConstraints {
     const hasSearchedInboxes = previousCalls.includes('searchInboxes');
     
     if (inboxMentioned && !hasInboxId) {
+      errors.push('User mentioned an inbox by name but no inboxId provided');
       if (!hasSearchedInboxes) {
         requiredPrerequisites.push('searchInboxes');
         suggestions.push('REQUIRED: Call searchInboxes first when user mentions specific inbox names');
+      } else {
+        suggestions.push('Use the inbox ID from your previous searchInboxes call');
       }
     }
     

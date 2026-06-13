@@ -41,9 +41,9 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
 
     it('should have proper server configuration', () => {
       expect(manifest.server.type).toBe('node');
-      expect(manifest.server.entry_point).toBe('build/server/index.js');
+      expect(manifest.server.entry_point).toBe('build/server/cli.js');
       expect(manifest.server.mcp_config.command).toBe('node');
-      expect(manifest.server.mcp_config.args).toContain('${__dirname}/build/server/index.js');
+      expect(manifest.server.mcp_config.args).toContain('${__dirname}/build/server/cli.js');
     });
 
     it('should have OAuth2 authentication configuration', () => {

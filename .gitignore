@@ -94,8 +94,13 @@ scripts/*.state.json
 # Braintrust session logs
 .braintrust/
 
+# Local review state
+.clawpatch/
+
 # Sidecar projects
 meridian-sim/
 
-tests/
+tests/*
+!tests/
+!tests/*.ts
 *.tgz

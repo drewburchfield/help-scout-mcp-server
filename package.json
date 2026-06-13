@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "help-scout-mcp-server": "dist/index.js"
+    "help-scout-mcp-server": "dist/cli.js"
   },
   "files": [
     "dist/",
@@ -17,15 +17,18 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
     "lint": "eslint src --ext .ts",
     "type-check": "tsc --noEmit",
     "security": "semgrep --config .semgrep.yml .",
     "security:ci": "semgrep ci",
     "test": "jest",
-    "test:mcp": "node tests/test-mcp-client.cjs",
-    "test:forensic": "node tests/test-forensic-scenarios.cjs",
+    "test:mcp": "npm run dogfood:mcp",
+    "dogfood:mcp": "npm run build && tsx tests/mcp-client-dogfood.ts",
+    "dogfood:workflows": "npm run build && tsx tests/integration-workflows.ts",
+    "dogfood:full": "npm run dogfood:mcp && npm run dogfood:workflows",
+    "test:forensic": "tsx tests/test-all-tools-edge-cases.ts",
     "test:docker": "node tests/test-docker.cjs",
     "test:docker:ci": "node tests/test-docker-ci.cjs",
     "clean": "rimraf dist",
@@ -33,7 +36,7 @@
     "version:minor": "node scripts/bump-version.cjs minor",
     "version:major": "node scripts/bump-version.cjs major",
     "prepublishOnly": "npm run clean && npm run build",
-    "prepack": "npm run build",
+    "prepack": "npm run clean && npm run build",
     "mcpb:build": "node scripts/build-mcpb.js",
     "mcpb:pack": "npm run mcpb:build && cd helpscout-mcp-extension && npx @anthropic-ai/mcpb pack",
     "build:all": "npm run build && npm run mcpb:build",

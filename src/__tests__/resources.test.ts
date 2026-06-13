@@ -110,6 +110,16 @@ describe('ResourceHandler', () => {
           resourceHandler.handleResource('helpscout://inboxes?size=51')
         ).rejects.toThrow('size must be a number between 1 and 50');
       });
+
+      it('should reject partially numeric pagination parameters', async () => {
+        await expect(
+          resourceHandler.handleResource('helpscout://inboxes?page=1abc')
+        ).rejects.toThrow('page must be a number between 1 and 10000');
+
+        await expect(
+          resourceHandler.handleResource('helpscout://inboxes?size=10junk')
+        ).rejects.toThrow('size must be a number between 1 and 50');
+      });
     });
 
     describe('helpscout://conversations', () => {
@@ -189,6 +199,12 @@ describe('ResourceHandler', () => {
       it('should reject invalid page parameters', async () => {
         await expect(
           resourceHandler.handleResource('helpscout://conversations?page=0')
+        ).rejects.toThrow('page must be a number between 1 and 10000');
+      });
+
+      it('should reject fractional page parameters', async () => {
+        await expect(
+          resourceHandler.handleResource('helpscout://conversations?page=1.5')
         ).rejects.toThrow('page must be a number between 1 and 10000');
       });
 
@@ -284,9 +300,9 @@ describe('ResourceHandler', () => {
         ).rejects.toThrow('conversationId parameter is required');
       });
 
-      it('should redact thread bodies when allowPii is false', async () => {
-        const originalAllowPii = config.security.allowPii;
-        config.security.allowPii = false;
+      it('should hide thread bodies when message content redaction is enabled', async () => {
+        const originalRedactMessageContent = config.security.redactMessageContent;
+        config.security.redactMessageContent = true;
 
         try {
           const mockResponse = {
@@ -295,7 +311,7 @@ describe('ResourceHandler', () => {
                 {
                   id: 1,
                   type: 'customer',
-                  body: 'Sensitive customer message with PII',
+                  body: 'Customer message with account details',
                   createdAt: '2023-01-01T00:00:00Z'
                 },
                 {
@@ -326,13 +342,13 @@ describe('ResourceHandler', () => {
           expect(data.threads[0].id).toBe(1);
           expect(data.threads[0].type).toBe('customer');
         } finally {
-          config.security.allowPii = originalAllowPii;
+          config.security.redactMessageContent = originalRedactMessageContent;
         }
       });
 
-      it('should show thread bodies when allowPii is true', async () => {
-        const originalAllowPii = config.security.allowPii;
-        config.security.allowPii = true;
+      it('should show thread bodies when message content redaction is disabled', async () => {
+        const originalRedactMessageContent = config.security.redactMessageContent;
+        config.security.redactMessageContent = false;
 
         try {
           const mockResponse = {
@@ -362,7 +378,7 @@ describe('ResourceHandler', () => {
           const data = JSON.parse(resource.text as string);
           expect(data.threads[0].body).toBe('Visible customer message');
         } finally {
-          config.security.allowPii = originalAllowPii;
+          config.security.redactMessageContent = originalRedactMessageContent;
         }
       });
 
@@ -420,7 +436,7 @@ describe('ResourceHandler', () => {
         nock(baseURL)
           .get('/mailboxes')
           .query({ page: 1, size: 50 })
-          .reply(500, { message: 'Internal Server Error' });
+          .reply(400, { message: 'Bad Request' });
 
         await expect(
           resourceHandler.handleResource('helpscout://inboxes')

@@ -21,7 +21,7 @@ export interface Config {
     level: string;
   };
   security: {
-    allowPii: boolean;
+    redactMessageContent: boolean;
   };
   connectionPool: {
     maxSockets: number;
@@ -30,6 +30,16 @@ export interface Config {
     keepAlive: boolean;
     keepAliveMsecs: number;
   };
+}
+
+function parseIntegerEnv(name: string, defaultValue: number, min = 0): number {
+  const rawValue = process.env[name];
+  if (rawValue === undefined || rawValue.trim() === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number(rawValue);
+  return Number.isInteger(parsed) && parsed >= min ? parsed : defaultValue;
 }
 
 export const config: Config = {
@@ -42,23 +52,22 @@ export const config: Config = {
     defaultInboxId: process.env.HELPSCOUT_DEFAULT_INBOX_ID,
   },
   cache: {
-    ttlSeconds: parseInt(process.env.CACHE_TTL_SECONDS || '300', 10),
-    maxSize: parseInt(process.env.MAX_CACHE_SIZE || '10000', 10),
+    ttlSeconds: parseIntegerEnv('CACHE_TTL_SECONDS', 300),
+    maxSize: parseIntegerEnv('MAX_CACHE_SIZE', 10000, 1),
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',
   },
   security: {
-    // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies
-    // ALLOW_PII=true is backwards compat (always shows content)
-    allowPii: process.env.REDACT_MESSAGE_CONTENT !== 'true' || process.env.ALLOW_PII === 'true',
+    // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies.
+    redactMessageContent: process.env.REDACT_MESSAGE_CONTENT === 'true',
   },
   connectionPool: {
-    maxSockets: parseInt(process.env.HTTP_MAX_SOCKETS || '50', 10),
-    maxFreeSockets: parseInt(process.env.HTTP_MAX_FREE_SOCKETS || '10', 10),
-    timeout: parseInt(process.env.HTTP_SOCKET_TIMEOUT || '30000', 10),
+    maxSockets: parseIntegerEnv('HTTP_MAX_SOCKETS', 50, 1),
+    maxFreeSockets: parseIntegerEnv('HTTP_MAX_FREE_SOCKETS', 10),
+    timeout: parseIntegerEnv('HTTP_SOCKET_TIMEOUT', 30000, 1),
     keepAlive: process.env.HTTP_KEEP_ALIVE !== 'false', // Default to true
-    keepAliveMsecs: parseInt(process.env.HTTP_KEEP_ALIVE_MSECS || '1000', 10),
+    keepAliveMsecs: parseIntegerEnv('HTTP_KEEP_ALIVE_MSECS', 1000, 1),
   },
 };
 

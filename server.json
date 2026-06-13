@@ -34,7 +34,7 @@
         },
         {
           "name": "REDACT_MESSAGE_CONTENT",
-          "description": "Hide message bodies in responses for compliance (true/false)",
+          "description": "Replace message bodies with placeholders in responses (true/false)",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
