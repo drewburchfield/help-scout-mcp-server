@@ -31,6 +31,7 @@ jest.mock('../resources/index.js', () => ({
 jest.mock('../tools/index.js', () => ({
   toolHandler: {
     listTools: jest.fn(() => Promise.resolve([])),
+    setUserContext: jest.fn(),
     callTool: jest.fn(() => Promise.resolve({ content: [{ type: 'text', text: 'test' }] })),
   },
 }));
@@ -367,6 +368,29 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
         'Calling tool',
         expect.objectContaining({ arguments: expect.objectContaining({ query: 'sensitive@example.com' }) }),
       );
+    });
+
+    it('should pass MCP user query metadata into tool context before calling tools', async () => {
+      const { toolHandler } = require('../tools/index.js');
+
+      const callToolCall = mockServer.setRequestHandler.mock.calls.find(
+        call => call[0].method === 'tools/call'
+      );
+      expect(callToolCall).toBeDefined();
+
+      const handler = callToolCall[1];
+      const request = {
+        params: {
+          name: 'searchConversations',
+          arguments: { query: 'urgent' },
+          _meta: { userQuery: 'find urgent tickets in the support inbox' },
+        }
+      };
+
+      await handler(request);
+
+      expect(toolHandler.setUserContext).toHaveBeenCalledWith('find urgent tickets in the support inbox');
+      expect(toolHandler.callTool).toHaveBeenCalledWith(request);
     });
 
     it('should handle resource reads with proper logging', async () => {

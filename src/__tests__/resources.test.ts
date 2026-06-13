@@ -417,6 +417,15 @@ describe('ResourceHandler', () => {
         expect(typeof data.isoTime).toBe('string');
         expect(typeof data.unixTime).toBe('number');
       });
+
+      it('should ignore pagination parameters that do not apply to clock', async () => {
+        const resource = await resourceHandler.handleResource('helpscout://clock?page=abc&size=too-large');
+
+        expect(resource.uri).toBe('helpscout://clock');
+        const data = JSON.parse(resource.text as string);
+        expect(data).toHaveProperty('isoTime');
+        expect(data).toHaveProperty('unixTime');
+      });
     });
 
     describe('error handling', () => {

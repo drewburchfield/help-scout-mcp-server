@@ -176,6 +176,15 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       });
     });
 
+    it('should derive production dependencies from package.json', () => {
+      const rootPackageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+      const prodPackageJson = JSON.parse(fs.readFileSync(path.join(buildDir, 'package.json'), 'utf8'));
+      const buildScript = fs.readFileSync(path.join(process.cwd(), 'scripts/build-mcpb.js'), 'utf8');
+
+      expect(prodPackageJson.dependencies).toEqual(rootPackageJson.dependencies);
+      expect(buildScript).toContain('dependencies: packageJson.dependencies');
+    });
+
     it('should have all server modules built', () => {
       const serverDir = path.join(buildDir, 'server');
       const expectedFiles = [

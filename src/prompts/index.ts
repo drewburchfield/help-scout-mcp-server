@@ -251,7 +251,7 @@ When analyzing across multiple inboxes:
 
 2. Calculate the date 7 days ago from the current time.
 
-3. ${inboxId ? '' : 'IMPORTANT: If the user mentioned a specific inbox by name, you MUST first use "searchInboxes" to get the inbox ID.\n\n4. '}Search for conversations using the "searchConversations" tool with these parameters:
+3. ${inboxId ? '' : 'IMPORTANT: If the user mentioned a specific inbox by name, use inbox IDs from the server instructions. If the list may be stale, call "listAllInboxes" to refresh available inbox IDs.\n\n4. '}Search for conversations using the "searchConversations" tool with these parameters:
    \`\`\`json
    {
      "createdAfter": "<calculated_date_7_days_ago>",
@@ -303,7 +303,7 @@ This will return conversations created in the last 7 days, sorted by creation da
 
 1. Get current server time using the "getServerTime" tool.
 
-2. ${inboxId ? '' : 'CRITICAL: If the user mentioned a specific inbox by name (e.g., "support inbox"), you MUST first use "searchInboxes" to get the inbox ID.\n\n3. '}Search for conversations with urgent-related tags using the "searchConversations" tool.${timeFilter}
+2. ${inboxId ? '' : 'CRITICAL: If the user mentioned a specific inbox by name (e.g., "support inbox"), use inbox IDs from the server instructions. If the list may be stale, call "listAllInboxes" to refresh available inbox IDs.\n\n3. '}Search for conversations with urgent-related tags using the "searchConversations" tool.${timeFilter}
 
 ${inboxId ? '3' : '4'}. Perform multiple searches for different urgent tag variations:
    

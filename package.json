@@ -40,7 +40,7 @@
     "mcpb:build": "node scripts/build-mcpb.js",
     "mcpb:pack": "npm run mcpb:build && cd helpscout-mcp-extension && npx @anthropic-ai/mcpb pack",
     "build:all": "npm run build && npm run mcpb:build",
-    "sync:plugin": "rm -rf plugins/helpscout-navigator && git clone --depth 1 https://github.com/drewburchfield/helpscout-navigator.git plugins/helpscout-navigator && rm -rf plugins/helpscout-navigator/.git"
+    "sync:plugin": "node scripts/sync-plugin.cjs"
   },
   "keywords": [
     "mcp",

@@ -230,6 +230,23 @@ describe('PromptHandler', () => {
         expect(promptText).toContain('"status": "pending"');
         expect(promptText).toContain('"tag": "urgent"');
       });
+
+      it('should not direct agents to deprecated searchInboxes when inboxId is absent', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'search-last-7-days',
+            arguments: {}
+          }
+        };
+
+        const result = await promptHandler.getPrompt(request);
+        const promptText = result.messages[0].content.text;
+
+        expect(promptText).not.toContain('searchInboxes');
+        expect(promptText).toContain('server instructions');
+        expect(promptText).toContain('listAllInboxes');
+      });
     });
 
     describe('find-urgent-tags prompt', () => {
@@ -285,6 +302,23 @@ describe('PromptHandler', () => {
         expect(promptText).toContain('24h');
         expect(promptText).toContain('subtract 24 hours');
         expect(promptText).toContain('"createdAfter": "<calculated_time>"');
+      });
+
+      it('should not direct agents to deprecated searchInboxes when inboxId is absent', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'find-urgent-tags',
+            arguments: {}
+          }
+        };
+
+        const result = await promptHandler.getPrompt(request);
+        const promptText = result.messages[0].content.text;
+
+        expect(promptText).not.toContain('searchInboxes');
+        expect(promptText).toContain('server instructions');
+        expect(promptText).toContain('listAllInboxes');
       });
     });
 

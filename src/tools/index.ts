@@ -133,6 +133,11 @@ export class ToolHandler {
     this.currentUserQuery = userQuery;
   }
 
+  private getToolCallUserQuery(args: Record<string, unknown>): string | undefined {
+    const userQuery = args.__userQuery;
+    return typeof userQuery === 'string' && userQuery.trim() ? userQuery : undefined;
+  }
+
   async listTools(): Promise<Tool[]> {
     return [
       {
@@ -551,11 +556,14 @@ export class ToolHandler {
       argumentKeys: Object.keys(request.params.arguments || {}),
     });
 
+    const args = request.params.arguments || {};
+    const userQuery = this.getToolCallUserQuery(args) ?? this.currentUserQuery;
+
     // REVERSE LOGIC VALIDATION: Check API constraints before making the call
     const validationContext: ToolCallContext = {
       toolName: request.params.name,
-      arguments: request.params.arguments || {},
-      userQuery: this.currentUserQuery,
+      arguments: args,
+      userQuery,
       previousCalls: [...this.callHistory]
     };
 

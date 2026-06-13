@@ -75,13 +75,7 @@ async function buildMCPB() {
     name: packageJson.name,
     version: packageJson.version,
     type: "module",
-    dependencies: {
-      "@modelcontextprotocol/sdk": packageJson.dependencies["@modelcontextprotocol/sdk"],
-      "axios": packageJson.dependencies["axios"],
-      "lru-cache": packageJson.dependencies["lru-cache"],
-      "zod": packageJson.dependencies["zod"],
-      "dotenv": packageJson.dependencies["dotenv"]
-    }
+    dependencies: packageJson.dependencies
   };
   
   fs.writeFileSync(

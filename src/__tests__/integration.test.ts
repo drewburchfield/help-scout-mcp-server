@@ -352,8 +352,9 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       // Should get API constraint validation error
       expect(errorResponse.error).toBe('API Constraint Validation Failed');
-      expect(errorResponse.details.requiredPrerequisites).toContain('searchInboxes');
-      expect(errorResponse.details.suggestions[0]).toContain('REQUIRED: Call searchInboxes first');
+      expect(errorResponse.details.requiredPrerequisites).toContain('listAllInboxes');
+      expect(errorResponse.details.suggestions[0]).toContain('server instructions');
+      expect(errorResponse.details.suggestions[0]).toContain('listAllInboxes');
 
       // Verify the error provides actionable guidance
       expect(errorResponse.helpScoutAPIRequirements.message).toContain('Help Scout API constraints');

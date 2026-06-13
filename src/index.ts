@@ -182,6 +182,10 @@ Note: Inbox auto-discovery failed (${safeError}). Use listAllInboxes tool to see
         name: request.params.name, 
         argumentKeys: getArgumentKeys(request.params.arguments),
       });
+      const meta = request.params._meta as { userQuery?: unknown } | undefined;
+      if (typeof meta?.userQuery === 'string' && meta.userQuery.trim()) {
+        toolHandler.setUserContext(meta.userQuery);
+      }
       return await toolHandler.callTool(request);
     });
 

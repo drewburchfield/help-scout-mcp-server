@@ -38,10 +38,6 @@ export class ResourceHandler {
     const path = url.hostname; // For custom protocols like helpscout://, the resource name is in hostname
     const searchParams = Object.fromEntries(url.searchParams.entries());
 
-    // NAS-471: Bounds checking for page/size params
-    parseResourceIntegerParam(searchParams, 'page', 1, 1, 10000);
-    parseResourceIntegerParam(searchParams, 'size', 50, 1, 50);
-
     logger.info('Handling resource request', { uri, path, params: searchParams });
 
     switch (path) {
