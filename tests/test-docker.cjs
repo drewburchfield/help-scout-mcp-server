@@ -221,7 +221,7 @@ class DockerLiveTester {
     });
     this.assertNoError(tools, 'tools/list');
     const toolNames = tools.result.tools.map(tool => tool.name);
-    for (const required of ['getServerTime', 'listAllInboxes', 'searchInboxes']) {
+    for (const required of ['getServerTime', 'listAllInboxes', 'searchInboxes', 'listTags', 'listUsers', 'listInboxFolders']) {
       if (!toolNames.includes(required)) {
         throw new Error(`Missing expected tool ${required}`);
       }

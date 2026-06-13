@@ -162,6 +162,38 @@
     {
       "name": "getOrganizationConversations",
       "description": "List conversations associated with an organization"
+    },
+    {
+      "name": "listTags",
+      "description": "List Help Scout tags with IDs, exact names, and ticket counts"
+    },
+    {
+      "name": "getTag",
+      "description": "Get a Help Scout tag by ID"
+    },
+    {
+      "name": "listUsers",
+      "description": "List Help Scout users with optional exact email or inbox filtering"
+    },
+    {
+      "name": "getUser",
+      "description": "Get a Help Scout user by ID or the authenticated resource owner"
+    },
+    {
+      "name": "listTeams",
+      "description": "List Help Scout teams with IDs for member lookup and reporting"
+    },
+    {
+      "name": "getTeamMembers",
+      "description": "List users who belong to a Help Scout team"
+    },
+    {
+      "name": "listInboxCustomFields",
+      "description": "List custom field definitions and option IDs for an inbox"
+    },
+    {
+      "name": "listInboxFolders",
+      "description": "List folders and counts for a Help Scout inbox"
     }
   ],
   "prompts": [

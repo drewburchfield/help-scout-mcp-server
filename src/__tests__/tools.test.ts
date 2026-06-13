@@ -37,7 +37,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(17);
+      expect(tools).toHaveLength(25);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -56,6 +56,14 @@ describe('ToolHandler', () => {
         'listOrganizations',
         'getOrganizationMembers',
         'getOrganizationConversations',
+        'listTags',
+        'getTag',
+        'listUsers',
+        'getUser',
+        'listTeams',
+        'getTeamMembers',
+        'listInboxCustomFields',
+        'listInboxFolders',
       ]);
     });
 
@@ -80,6 +88,10 @@ describe('ToolHandler', () => {
         'getThreads',
         'advancedConversationSearch',
         'structuredConversationFilter',
+        'listTags',
+        'listUsers',
+        'listTeams',
+        'getTeamMembers',
       ];
 
       for (const toolName of pageBasedTools) {
@@ -207,6 +219,216 @@ describe('ToolHandler', () => {
       const response = JSON.parse(textContent.text);
       expect(response.results).toHaveLength(1);
       expect(response.results[0].name).toBe('Support Inbox');
+    });
+  });
+
+  describe('operator metadata tools', () => {
+    it('should list tags with optional name filtering', async () => {
+      nock(baseURL)
+        .get('/tags')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            tags: [
+              { id: 10, slug: 'billing', name: 'Billing', color: 'green', createdAt: '2023-01-01T00:00:00Z', ticketCount: 4 },
+              { id: 11, slug: 'shipping', name: 'Shipping', color: 'blue', createdAt: '2023-01-01T00:00:00Z', ticketCount: 1 },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 2, totalPages: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listTags',
+          arguments: { name: 'bill' },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.tags).toHaveLength(1);
+      expect(response.tags[0]).toEqual(expect.objectContaining({ id: 10, name: 'Billing', slug: 'billing' }));
+      expect(response.usage).toContain('tag');
+      expect(response.nextPage).toBeNull();
+    });
+
+    it('should get a tag by ID', async () => {
+      nock(baseURL)
+        .get('/tags/10')
+        .reply(200, {
+          id: 10,
+          slug: 'billing',
+          name: 'Billing',
+          color: 'green',
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-02T00:00:00Z',
+          ticketCount: 4,
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getTag',
+          arguments: { tagId: '10' },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.tag).toEqual(expect.objectContaining({ id: 10, name: 'Billing' }));
+    });
+
+    it('should list users with email and inbox filters', async () => {
+      nock(baseURL)
+        .get('/users')
+        .query({ page: 2, email: 'agent@example.com', mailbox: 359402 })
+        .reply(200, {
+          _embedded: {
+            users: [
+              { id: 4, firstName: 'Ada', lastName: 'Agent', email: 'agent@example.com', role: 'user', type: 'user', mention: 'ada', initials: 'AA' },
+            ],
+          },
+          page: { number: 2, size: 50, totalElements: 51, totalPages: 2 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listUsers',
+          arguments: { email: 'agent@example.com', inboxId: '359402', page: 2 },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.users).toHaveLength(1);
+      expect(response.users[0]).toEqual(expect.objectContaining({ id: 4, email: 'agent@example.com', mention: 'ada' }));
+      expect(response.nextPage).toBeNull();
+    });
+
+    it('should get a user by ID and support the authenticated user shortcut', async () => {
+      nock(baseURL)
+        .get('/users/4')
+        .reply(200, { id: 4, firstName: 'Ada', lastName: 'Agent', email: 'agent@example.com', role: 'user', type: 'user' });
+      nock(baseURL)
+        .get('/users/me')
+        .reply(200, { id: 5, firstName: 'Resource', lastName: 'Owner', email: 'owner@example.com', role: 'owner', type: 'user', companyId: 1 });
+
+      const byId = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getUser',
+          arguments: { userId: '4' },
+        },
+      });
+      const current = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getUser',
+          arguments: { userId: 'me' },
+        },
+      });
+
+      expect(JSON.parse((byId.content[0] as { type: 'text'; text: string }).text).user.id).toBe(4);
+      expect(JSON.parse((current.content[0] as { type: 'text'; text: string }).text).user).toEqual(expect.objectContaining({
+        id: 5,
+        companyId: 1,
+      }));
+    });
+
+    it('should list teams and team members', async () => {
+      nock(baseURL)
+        .get('/teams')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            teams: [
+              { id: 99, name: 'Support', mention: 'support', initials: 'S', createdAt: '2023-01-01T00:00:00Z' },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+      nock(baseURL)
+        .get('/teams/99/members')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            users: [
+              { id: 4, firstName: 'Ada', lastName: 'Agent', email: 'agent@example.com', role: 'user', type: 'user' },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+
+      const teams = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listTeams',
+          arguments: {},
+        },
+      });
+      const members = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getTeamMembers',
+          arguments: { teamId: '99' },
+        },
+      });
+
+      expect(JSON.parse((teams.content[0] as { type: 'text'; text: string }).text).teams[0]).toEqual(expect.objectContaining({ id: 99, name: 'Support' }));
+      expect(JSON.parse((members.content[0] as { type: 'text'; text: string }).text).members[0]).toEqual(expect.objectContaining({ id: 4, email: 'agent@example.com' }));
+    });
+
+    it('should list inbox custom fields and folders', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402/fields')
+        .reply(200, {
+          _embedded: {
+            fields: [
+              {
+                id: 104,
+                required: false,
+                order: 1,
+                type: 'dropdown',
+                name: 'Plan',
+                options: [{ id: 168, order: 1, label: 'Pro' }],
+              },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+      nock(baseURL)
+        .get('/mailboxes/359402/folders')
+        .reply(200, {
+          _embedded: {
+            folders: [
+              { id: 1234, name: 'Mine', type: 'mytickets', userId: 4, totalCount: 2, activeCount: 1, updatedAt: '2023-01-01T00:00:00Z' },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+
+      const fields = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listInboxCustomFields',
+          arguments: { inboxId: '359402' },
+        },
+      });
+      const folders = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listInboxFolders',
+          arguments: { inboxId: '359402' },
+        },
+      });
+
+      const fieldsResponse = JSON.parse((fields.content[0] as { type: 'text'; text: string }).text);
+      const foldersResponse = JSON.parse((folders.content[0] as { type: 'text'; text: string }).text);
+      expect(fieldsResponse.fields[0]).toEqual(expect.objectContaining({ id: 104, name: 'Plan', type: 'dropdown' }));
+      expect(fieldsResponse.fields[0].options[0]).toEqual(expect.objectContaining({ id: 168, label: 'Pro' }));
+      expect(foldersResponse.folders[0]).toEqual(expect.objectContaining({ id: 1234, name: 'Mine', activeCount: 1 }));
     });
   });
 
