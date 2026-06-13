@@ -218,13 +218,13 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
 
       const failedServer = await HelpScoutMCPServer.create();
 
-      await expect(failedServer.start()).rejects.toThrow('process.exit() was called');
+      await expect(failedServer.start()).rejects.toThrow('Failed to connect to Help Scout API');
 
       expect(logger.error).toHaveBeenCalledWith('Failed to start server',
         expect.objectContaining({ error: 'Failed to connect to Help Scout API' })
       );
-      expect(mockConsoleError).toHaveBeenCalledWith('MCP Server startup failed:', 'Failed to connect to Help Scout API');
-      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleError).not.toHaveBeenCalledWith('MCP Server startup failed:', expect.any(String));
+      expect(mockExit).not.toHaveBeenCalled();
     });
 
     it('should handle configuration validation failure', async () => {
@@ -234,13 +234,13 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       const configError = new Error('Invalid configuration');
       validateConfig.mockImplementation(() => { throw configError; });
 
-      await expect(server.start()).rejects.toThrow('process.exit() was called');
+      await expect(server.start()).rejects.toThrow('Invalid configuration');
       
       expect(logger.error).toHaveBeenCalledWith('Failed to start server', 
         expect.objectContaining({ error: 'Invalid configuration' })
       );
-      expect(mockConsoleError).toHaveBeenCalledWith('MCP Server startup failed:', 'Invalid configuration');
-      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleError).not.toHaveBeenCalledWith('MCP Server startup failed:', expect.any(String));
+      expect(mockExit).not.toHaveBeenCalled();
     });
 
     it('should stop gracefully', async () => {
@@ -389,8 +389,17 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
 
       await handler(request);
 
-      expect(toolHandler.setUserContext).toHaveBeenCalledWith('find urgent tickets in the support inbox');
-      expect(toolHandler.callTool).toHaveBeenCalledWith(request);
+      expect(toolHandler.setUserContext).not.toHaveBeenCalled();
+      expect(toolHandler.callTool).toHaveBeenCalledWith({
+        ...request,
+        params: {
+          ...request.params,
+          arguments: {
+            query: 'urgent',
+            __userQuery: 'find urgent tickets in the support inbox',
+          },
+        },
+      });
     });
 
     it('should handle resource reads with proper logging', async () => {
@@ -415,6 +424,25 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       expect(logger.debug).toHaveBeenCalledWith('Reading resource', { 
         uri: 'helpscout://inboxes' 
       });
+    });
+
+    it('should return structured resource errors for failed reads', async () => {
+      const { resourceHandler } = require('../resources/index.js');
+
+      resourceHandler.handleResource.mockRejectedValue(new Error('conversationId is required'));
+
+      const readResourceCall = mockServer.setRequestHandler.mock.calls.find(
+        call => call[0].method === 'resources/read'
+      );
+      expect(readResourceCall).toBeDefined();
+
+      const handler = readResourceCall[1];
+      const result = await handler({ params: { uri: 'helpscout://threads' } });
+      const payload = JSON.parse(result.contents[0].text);
+
+      expect(payload.error.code).toBe('RESOURCE_ERROR');
+      expect(payload.error.message).toContain('conversationId is required');
+      expect(payload.error.resourceUri).toBe('helpscout://threads');
     });
 
     it('should handle prompt requests with proper logging', async () => {

@@ -42,19 +42,19 @@ export class ResourceHandler {
 
     switch (path) {
       case 'inboxes':
-        return this.getInboxesResource(searchParams);
+        return this.getInboxesResource(uri, searchParams);
       case 'conversations':
-        return this.getConversationsResource(searchParams);
+        return this.getConversationsResource(uri, searchParams);
       case 'threads':
-        return this.getThreadsResource(searchParams);
+        return this.getThreadsResource(uri, searchParams);
       case 'clock':
-        return this.getClockResource();
+        return this.getClockResource(uri);
       default:
         throw new Error(`Unknown resource path: ${path}`);
     }
   }
 
-  private async getInboxesResource(params: Record<string, string>): Promise<TextResourceContents> {
+  private async getInboxesResource(uri: string, params: Record<string, string>): Promise<TextResourceContents> {
     try {
       const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
         page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
@@ -64,7 +64,7 @@ export class ResourceHandler {
       const inboxes = response._embedded?.mailboxes || [];
 
       return {
-        uri: 'helpscout://inboxes',
+        uri,
         mimeType: 'application/json',
         text: JSON.stringify({
           inboxes,
@@ -78,7 +78,7 @@ export class ResourceHandler {
     }
   }
 
-  private async getConversationsResource(params: Record<string, string>): Promise<TextResourceContents> {
+  private async getConversationsResource(uri: string, params: Record<string, string>): Promise<TextResourceContents> {
     try {
       const queryParams: Record<string, unknown> = {
         page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
@@ -95,7 +95,7 @@ export class ResourceHandler {
       const conversations = response._embedded?.conversations || [];
 
       return {
-        uri: 'helpscout://conversations',
+        uri,
         mimeType: 'application/json',
         text: JSON.stringify({
           conversations,
@@ -109,7 +109,7 @@ export class ResourceHandler {
     }
   }
 
-  private async getThreadsResource(params: Record<string, string>): Promise<TextResourceContents> {
+  private async getThreadsResource(uri: string, params: Record<string, string>): Promise<TextResourceContents> {
     const conversationId = params.conversationId;
     if (!conversationId) {
       throw new Error('conversationId parameter is required for threads resource');
@@ -132,7 +132,7 @@ export class ResourceHandler {
       }));
 
       return {
-        uri: `helpscout://threads?conversationId=${conversationId}`,
+        uri,
         mimeType: 'application/json',
         text: JSON.stringify({
           conversationId,
@@ -150,15 +150,17 @@ export class ResourceHandler {
     }
   }
 
-  private getClockResource(): TextResourceContents {
+  private getClockResource(uri: string): TextResourceContents {
     const now = new Date();
     const serverTime: ServerTime = {
       isoTime: now.toISOString(),
       unixTime: Math.floor(now.getTime() / 1000),
+      source: 'mcp_host_clock',
+      note: 'Timestamp from the local MCP host process clock, not the Help Scout API.',
     };
 
     return {
-      uri: 'helpscout://clock',
+      uri,
       mimeType: 'application/json',
       text: JSON.stringify(serverTime, null, 2),
     };
@@ -186,8 +188,8 @@ export class ResourceHandler {
       },
       {
         uri: 'helpscout://clock',
-        name: 'Server Time',
-        description: 'Current server timestamp for time-relative queries',
+        name: 'MCP Host Clock',
+        description: 'Current local MCP host timestamp for time-relative queries',
         mimeType: 'application/json',
       },
     ];

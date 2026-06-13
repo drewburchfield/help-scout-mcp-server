@@ -30,6 +30,26 @@ describe('Config Validation', () => {
       expect(() => validateConfig()).not.toThrow();
     });
 
+    it('should pass with OAuth2 configuration when stale bearer API key remains set', async () => {
+      process.env.HELPSCOUT_API_KEY = 'Bearer old-personal-token';
+      process.env.HELPSCOUT_CLIENT_ID = 'valid-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'valid-client-secret';
+      process.env.HELPSCOUT_BASE_URL = 'https://api.helpscout.net/v2/';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).not.toThrow();
+    });
+
+    it('should reject stale bearer API key when no OAuth2 credentials are configured', async () => {
+      process.env.HELPSCOUT_API_KEY = 'Bearer old-personal-token';
+      process.env.HELPSCOUT_APP_SECRET = 'client-secret';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).toThrow(/Personal Access Tokens are no longer supported/);
+    });
+
     it('should pass with legacy OAuth2 naming (HELPSCOUT_API_KEY/APP_SECRET)', async () => {
       process.env.HELPSCOUT_API_KEY = 'client-id';
       process.env.HELPSCOUT_APP_SECRET = 'client-secret';
@@ -110,6 +130,17 @@ describe('Config Validation', () => {
       expect(config.connectionPool.maxFreeSockets).toBe(10);
       expect(config.connectionPool.timeout).toBe(30000);
       expect(config.connectionPool.keepAliveMsecs).toBe(1000);
+    });
+
+    it('should fall back to info for invalid logging levels', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
+      process.env.LOG_LEVEL = 'infos';
+
+      jest.resetModules();
+      const { config, validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).not.toThrow();
+      expect(config.logging.level).toBe('info');
     });
   });
 });

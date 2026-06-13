@@ -134,6 +134,19 @@ describe('Authentication Configuration', () => {
       expect(config.helpscout.clientId).toBe('oauth-client-id');
       expect(config.helpscout.clientSecret).toBe('oauth-secret');
     });
+
+    it('should ignore stale bearer API key when OAuth2 credentials are also set', async () => {
+      process.env.HELPSCOUT_API_KEY = 'Bearer old-personal-token';
+      process.env.HELPSCOUT_CLIENT_ID = 'oauth-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'oauth-secret';
+
+      jest.resetModules();
+      const { config, validateConfig } = await import('../utils/config.js');
+
+      expect(() => validateConfig()).not.toThrow();
+      expect(config.helpscout.clientId).toBe('oauth-client-id');
+      expect(config.helpscout.clientSecret).toBe('oauth-secret');
+    });
   });
 
   describe('Config object structure', () => {

@@ -1,4 +1,5 @@
 import { 
+  AdvancedConversationSearchInputSchema,
   GetOrganizationConversationsInputSchema,
   GetOrganizationMembersInputSchema,
   GetThreadsInputSchema,
@@ -137,6 +138,7 @@ describe('Schema Validation', () => {
       expect(parsed.query).toBe('(body:"test")');
       expect(parsed.status).toBeUndefined();
       expect(parsed.limit).toBe(50);
+      expect(parsed.page).toBe(1);
     });
 
     it('should validate status enum', () => {
@@ -162,6 +164,28 @@ describe('Schema Validation', () => {
           limit: 25.7
         });
       }).toThrow();
+    });
+  });
+
+  describe('v2 page-based pagination schemas', () => {
+    it('should accept numeric page inputs for v2 paginated tools', () => {
+      expect(SearchInboxesInputSchema.parse({ query: '', page: 2 }).page).toBe(2);
+      expect(SearchConversationsInputSchema.parse({ page: 3 }).page).toBe(3);
+      expect(GetThreadsInputSchema.parse({ conversationId: '123', page: 4 }).page).toBe(4);
+      expect(AdvancedConversationSearchInputSchema.parse({ tags: ['billing'], page: 5 }).page).toBe(5);
+      expect(StructuredConversationFilterInputSchema.parse({ assignedTo: -1, page: 6 }).page).toBe(6);
+    });
+
+    it('should reject fractional page inputs for v2 paginated tools', () => {
+      const cases = [
+        () => SearchInboxesInputSchema.parse({ query: '', page: 1.5 }),
+        () => SearchConversationsInputSchema.parse({ page: 1.5 }),
+        () => GetThreadsInputSchema.parse({ conversationId: '123', page: 1.5 }),
+        () => AdvancedConversationSearchInputSchema.parse({ tags: ['billing'], page: 1.5 }),
+        () => StructuredConversationFilterInputSchema.parse({ assignedTo: -1, page: 1.5 }),
+      ];
+
+      cases.forEach(parse => expect(parse).toThrow());
     });
   });
 

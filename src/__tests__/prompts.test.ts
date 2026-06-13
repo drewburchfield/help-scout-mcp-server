@@ -161,6 +161,7 @@ describe('PromptHandler', () => {
         
         const promptText = result.messages[0].content.text;
         expect(promptText).toContain('getServerTime');
+        expect(promptText).toContain('current MCP host time');
         expect(promptText).toContain('searchConversations');
         expect(promptText).toContain('7 days ago');
       });
@@ -269,6 +270,7 @@ describe('PromptHandler', () => {
         expect(promptText).toContain('priority');
         expect(promptText).toContain('high-priority');
         expect(promptText).toContain('getServerTime');
+        expect(promptText).toContain('current MCP host time');
         expect(promptText).toContain('searchConversations');
       });
 
@@ -346,6 +348,7 @@ describe('PromptHandler', () => {
         expect(promptText).toContain('24 hours');
         expect(promptText).toContain('"inboxId": "inbox-123"');
         expect(promptText).toContain('getServerTime');
+        expect(promptText).toContain('current MCP host time');
         expect(promptText).toContain('searchConversations');
       });
 

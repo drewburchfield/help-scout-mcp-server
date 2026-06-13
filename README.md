@@ -108,7 +108,7 @@ Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `
 | List organization conversations | `getOrganizationConversations` | "Show support history for organization 456" |
 | Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
 | Full message history | `getThreads` | "Show me the complete thread" |
-| Current server time | `getServerTime` | Used for time-relative searches |
+| Current MCP host time | `getServerTime` | Used for time-relative searches |
 
 Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in their instructions automatically, so no lookup step is needed.
 
