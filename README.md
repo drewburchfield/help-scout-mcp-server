@@ -90,6 +90,12 @@ Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `
 
 ## Tools
 
+For the MCP compatibility contract and roadmap, see:
+
+- [MCP tool contract](guides/architecture/mcp-tool-contract.md)
+- [MCP vs CLI boundary](guides/architecture/mcp-vs-cli.md)
+- [MCP tool surface roadmap](guides/roadmap/mcp-tool-surface.md)
+
 ### Which tool should I use?
 
 | Task | Tool | Example |

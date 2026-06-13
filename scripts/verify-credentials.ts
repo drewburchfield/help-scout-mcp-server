@@ -105,12 +105,13 @@ async function main() {
 
   const env = loadEnv();
 
-  const clientId = env.HELPSCOUT_CLIENT_ID;
-  const clientSecret = env.HELPSCOUT_CLIENT_SECRET;
+  const clientId = env.HELPSCOUT_APP_ID || env.HELPSCOUT_CLIENT_ID;
+  const clientSecret = env.HELPSCOUT_APP_SECRET || env.HELPSCOUT_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     console.error('❌ Missing credentials in .env file');
-    console.error('   Required: HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET');
+    console.error('   Required: HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET');
+    console.error('   Also supported: HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET');
     process.exit(1);
   }
 
@@ -176,8 +177,9 @@ async function main() {
 
       if (error.response?.status === 401) {
         console.error('\n   Authentication failed. Check your credentials:');
-        console.error('   - Verify HELPSCOUT_CLIENT_ID is correct (App ID from Help Scout)');
-        console.error('   - Verify HELPSCOUT_CLIENT_SECRET is correct (App Secret from Help Scout)');
+        console.error('   - Verify HELPSCOUT_APP_ID is correct (App ID from Help Scout)');
+        console.error('   - Verify HELPSCOUT_APP_SECRET is correct (App Secret from Help Scout)');
+        console.error('   - HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are also supported');
         console.error('   - Ensure the OAuth app is associated with an active user');
       } else if (error.response?.status === 429) {
         console.error('\n   Rate limited. Wait a moment and try again.');

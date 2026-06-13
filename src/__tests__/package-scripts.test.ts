@@ -4,6 +4,26 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 
 describe('package scripts', () => {
+  it('keeps operational scripts aligned with documented Help Scout credential names', () => {
+    const credentialScripts = [
+      'scripts/check-conversations.ts',
+      'scripts/debug-api.ts',
+      'scripts/generate-synthetic-data.ts',
+      'scripts/import-conversations.ts',
+      'scripts/live-api-test.ts',
+      'scripts/verify-credentials.ts',
+    ];
+
+    for (const scriptPath of credentialScripts) {
+      const content = fs.readFileSync(path.join(process.cwd(), scriptPath), 'utf8');
+
+      expect(content).toContain('HELPSCOUT_APP_ID');
+      expect(content).toContain('HELPSCOUT_APP_SECRET');
+      expect(content).toContain('HELPSCOUT_CLIENT_ID');
+      expect(content).toContain('HELPSCOUT_CLIENT_SECRET');
+    }
+  });
+
   it('guards sync:plugin when the target checkout has local files', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'helpscout-sync-plugin-'));
     const pluginDir = path.join(tempRoot, 'helpscout-navigator');
