@@ -73,13 +73,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.27.1",
-    "axios": "^1.6.2",
+    "axios": "^1.17.0",
     "dotenv": "^16.3.1",
     "lru-cache": "^10.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@anthropic-ai/mcpb": "2.0.1",
+    "@anthropic-ai/mcpb": "2.1.2",
     "@types/jest": "^29.5.8",
     "@types/nock": "^10.0.3",
     "@types/node": "^20.10.4",
@@ -90,7 +90,7 @@
     "nock": "^14.0.5",
     "rimraf": "^5.0.5",
     "ts-jest": "^29.1.1",
-    "tsx": "^4.6.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.3.3"
   },
   "engines": {
@@ -98,9 +98,10 @@
   },
   "overrides": {
     "cross-spawn": "^7.0.6",
-    "brace-expansion": "^2.0.2",
+    "brace-expansion": "^2.1.1",
     "minimatch": "^9.0.7",
-    "hono": "4.12.4",
-    "@hono/node-server": "1.19.10"
+    "hono": "4.12.25",
+    "@hono/node-server": "1.19.13",
+    "@inquirer/editor": "4.2.16"
   }
 }
