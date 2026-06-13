@@ -83,6 +83,8 @@ export class HelpScoutClient {
   };
 
   constructor(poolConfig: Partial<ConnectionPoolConfig> = {}) {
+    this.validateHttpsBaseUrl(config.helpscout.baseUrl);
+
     // Merge default pool config with any custom settings
     this.poolConfig = { ...DEFAULT_POOL_CONFIG, ...poolConfig };
     
@@ -128,6 +130,42 @@ export class HelpScoutClient {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  private validateHttpsBaseUrl(baseUrl: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(baseUrl);
+    } catch {
+      throw new Error(`Invalid Help Scout base URL: ${baseUrl}`);
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new Error('HELPSCOUT_BASE_URL must use HTTPS to protect OAuth2 credentials');
+    }
+  }
+
+  private parseRetryAfterMs(value: unknown, fallbackMs = 60000): number {
+    const rawValue = Array.isArray(value) ? value[0] : value;
+
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue) && rawValue >= 0) {
+      return rawValue * 1000;
+    }
+
+    if (typeof rawValue === 'string') {
+      const trimmed = rawValue.trim();
+      const seconds = Number(trimmed);
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        return seconds * 1000;
+      }
+
+      const retryAt = Date.parse(trimmed);
+      if (Number.isFinite(retryAt)) {
+        return Math.max(retryAt - Date.now(), 0);
+      }
+    }
+
+    return fallbackMs;
+  }
+
   private calculateRetryDelay(attempt: number, baseDelay: number, maxDelay: number): number {
     // Exponential backoff with jitter
     const exponentialDelay = baseDelay * Math.pow(2, attempt);
@@ -159,8 +197,7 @@ export class HelpScoutClient {
         
         // Handle rate limits specially
         if (lastError.response?.status === 429) {
-          const retryAfter = parseInt(lastError.response.headers['retry-after'] || '60', 10) * 1000;
-          const delay = Math.min(retryAfter, retryConfig.maxRetryDelay);
+          const delay = this.parseRetryAfterMs(lastError.response.headers['retry-after']);
           
           logger.warn('Rate limit hit, waiting before retry', {
             attempt: attempt + 1,
@@ -279,7 +316,7 @@ export class HelpScoutClient {
       if (!clientId || !clientSecret) {
         throw new Error(
           'OAuth2 authentication required. Help Scout API only supports OAuth2 Client Credentials flow.\n' +
-          'Set HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET (or use legacy HELPSCOUT_API_KEY and HELPSCOUT_APP_SECRET)'
+          'Set HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET. HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are also supported.'
         );
       }
 
@@ -330,7 +367,7 @@ export class HelpScoutClient {
         message: 'Help Scout authentication failed. Please check your API credentials.',
         details: {
           requestId,
-          suggestion: 'Verify HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are valid',
+          suggestion: 'Verify HELPSCOUT_APP_ID and HELPSCOUT_APP_SECRET are valid. HELPSCOUT_CLIENT_ID and HELPSCOUT_CLIENT_SECRET are also supported.',
         },
       };
     }
@@ -358,7 +395,7 @@ export class HelpScoutClient {
     }
 
     if (error.response?.status === 429) {
-      const retryAfter = parseInt(error.response.headers['retry-after'] || '60', 10);
+      const retryAfter = Math.ceil(this.parseRetryAfterMs(error.response.headers['retry-after']) / 1000);
       return {
         code: 'RATE_LIMIT',
         message: `Help Scout API rate limit exceeded. Please wait ${retryAfter} seconds before retrying.`,

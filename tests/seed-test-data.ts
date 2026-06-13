@@ -29,7 +29,8 @@ const CLIENT_SECRET =
 const BASE_URL = process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/';
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('Missing HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET in .env');
+  console.error('Missing HELPSCOUT_APP_ID / HELPSCOUT_APP_SECRET in .env');
+  console.error('HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET are also supported.');
   process.exit(1);
 }
 
@@ -74,14 +75,14 @@ function heading(msg: string) {
 }
 
 /** Extract resource ID from Help Scout 201 response headers. */
-function extractIdFromHeaders(headers: Record<string, string>): number | null {
+function extractIdFromHeaders(headers: Record<string, unknown>): number | null {
   // resource-id header is the most reliable
   const resourceId = headers['resource-id'];
-  if (resourceId && /^\d+$/.test(resourceId)) return Number(resourceId);
+  if (typeof resourceId === 'string' && /^\d+$/.test(resourceId)) return Number(resourceId);
 
   // Fallback: parse the Location URL (may have query params)
   const location = headers['location'];
-  if (location) {
+  if (typeof location === 'string') {
     const match = location.match(/\/(\d+)(?:\?|$)/);
     if (match) return Number(match[1]);
   }

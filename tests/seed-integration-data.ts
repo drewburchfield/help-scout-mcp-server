@@ -81,7 +81,8 @@ const CLIENT_SECRET =
 const BASE_URL = process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/';
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('Missing HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET in .env');
+  console.error('Missing HELPSCOUT_APP_ID / HELPSCOUT_APP_SECRET in .env');
+  console.error('HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET are also supported.');
   process.exit(1);
 }
 
