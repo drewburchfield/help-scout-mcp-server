@@ -48,10 +48,12 @@ jobs:
     
     - name: Build
       run: npm run build
-    
-    # Uncomment when tests are added
-    # - name: Run tests
-    #   run: npm test
+
+    - name: Run tests
+      run: npm test
+
+    - name: Docker smoke test
+      run: npm run test:docker:ci
 
   docker:
     runs-on: ubuntu-latest
