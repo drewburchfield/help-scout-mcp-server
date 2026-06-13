@@ -50,6 +50,11 @@ jobs:
       run: npm run build
 
     - name: Run tests
+      env:
+        HELPSCOUT_APP_ID: ${{ secrets.HELPSCOUT_APP_ID }}
+        HELPSCOUT_APP_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
+        HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
+        HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
       run: npm test
 
     - name: Docker smoke test
