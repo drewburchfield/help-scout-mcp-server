@@ -24,6 +24,7 @@
     "security": "semgrep --config .semgrep.yml .",
     "security:ci": "semgrep ci",
     "test": "jest",
+    "test:contract": "TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/api-contract.ts",
     "test:mcp": "npm run dogfood:mcp",
     "dogfood:mcp": "npm run build && node --loader ts-node/esm tests/mcp-client-dogfood.ts",
     "dogfood:workflows": "npm run build && node --loader ts-node/esm tests/integration-workflows.ts",

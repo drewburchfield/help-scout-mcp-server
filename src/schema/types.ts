@@ -188,7 +188,10 @@ export const CustomerSchema = z.object({
       name: z.string().optional(),
       value: z.unknown().optional(),
       text: z.string().nullable().optional(),
-      source: z.string().nullable().optional(),
+      source: z.union([
+        z.string(),
+        z.object({ name: z.string().optional() }).passthrough(),
+      ]).nullable().optional(),
     })).optional(),
   }).optional(),
 });

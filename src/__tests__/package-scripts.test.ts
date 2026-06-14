@@ -47,4 +47,27 @@ describe('package scripts', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('fails version audit when any version source cannot be parsed', async () => {
+    const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'helpscout-version-audit-'));
+    await fs.promises.mkdir(path.join(tempRoot, 'src', '__tests__'), { recursive: true });
+
+    await fs.promises.writeFile(path.join(tempRoot, 'package.json'), '{}');
+    await fs.promises.writeFile(path.join(tempRoot, 'src', 'index.ts'), 'export const metadata = {};');
+    await fs.promises.writeFile(path.join(tempRoot, 'Dockerfile'), 'FROM node:20-alpine\n');
+    await fs.promises.writeFile(path.join(tempRoot, 'src', '__tests__', 'index.test.ts'), 'describe("version", () => {});\n');
+
+    try {
+      const result = spawnSync('bash', [path.join(process.cwd(), 'scripts/version-audit.sh')], {
+        cwd: tempRoot,
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('Could not parse version from package.json');
+      expect(result.stdout).toContain('Fix version extraction before comparing versions');
+    } finally {
+      await fs.promises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
