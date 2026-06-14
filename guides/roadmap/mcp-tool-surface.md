@@ -68,11 +68,12 @@ Current:
 - `getTeamMembers`
 - `listInboxCustomFields`
 - `listInboxFolders`
+- `listSavedReplies`
+- `getSavedReply`
+- `listWorkflows`
 
 Next:
 
-- Add saved replies.
-- Add workflows.
 - Add stronger metadata result schemas.
 - Keep metadata tools read-only and browseable.
 
@@ -105,9 +106,13 @@ Next:
 Admin and integration tools are useful but lower-frequency. They should remain
 read-only until a separate write boundary exists.
 
+Current:
+
+- `listWebhooks`
+- `getWebhook`
+
 Next:
 
-- Webhook listing and inspection.
 - Integration health metadata if available through supported APIs.
 
 ## 7. MCP Apps Views

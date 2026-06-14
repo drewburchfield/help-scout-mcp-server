@@ -294,6 +294,41 @@ export const InboxFolderSchema = z.object({
   updatedAt: z.string().optional(),
 });
 
+export const SavedReplySchema = z.object({
+  id: z.number(),
+  name: z.string().optional(),
+  preview: z.string().nullable().optional(),
+  chatPreview: z.string().nullable().optional(),
+  text: z.string().nullable().optional(),
+  chatText: z.string().nullable().optional(),
+  subject: z.string().nullable().optional(),
+  body: z.string().nullable().optional(),
+  folderId: z.number().nullable().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
+
+export const WorkflowSchema = z.object({
+  id: z.number(),
+  name: z.string().optional(),
+  type: z.string().optional(),
+  status: z.string().optional(),
+  state: z.string().optional(),
+  order: z.number().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
+
+export const WebhookSchema = z.object({
+  id: z.number(),
+  url: z.string().optional(),
+  events: z.array(z.string()).optional(),
+  state: z.string().optional(),
+  status: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).passthrough();
+
 // Customer & Organization Input Schemas
 export const GetCustomerInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
@@ -397,6 +432,28 @@ export const ListInboxFoldersInputSchema = z.object({
   inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
 });
 
+export const ListSavedRepliesInputSchema = z.object({
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
+  includeChatReplies: z.boolean().default(false),
+});
+
+export const GetSavedReplyInputSchema = z.object({
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
+  replyId: z.string().regex(/^\d+$/, 'Saved reply ID must be numeric').describe('Saved reply ID'),
+});
+
+export const ListWorkflowsInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+});
+
+export const ListWebhooksInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+});
+
+export const GetWebhookInputSchema = z.object({
+  webhookId: z.string().regex(/^\d+$/, 'Webhook ID must be numeric').describe('Webhook ID'),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -425,6 +482,9 @@ export type User = z.infer<typeof UserSchema>;
 export type Team = z.infer<typeof TeamSchema>;
 export type InboxCustomField = z.infer<typeof InboxCustomFieldSchema>;
 export type InboxFolder = z.infer<typeof InboxFolderSchema>;
+export type SavedReply = z.infer<typeof SavedReplySchema>;
+export type Workflow = z.infer<typeof WorkflowSchema>;
+export type Webhook = z.infer<typeof WebhookSchema>;
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
@@ -451,5 +511,10 @@ export type ListTeamsInput = z.infer<typeof ListTeamsInputSchema>;
 export type GetTeamMembersInput = z.infer<typeof GetTeamMembersInputSchema>;
 export type ListInboxCustomFieldsInput = z.infer<typeof ListInboxCustomFieldsInputSchema>;
 export type ListInboxFoldersInput = z.infer<typeof ListInboxFoldersInputSchema>;
+export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
+export type GetSavedReplyInput = z.infer<typeof GetSavedReplyInputSchema>;
+export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;
+export type ListWebhooksInput = z.infer<typeof ListWebhooksInputSchema>;
+export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

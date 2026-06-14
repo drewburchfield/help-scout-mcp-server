@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --loader ts-node/esm
 /**
- * Comprehensive authenticated edge-case test for all 28 MCP tools.
+ * Comprehensive authenticated edge-case test for all MCP tools.
  *
  * Run: node --loader ts-node/esm tests/test-all-tools-edge-cases.ts
  *
