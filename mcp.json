@@ -49,7 +49,13 @@
     "getCompanyReport",
     "getConversationsReport",
     "getHappinessReport",
-    "getHappinessRatingsReport"
+    "getHappinessRatingsReport",
+    "getProductivityReport",
+    "getProductivityFirstResponseTimeReport",
+    "getProductivityRepliesSentReport",
+    "getProductivityResolutionTimeReport",
+    "getProductivityResolvedReport",
+    "getProductivityResponseTimeReport"
   ],
   "prompts": [
     "search-last-7-days",

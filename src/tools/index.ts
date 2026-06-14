@@ -66,6 +66,12 @@ import {
   GetConversationsReportInputSchema,
   GetHappinessReportInputSchema,
   GetHappinessRatingsReportInputSchema,
+  GetProductivityReportInputSchema,
+  GetProductivityFirstResponseTimeReportInputSchema,
+  GetProductivityRepliesSentReportInputSchema,
+  GetProductivityResolutionTimeReportInputSchema,
+  GetProductivityResolvedReportInputSchema,
+  GetProductivityResponseTimeReportInputSchema,
 } from '../schema/types.js';
 
 type ConversationStatus = 'active' | 'pending' | 'closed' | 'spam';
@@ -182,6 +188,15 @@ export class ToolHandler {
     if (input.types) params.types = input.types.join(',');
     if (input.folders) params.folders = input.folders.join(',');
 
+    return params;
+  }
+
+  private buildProductivityReportQueryParams(
+    input: ReportBaseInput & { officeHours?: boolean; viewBy?: 'day' | 'week' | 'month' }
+  ): Record<string, string | number> {
+    const params = this.buildReportQueryParams(input);
+    if (typeof input.officeHours === 'boolean') params.officeHours = String(input.officeHours);
+    if (input.viewBy) params.viewBy = input.viewBy;
     return params;
   }
 
@@ -908,6 +923,125 @@ export class ToolHandler {
           required: ['start', 'end'],
         },
       },
+      {
+        name: 'getProductivityReport',
+        description: 'Get the Help Scout productivity overall report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityFirstResponseTimeReport',
+        description: 'Get Help Scout productivity first response time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityRepliesSentReport',
+        description: 'Get Help Scout productivity replies sent time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityResolutionTimeReport',
+        description: 'Get Help Scout productivity resolution time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityResolvedReport',
+        description: 'Get Help Scout productivity resolved conversations time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityResponseTimeReport',
+        description: 'Get Help Scout productivity response time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
     ];
   }
 
@@ -1088,6 +1222,24 @@ export class ToolHandler {
           break;
         case 'getHappinessRatingsReport':
           result = await this.getHappinessRatingsReport(request.params.arguments || {});
+          break;
+        case 'getProductivityReport':
+          result = await this.getProductivityReport(request.params.arguments || {});
+          break;
+        case 'getProductivityFirstResponseTimeReport':
+          result = await this.getProductivityFirstResponseTimeReport(request.params.arguments || {});
+          break;
+        case 'getProductivityRepliesSentReport':
+          result = await this.getProductivityRepliesSentReport(request.params.arguments || {});
+          break;
+        case 'getProductivityResolutionTimeReport':
+          result = await this.getProductivityResolutionTimeReport(request.params.arguments || {});
+          break;
+        case 'getProductivityResolvedReport':
+          result = await this.getProductivityResolvedReport(request.params.arguments || {});
+          break;
+        case 'getProductivityResponseTimeReport':
+          result = await this.getProductivityResponseTimeReport(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1939,6 +2091,54 @@ export class ToolHandler {
     const report = await helpScoutClient.get<HappinessRatingsReport>('/reports/happiness/ratings', params);
 
     return this.formatReportResult('happinessRatings', params, report);
+  }
+
+  private async getProductivityReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityReportInputSchema.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity', params);
+
+    return this.formatReportResult('productivity', params, report);
+  }
+
+  private async getProductivityFirstResponseTimeReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityFirstResponseTimeReportInputSchema.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/first-response-time', params);
+
+    return this.formatReportResult('productivityFirstResponseTime', params, report);
+  }
+
+  private async getProductivityRepliesSentReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityRepliesSentReportInputSchema.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/replies-sent', params);
+
+    return this.formatReportResult('productivityRepliesSent', params, report);
+  }
+
+  private async getProductivityResolutionTimeReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityResolutionTimeReportInputSchema.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/resolution-time', params);
+
+    return this.formatReportResult('productivityResolutionTime', params, report);
+  }
+
+  private async getProductivityResolvedReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityResolvedReportInputSchema.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/resolved', params);
+
+    return this.formatReportResult('productivityResolved', params, report);
+  }
+
+  private async getProductivityResponseTimeReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityResponseTimeReportInputSchema.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/response-time', params);
+
+    return this.formatReportResult('productivityResponseTime', params, report);
   }
 
   private formatReportResult(
