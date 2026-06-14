@@ -52,6 +52,8 @@ import {
   ListInboxFoldersInputSchema,
   ListSavedRepliesInputSchema,
   GetSavedReplyInputSchema,
+  GetOriginalSourceInputSchema,
+  GetAttachmentInputSchema,
   ListWorkflowsInputSchema,
   ListWebhooksInputSchema,
   GetWebhookInputSchema,
@@ -740,6 +742,30 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getOriginalSource',
+        description: 'Get the original source JSON for a Help Scout conversation thread.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
+            threadId: { type: 'string', description: 'Thread ID from getThreads' },
+          },
+          required: ['conversationId', 'threadId'],
+        },
+      },
+      {
+        name: 'getAttachment',
+        description: 'Get base64-encoded Help Scout attachment data by conversation and attachment ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
+            attachmentId: { type: 'string', description: 'Attachment ID from getThreads attachment links' },
+          },
+          required: ['conversationId', 'attachmentId'],
+        },
+      },
+      {
         name: 'listWorkflows',
         description: 'List Help Scout workflows. Use to inspect account workflow configuration and discover workflow IDs.',
         inputSchema: {
@@ -920,6 +946,12 @@ export class ToolHandler {
           break;
         case 'getSavedReply':
           result = await this.getSavedReply(request.params.arguments || {});
+          break;
+        case 'getOriginalSource':
+          result = await this.getOriginalSource(request.params.arguments || {});
+          break;
+        case 'getAttachment':
+          result = await this.getAttachment(request.params.arguments || {});
           break;
         case 'listWorkflows':
           result = await this.listWorkflows(request.params.arguments || {});
@@ -1604,6 +1636,48 @@ export class ToolHandler {
           replyId: input.replyId,
           savedReply,
           usage: 'Use saved reply content as reference context only; this tool does not send or draft replies.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getOriginalSource(args: unknown): Promise<CallToolResult> {
+    const input = GetOriginalSourceInputSchema.parse(args);
+    const originalSource = await helpScoutClient.get<Record<string, unknown>>(
+      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`
+    );
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          threadId: input.threadId,
+          originalSource,
+          usage: 'Use original source for read-only inspection of raw thread content when rendered thread fields are insufficient.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getAttachment(args: unknown): Promise<CallToolResult> {
+    const input = GetAttachmentInputSchema.parse(args);
+    const attachment = await helpScoutClient.get<Record<string, unknown>>(
+      `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`
+    );
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          attachmentId: input.attachmentId,
+          attachment,
+          contentHandling: {
+            encoding: 'base64',
+            source: 'Help Scout attachment data endpoint',
+          },
+          usage: 'Decode attachment.data only when the caller explicitly needs the file content; avoid logging decoded attachment bytes.',
         }, null, 2),
       }],
     };

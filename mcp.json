@@ -40,6 +40,8 @@
     "listInboxFolders",
     "listSavedReplies",
     "getSavedReply",
+    "getOriginalSource",
+    "getAttachment",
     "listWorkflows",
     "listWebhooks",
     "getWebhook"
