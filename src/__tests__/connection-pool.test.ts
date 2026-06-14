@@ -107,6 +107,43 @@ describe('HelpScout Client - Connection Pooling', () => {
       });
     });
 
+    it('should count pooled sockets and requests, not host buckets', () => {
+      const axiosClient = (client as any).client;
+      const socket = () => ({ destroy: jest.fn() });
+
+      axiosClient.defaults.httpAgent.sockets = {
+        'api.helpscout.net:80:': [socket(), socket()],
+      };
+      axiosClient.defaults.httpAgent.freeSockets = {
+        'api.helpscout.net:80:': [socket()],
+      };
+      axiosClient.defaults.httpAgent.requests = {
+        'api.helpscout.net:80:': [{}, {}, {}],
+      };
+      axiosClient.defaults.httpsAgent.sockets = {
+        'api.helpscout.net:443:': [socket(), socket(), socket()],
+      };
+      axiosClient.defaults.httpsAgent.freeSockets = {
+        'api.helpscout.net:443:': [socket(), socket()],
+      };
+      axiosClient.defaults.httpsAgent.requests = {
+        'api.helpscout.net:443:': [{}],
+      };
+
+      expect(client.getPoolStats()).toEqual({
+        http: {
+          sockets: 2,
+          freeSockets: 1,
+          pending: 3,
+        },
+        https: {
+          sockets: 3,
+          freeSockets: 2,
+          pending: 1,
+        },
+      });
+    });
+
     it('should clear idle connections', () => {
       // This test verifies the method exists and can be called
       expect(() => client.clearIdleConnections()).not.toThrow();

@@ -74,9 +74,10 @@ export class HelpScoutClient {
     retryDelay: 1000, // 1 second
     maxRetryDelay: 10000, // 10 seconds
     retryCondition: (error: AxiosError) => {
-      // Retry on network errors, timeouts, and 5xx responses
+      // Retry on network errors, timeouts, OAuth token refresh, and 5xx responses
       return !error.response || 
              error.code === 'ECONNABORTED' ||
+             (error.response.status === 401 && Boolean(config.helpscout.clientSecret)) ||
              (error.response.status >= 500 && error.response.status < 600) ||
              error.response.status === 429; // Rate limits
     }
@@ -183,6 +184,10 @@ export class HelpScoutClient {
       try {
         return await operation();
       } catch (error) {
+        if (!axios.isAxiosError(error)) {
+          throw error;
+        }
+
         lastError = error as AxiosError;
         
         // Don't retry if it's the last attempt
@@ -195,8 +200,17 @@ export class HelpScoutClient {
           break;
         }
         
-        // Handle rate limits specially
-        if (lastError.response?.status === 429) {
+        // Handle retryable auth failures by forcing a fresh OAuth token.
+        if (lastError.response?.status === 401) {
+          this.invalidateAccessToken();
+
+          logger.warn('Authentication failed, refreshing token before retry', {
+            attempt: attempt + 1,
+            requestId: lastError.config?.metadata?.requestId,
+          });
+
+          await this.sleep(this.calculateRetryDelay(attempt, retryConfig.retryDelay, retryConfig.maxRetryDelay));
+        } else if (lastError.response?.status === 429) {
           const delay = this.parseRetryAfterMs(lastError.response.headers['retry-after']);
           
           logger.warn('Rate limit hit, waiting before retry', {
@@ -232,9 +246,18 @@ export class HelpScoutClient {
     throw new Error('Request failed without error details');
   }
 
+  private invalidateAccessToken(): void {
+    this.accessToken = null;
+    this.tokenExpiresAt = 0;
+    this.authenticationPromise = null;
+  }
+
   private setupInterceptors(): void {
     // Request interceptor for authentication
     this.client.interceptors.request.use(async (config) => {
+      delete (config.headers as Record<string, unknown>).Authorization;
+      delete (config.headers as Record<string, unknown>).authorization;
+
       await this.ensureAuthenticated();
       if (this.accessToken) {
         config.headers.Authorization = `Bearer ${this.accessToken}`;
@@ -325,6 +348,12 @@ export class HelpScoutClient {
         ? configuredBaseUrl
         : `${configuredBaseUrl}/`;
       const tokenUrl = new URL('oauth2/token', baseUrl).toString();
+      const authRetryConfig: RetryConfig = {
+        ...this.defaultRetryConfig,
+        retryCondition: (error) =>
+          error.response?.status !== 401 &&
+          Boolean(this.defaultRetryConfig.retryCondition?.(error)),
+      };
 
       const response = await this.executeWithRetry(() => axios.post(tokenUrl, {
         grant_type: 'client_credentials',
@@ -335,7 +364,7 @@ export class HelpScoutClient {
         httpAgent: this.httpAgent,
         httpsAgent: this.httpsAgent,
         validateStatus: (status) => status >= 200 && status < 300,
-      }));
+      }), authRetryConfig);
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer
@@ -361,7 +390,7 @@ export class HelpScoutClient {
     });
 
     if (error.response?.status === 401) {
-      this.accessToken = null; // Force re-authentication
+      this.invalidateAccessToken(); // Force re-authentication
       return {
         code: 'UNAUTHORIZED',
         message: 'Help Scout authentication failed. Please check your API credentials.',
@@ -470,17 +499,25 @@ export class HelpScoutClient {
 
   async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {
     const cacheKey = `GET:${endpoint}`;
-    const cachedResult = cache.get<T>(cacheKey, params);
-    
-    if (cachedResult) {
-      return cachedResult;
+    const bypassCache = cacheOptions?.ttl !== undefined && cacheOptions.ttl <= 0;
+
+    if (!bypassCache) {
+      const cachedResult = cache.get<T>(cacheKey, params);
+      
+      if (cachedResult) {
+        return cachedResult;
+      }
     }
 
     const response = await this.executeWithRetry<T>(() => 
       this.client.get<T>(endpoint, { params })
     );
+
+    if (bypassCache) {
+      return response.data;
+    }
     
-    if (cacheOptions?.ttl || cacheOptions?.ttl === 0) {
+    if (cacheOptions?.ttl !== undefined) {
       cache.set(cacheKey, params, response.data, { ttl: cacheOptions.ttl });
     } else {
       // Default cache TTL based on endpoint
@@ -508,6 +545,10 @@ export class HelpScoutClient {
     }
   }
 
+  private countAgentBucketEntries(buckets: { [key: string]: readonly unknown[] | undefined }): number {
+    return Object.values(buckets).reduce((total, entries) => total + (entries?.length ?? 0), 0);
+  }
+
   /**
    * Get connection pool statistics for monitoring
    */
@@ -525,14 +566,14 @@ export class HelpScoutClient {
   } {
     return {
       http: {
-        sockets: Object.keys(this.httpAgent.sockets).length,
-        freeSockets: Object.keys(this.httpAgent.freeSockets).length,
-        pending: Object.keys(this.httpAgent.requests).length,
+        sockets: this.countAgentBucketEntries(this.httpAgent.sockets),
+        freeSockets: this.countAgentBucketEntries(this.httpAgent.freeSockets),
+        pending: this.countAgentBucketEntries(this.httpAgent.requests),
       },
       https: {
-        sockets: Object.keys(this.httpsAgent.sockets).length,
-        freeSockets: Object.keys(this.httpsAgent.freeSockets).length,
-        pending: Object.keys(this.httpsAgent.requests).length,
+        sockets: this.countAgentBucketEntries(this.httpsAgent.sockets),
+        freeSockets: this.countAgentBucketEntries(this.httpsAgent.freeSockets),
+        pending: this.countAgentBucketEntries(this.httpsAgent.requests),
       },
     };
   }

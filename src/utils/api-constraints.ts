@@ -175,6 +175,9 @@ export class HelpScoutAPIConstraints {
     if (!args.conversationId || typeof args.conversationId !== 'string') {
       errors.push('conversationId is required');
       suggestions.push('Get conversation ID from searchConversations results first');
+    } else if (!/^\d+$/.test(args.conversationId)) {
+      errors.push('Invalid conversation ID format');
+      suggestions.push('Conversation IDs should be numeric strings');
     }
     
     return { isValid: errors.length === 0, errors, suggestions };

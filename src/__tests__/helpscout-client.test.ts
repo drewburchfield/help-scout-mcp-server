@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import nock from 'nock';
 import { HelpScoutClient } from '../utils/helpscout-client.js';
+import { cache } from '../utils/cache.js';
 
 // Set a more generous timeout for all tests in this file
 jest.setTimeout(15000);
@@ -56,6 +57,7 @@ describe('HelpScoutClient', () => {
     nock.cleanAll();
     nock.restore();
     nock.activate();
+    (cache as jest.Mocked<typeof cache>).get.mockReturnValue(null);
     
     // Clear any environment variables from previous tests
     delete process.env.HELPSCOUT_API_KEY;
@@ -152,6 +154,71 @@ describe('HelpScoutClient', () => {
       expect(apiScope.isDone()).toBe(true);
       await client.closePool();
     });
+
+    it('should refresh a stale OAuth bearer before retrying a 401', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+      const staleApiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', 'Bearer stale-token')
+        .reply(401, { message: 'Unauthorized' });
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'fresh-token',
+          expires_in: 7200,
+        });
+
+      const freshApiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', value => value === 'Bearer fresh-token')
+        .reply(200, { _embedded: { mailboxes: [] } });
+
+      const client = new HelpScoutClient();
+      (client as any).accessToken = 'stale-token';
+      (client as any).tokenExpiresAt = Date.now() + 60_000;
+      jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect((client as any).executeWithRetry(() =>
+        (client as any).client.get('/mailboxes', {
+          params: { page: 1, size: 1 },
+          headers: { authorization: 'Bearer stale-token' },
+        })
+      )).resolves.toMatchObject({
+        data: { _embedded: { mailboxes: [] } },
+      });
+
+      expect(staleApiScope.isDone()).toBe(true);
+      expect(authScope.isDone()).toBe(true);
+      expect(freshApiScope.isDone()).toBe(true);
+      await client.closePool();
+    });
+
+    it('should not retry invalid OAuth credentials on token endpoint 401', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'bad-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'bad-client-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .once()
+        .reply(401, { message: 'Invalid credentials' });
+
+      const client = new HelpScoutClient();
+      jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect(client.get('/mailboxes', { page: 1, size: 1 })).rejects.toThrow(
+        'Failed to authenticate with Help Scout API. Check your OAuth2 credentials.'
+      );
+
+      expect(authScope.isDone()).toBe(true);
+      await client.closePool();
+    });
   });
 
   describe('error handling', () => {
@@ -239,6 +306,7 @@ describe('HelpScoutClient', () => {
     it('honors long Retry-After delta seconds instead of capping at retry backoff max', async () => {
       const client = new HelpScoutClient();
       const retryError = {
+        isAxiosError: true,
         response: {
           status: 429,
           headers: { 'retry-after': '60' },
@@ -269,6 +337,7 @@ describe('HelpScoutClient', () => {
       const client = new HelpScoutClient();
       const retryAt = new Date(now + 45000).toUTCString();
       const retryError = {
+        isAxiosError: true,
         response: {
           status: 429,
           headers: { 'retry-after': retryAt },
@@ -372,6 +441,39 @@ describe('HelpScoutClient', () => {
       
       const threadsTtl = (client as any).getDefaultCacheTtl('/threads');
       expect(threadsTtl).toBe(300); // 5 minutes for threads
+    });
+
+    it('should bypass cache reads and writes when ttl is zero', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+      const staleResponse = { _embedded: { mailboxes: [{ id: 'old', name: 'Old Inbox' }] } };
+      const freshResponse = { _embedded: { mailboxes: [{ id: 'new', name: 'Fresh Inbox' }] } };
+      const mockedCache = cache as jest.Mocked<typeof cache>;
+
+      mockedCache.get.mockReturnValue(staleResponse);
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'fresh-token',
+          expires_in: 7200,
+        });
+
+      const apiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', 'Bearer fresh-token')
+        .reply(200, freshResponse);
+
+      const client = new HelpScoutClient();
+
+      await expect(client.get('/mailboxes', { page: 1, size: 1 }, { ttl: 0 })).resolves.toEqual(freshResponse);
+
+      expect(mockedCache.get).not.toHaveBeenCalled();
+      expect(mockedCache.set).not.toHaveBeenCalled();
+      expect(authScope.isDone()).toBe(true);
+      expect(apiScope.isDone()).toBe(true);
+      await client.closePool();
     });
   });
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import path from 'path';
 import { main } from './index.js';
 import { logger } from './utils/logger.js';
 
@@ -13,8 +14,19 @@ export async function runCli(start = main): Promise<void> {
   }
 }
 
-const invokedPath = (process.argv[1] || '').replace(/\\/g, '/');
+export function isDirectCliInvocation(
+  invokedPath = process.argv[1] || ''
+): boolean {
+  const normalizedInvokedPath = invokedPath.replace(/\\/g, '/');
+  const invokedName = path.basename(normalizedInvokedPath);
 
-if (invokedPath.endsWith('/dist/cli.js') || invokedPath.endsWith('/src/cli.ts')) {
+  if (['help-scout-mcp-server', 'help-scout-mcp-server.cmd', 'help-scout-mcp-server.ps1'].includes(invokedName)) {
+    return true;
+  }
+
+  return normalizedInvokedPath.endsWith('/dist/cli.js') || normalizedInvokedPath.endsWith('/src/cli.ts');
+}
+
+if (isDirectCliInvocation()) {
   void runCli();
 }

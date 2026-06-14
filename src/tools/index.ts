@@ -49,6 +49,9 @@ import {
   ListInboxFoldersInputSchema,
 } from '../schema/types.js';
 
+type ConversationStatus = 'active' | 'pending' | 'closed' | 'spam';
+const DEFAULT_CONVERSATION_STATUSES = ['active', 'pending', 'closed'] as const satisfies readonly ConversationStatus[];
+
 /**
  * Constants for tool operations
  */
@@ -460,6 +463,18 @@ export class ToolHandler {
             limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
           },
+          anyOf: [
+            { required: ['assignedTo'] },
+            { required: ['folderId'] },
+            { required: ['customerIds'] },
+            { required: ['conversationNumber'] },
+            {
+              required: ['sortBy'],
+              properties: {
+                sortBy: { type: 'string', enum: ['waitingSince', 'customerName', 'customerEmail'] },
+              },
+            },
+          ],
         },
       },
       // Customer tools (NAS-680, NAS-727, NAS-728)
@@ -988,104 +1003,19 @@ export class ToolHandler {
       searchedStatuses = [input.status];
       pagination = response.page;
     } else {
-      // No status specified: search all statuses in parallel
-      const statuses = ['active', 'pending', 'closed'] as const;
-      searchedStatuses = [...statuses];
-
-      const results = await Promise.allSettled(
-        statuses.map(status =>
-          helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
-            ...baseParams,
-            status,
-          })
-        )
+      const statusResult = await this.searchConversationStatusSet(
+        baseParams,
+        DEFAULT_CONVERSATION_STATUSES,
+        input.limit || 50,
       );
-
-      // Merge and dedupe by conversation ID, handling partial failures
-      // Track both returned conversations AND total available from API
-      const seenIds = new Set<number>();
-      const failedStatuses: Array<{ status: string; message: string; code: string }> = [];
-      let totalAvailable = 0;
-      const totalByStatus: Record<string, number> = {};
-
-      for (const [index, result] of results.entries()) {
-        if (result.status === 'fulfilled') {
-          const statusName = statuses[index];
-          const statusTotal = result.value.page?.totalElements || 0;
-          totalByStatus[statusName] = statusTotal;
-          totalAvailable += statusTotal;
-
-          const responseConversations = result.value._embedded?.conversations || [];
-          for (const conv of responseConversations) {
-            if (!seenIds.has(conv.id)) {
-              seenIds.add(conv.id);
-              conversations.push(conv);
-            }
-          }
-        } else {
-          const failedStatus = statuses[index];
-          const reason = result.reason;
-          const errorMessage = isApiError(reason)
-            ? reason.message
-            : (reason instanceof Error ? reason.message : String(reason));
-          const errorCode = isApiError(reason) ? reason.code : 'UNKNOWN';
-
-          // Non-API errors (TypeError, ReferenceError, etc.) should not be
-          // silently swallowed - rethrow so programming bugs surface.
-          if (!isApiError(reason)) {
-            throw reason;
-          }
-
-          // Critical API errors should abort, not return partial results.
-          if (errorCode === 'UNAUTHORIZED' || errorCode === 'INVALID_INPUT') {
-            throw reason;
-          }
-
-          failedStatuses.push({
-            status: failedStatus,
-            message: errorMessage,
-            code: errorCode,
-          });
-
-          // Log as ERROR since this affects data completeness
-          logger.error('Status search failed - partial results will be returned', {
-            status: failedStatus,
-            errorCode,
-            message: errorMessage,
-            note: 'This status will be excluded from results'
-          });
-        }
-      }
-
-      // Update searchedStatuses to reflect only successful searches
-      if (failedStatuses.length > 0) {
-        searchedStatuses = statuses.filter(s => !failedStatuses.some(f => f.status === s));
-      }
-
-      // Sort merged results by createdAt descending (most recent first)
-      conversations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      // Limit to requested size after merging
-      const effectiveLimit = input.limit || 50;
-      if (conversations.length > effectiveLimit) {
-        conversations = conversations.slice(0, effectiveLimit);
-      }
-
-      // Pagination for merged results - show both returned count and real total
-      pagination = {
-        totalResults: conversations.length,
-        totalAvailable: Object.keys(totalByStatus).length > 0 ? totalAvailable : undefined,
-        totalByStatus: Object.keys(totalByStatus).length > 0 ? totalByStatus : undefined,
-        errors: failedStatuses.length > 0 ? failedStatuses : undefined,
-        note: failedStatuses.length > 0
-          ? `[WARNING] ${failedStatuses.length} status(es) failed - results incomplete! Failed: ${failedStatuses.map(f => `${f.status} (${f.code})`).join(', ')}. Totals reflect successful statuses only.`
-          : `Merged results from ${Object.keys(totalByStatus).length} statuses. Returned ${conversations.length} of ${totalAvailable} total conversations.`
-      };
+      conversations = statusResult.conversations;
+      searchedStatuses = statusResult.searchedStatuses;
+      pagination = statusResult.pagination;
       logger.info('Multi-status search completed', {
         statusesSearched: searchedStatuses,
-        failedStatuses: failedStatuses.length > 0 ? failedStatuses : undefined,
+        failedStatuses: statusResult.pagination.errors,
         totalResults: conversations.length,
-        totalAvailable: failedStatuses.length > 0 ? 'partial failure' : totalAvailable
+        totalAvailable: statusResult.pagination.errors ? 'partial failure' : statusResult.pagination.totalAvailable
       });
     }
 
@@ -1612,9 +1542,6 @@ export class ToolHandler {
       queryParams.mailbox = effectiveInboxId;
     }
 
-    // Default to all statuses for consistency with searchConversations (v1.6.0+)
-    queryParams.status = input.status || 'all';
-
     const queryWithDate = this.appendCreatedAtFilter(
       queryParams.query as string | undefined,
       input.createdAfter,
@@ -1622,9 +1549,30 @@ export class ToolHandler {
     );
     if (queryWithDate) queryParams.query = queryWithDate;
 
-    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
+    let conversations: Conversation[];
+    let paginationInfo: unknown;
+    let nextPage: number | null = null;
+    let searchedStatuses: string[];
 
-    let conversations = response._embedded?.conversations || [];
+    if (input.status) {
+      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
+        ...queryParams,
+        status: input.status,
+      });
+      conversations = response._embedded?.conversations || [];
+      paginationInfo = response.page;
+      nextPage = getNextPage(response.page);
+      searchedStatuses = [input.status];
+    } else {
+      const statusResult = await this.searchConversationStatusSet(
+        queryParams,
+        DEFAULT_CONVERSATION_STATUSES,
+        input.limit || 50,
+      );
+      conversations = statusResult.conversations;
+      paginationInfo = statusResult.pagination;
+      searchedStatuses = statusResult.searchedStatuses;
+    }
 
     let clientSideFiltered = false;
     const originalCount = conversations.length;
@@ -1634,7 +1582,29 @@ export class ToolHandler {
       clientSideFiltered = result.wasFiltered;
     }
 
-    const paginationInfo = this.buildFilteredPagination(conversations.length, response.page, clientSideFiltered);
+    if (clientSideFiltered) {
+      if (input.status) {
+        paginationInfo = this.buildFilteredPagination(
+          conversations.length,
+          paginationInfo as { totalElements?: number } | undefined,
+          true
+        );
+      } else {
+        const merged = paginationInfo as {
+          totalAvailable?: number;
+          totalByStatus?: Record<string, number>;
+          errors?: Array<{ status: string; message: string; code: string }>;
+          note?: string;
+        };
+        paginationInfo = {
+          totalResults: conversations.length,
+          totalAvailable: merged.totalAvailable,
+          totalByStatus: merged.totalByStatus,
+          errors: merged.errors,
+          note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged.totalAvailable}). ${merged.note || ''}`
+        };
+      }
+    }
 
     return {
       content: [
@@ -1650,9 +1620,11 @@ export class ToolHandler {
               customerEmail: input.customerEmail,
               emailDomain: input.emailDomain,
               tags: input.tags,
+              status: input.status,
             },
+            statusesSearched: searchedStatuses,
             pagination: paginationInfo,
-            nextPage: getNextPage(response.page),
+            nextPage,
             clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
             note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
           }, null, 2),
@@ -1871,6 +1843,97 @@ export class ToolHandler {
     };
   }
 
+  private async searchConversationStatusSet(
+    baseParams: Record<string, unknown>,
+    statuses: readonly ConversationStatus[],
+    limit: number,
+  ): Promise<{
+    conversations: Conversation[];
+    pagination: {
+      totalResults: number;
+      totalAvailable?: number;
+      totalByStatus?: Record<string, number>;
+      errors?: Array<{ status: string; message: string; code: string }>;
+      note: string;
+    };
+    searchedStatuses: string[];
+  }> {
+    const results = await Promise.allSettled(
+      statuses.map(status =>
+        helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
+          ...baseParams,
+          status,
+        })
+      )
+    );
+
+    const conversations: Conversation[] = [];
+    const seenIds = new Set<number>();
+    const failedStatuses: Array<{ status: string; message: string; code: string }> = [];
+    const totalByStatus: Record<string, number> = {};
+    let totalAvailable = 0;
+
+    for (const [index, result] of results.entries()) {
+      const statusName = statuses[index];
+
+      if (result.status === 'fulfilled') {
+        const statusTotal = result.value.page?.totalElements || 0;
+        totalByStatus[statusName] = statusTotal;
+        totalAvailable += statusTotal;
+
+        for (const conversation of result.value._embedded?.conversations || []) {
+          if (!seenIds.has(conversation.id)) {
+            seenIds.add(conversation.id);
+            conversations.push(conversation);
+          }
+        }
+        continue;
+      }
+
+      const reason = result.reason;
+      if (!isApiError(reason)) {
+        throw reason;
+      }
+      if (reason.code === 'UNAUTHORIZED' || reason.code === 'INVALID_INPUT') {
+        throw reason;
+      }
+
+      failedStatuses.push({
+        status: statusName,
+        message: reason.message,
+        code: reason.code,
+      });
+
+      logger.error('Status search failed - partial results will be returned', {
+        status: statusName,
+        errorCode: reason.code,
+        message: reason.message,
+        note: 'This status will be excluded from results'
+      });
+    }
+
+    const searchedStatuses = failedStatuses.length > 0
+      ? statuses.filter(status => !failedStatuses.some(failure => failure.status === status))
+      : [...statuses];
+
+    conversations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const limitedConversations = conversations.slice(0, limit);
+
+    return {
+      conversations: limitedConversations,
+      searchedStatuses,
+      pagination: {
+        totalResults: limitedConversations.length,
+        totalAvailable: Object.keys(totalByStatus).length > 0 ? totalAvailable : undefined,
+        totalByStatus: Object.keys(totalByStatus).length > 0 ? totalByStatus : undefined,
+        errors: failedStatuses.length > 0 ? failedStatuses : undefined,
+        note: failedStatuses.length > 0
+          ? `[WARNING] ${failedStatuses.length} status(es) failed - results incomplete! Failed: ${failedStatuses.map(f => `${f.status} (${f.code})`).join(', ')}. Totals reflect successful statuses only.`
+          : `Merged results from ${Object.keys(totalByStatus).length} statuses. Returned ${limitedConversations.length} of ${totalAvailable} total conversations.`,
+      },
+    };
+  }
+
   /**
    * Search conversations for a single status
    */
@@ -2011,8 +2074,10 @@ export class ToolHandler {
     // Apply combination filters
     const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
     if (effectiveInboxId) queryParams.mailbox = effectiveInboxId;
-    // Send status=all explicitly (Help Scout defaults to active-only when omitted)
-    queryParams.status = input.status || 'all';
+    const shouldSearchDefaultStatuses = input.status === 'all';
+    if (!shouldSearchDefaultStatuses) {
+      queryParams.status = input.status;
+    }
     if (input.tag) queryParams.tag = input.tag;
     if (input.modifiedSince) queryParams.modifiedSince = this.normalizeApiDateParam(input.modifiedSince);
 
@@ -2023,8 +2088,27 @@ export class ToolHandler {
     );
     if (queryWithDate) queryParams.query = queryWithDate;
 
-    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-    let conversations = response._embedded?.conversations || [];
+    let conversations: Conversation[];
+    let paginationInfo: unknown;
+    let nextPage: number | null = null;
+    let searchedStatuses: string[];
+
+    if (shouldSearchDefaultStatuses) {
+      const statusResult = await this.searchConversationStatusSet(
+        queryParams,
+        DEFAULT_CONVERSATION_STATUSES,
+        input.limit,
+      );
+      conversations = statusResult.conversations;
+      paginationInfo = statusResult.pagination;
+      searchedStatuses = statusResult.searchedStatuses;
+    } else {
+      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
+      conversations = response._embedded?.conversations || [];
+      paginationInfo = response.page;
+      nextPage = getNextPage(response.page);
+      searchedStatuses = [input.status];
+    }
 
     let clientSideFiltered = false;
     const originalCount = conversations.length;
@@ -2034,7 +2118,29 @@ export class ToolHandler {
       clientSideFiltered = result.wasFiltered;
     }
 
-    const paginationInfo = this.buildFilteredPagination(conversations.length, response.page, clientSideFiltered);
+    if (clientSideFiltered) {
+      if (shouldSearchDefaultStatuses) {
+        const merged = paginationInfo as {
+          totalAvailable?: number;
+          totalByStatus?: Record<string, number>;
+          errors?: Array<{ status: string; message: string; code: string }>;
+          note?: string;
+        };
+        paginationInfo = {
+          totalResults: conversations.length,
+          totalAvailable: merged.totalAvailable,
+          totalByStatus: merged.totalByStatus,
+          errors: merged.errors,
+          note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged.totalAvailable}). ${merged.note || ''}`
+        };
+      } else {
+        paginationInfo = this.buildFilteredPagination(
+          conversations.length,
+          paginationInfo as { totalElements?: number } | undefined,
+          true
+        );
+      }
+    }
 
     return {
       content: [{
@@ -2048,10 +2154,12 @@ export class ToolHandler {
             customerIds: input.customerIds,
             conversationNumber: input.conversationNumber,
             uniqueSorting: ['waitingSince', 'customerName', 'customerEmail'].includes(input.sortBy) ? input.sortBy : undefined,
+            status: input.status,
           },
           inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
+          statusesSearched: searchedStatuses,
           pagination: paginationInfo,
-          nextPage: getNextPage(response.page),
+          nextPage,
           clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
           note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
         }, null, 2),

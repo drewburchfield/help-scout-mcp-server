@@ -22,6 +22,10 @@ function getArgumentKeys(args: unknown): string[] {
   return args && typeof args === 'object' ? Object.keys(args as Record<string, unknown>) : [];
 }
 
+function formatInstructionValue(value: unknown): string {
+  return JSON.stringify(value == null ? '' : String(value));
+}
+
 export class HelpScoutMCPServer {
   private server: Server;
   private discoveredInboxes: Inbox[] = [];
@@ -86,7 +90,7 @@ export class HelpScoutMCPServer {
       } while (page <= totalPages);
 
       const inboxList = inboxes.map(inbox =>
-        `  - "${inbox.name}" (ID: ${inbox.id})`
+        `  - ${formatInstructionValue(inbox.name)} (ID: ${formatInstructionValue(inbox.id)})`
       ).join('\n');
 
       const instructions = `Help Scout MCP Server - Search and retrieve Help Scout inbox, conversation, customer, and organization data.

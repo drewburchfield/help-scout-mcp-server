@@ -2,6 +2,40 @@ import { Prompt, GetPromptRequest, GetPromptResult } from '@modelcontextprotocol
 import { logger } from '../utils/logger.js';
 
 export class PromptHandler {
+  private formatJsonExample(value: Record<string, unknown>): string {
+    return JSON.stringify(value, null, 2)
+      .split('\n')
+      .map(line => `   ${line}`)
+      .join('\n');
+  }
+
+  private parsePositiveHours(value: unknown): number | null {
+    if (typeof value !== 'number' && typeof value !== 'string') {
+      return null;
+    }
+
+    const hours = typeof value === 'string' ? Number(value.trim()) : value;
+    return Number.isFinite(hours) && hours > 0 ? hours : null;
+  }
+
+  private parseOptionalBoolean(value: unknown): boolean | null {
+    if (value === undefined) {
+      return false;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true') return true;
+      if (normalized === 'false') return false;
+    }
+
+    return null;
+  }
+
   async listPrompts(): Promise<Prompt[]> {
     return [
       {
@@ -241,6 +275,16 @@ When analyzing across multiple inboxes:
     const inboxId = args.inboxId as string | undefined;
     const status = args.status as string | undefined;
     const tag = args.tag as string | undefined;
+    const searchParams: Record<string, unknown> = {
+      createdAfter: '<calculated_date_7_days_ago>',
+      limit: 50,
+      sort: 'createdAt',
+      order: 'desc',
+    };
+
+    if (inboxId) searchParams.inboxId = inboxId;
+    if (status) searchParams.status = status;
+    if (tag) searchParams.tag = tag;
 
     const prompt = `To search for conversations from the last 7 days, follow these steps:
 
@@ -253,12 +297,7 @@ When analyzing across multiple inboxes:
 
 3. ${inboxId ? '' : 'IMPORTANT: If the user mentioned a specific inbox by name, use inbox IDs from the server instructions. If the list may be stale, call "listAllInboxes" to refresh available inbox IDs.\n\n4. '}Search for conversations using the "searchConversations" tool with these parameters:
    \`\`\`json
-   {
-     "createdAfter": "<calculated_date_7_days_ago>",
-     "limit": 50,
-     "sort": "createdAt",
-     "order": "desc"${inboxId ? `,\n     "inboxId": "${inboxId}"` : ''}${status ? `,\n     "status": "${status}"` : ''}${tag ? `,\n     "tag": "${tag}"` : ''}
-   }
+${this.formatJsonExample(searchParams)}
    \`\`\`
 
 4. For each conversation found, you can optionally get more details using:
@@ -288,6 +327,29 @@ This will return conversations created in the last 7 days, sorted by creation da
   private async findUrgentTags(args: Record<string, unknown>): Promise<GetPromptResult> {
     const inboxId = args.inboxId as string | undefined;
     const timeframe = args.timeframe as string | undefined;
+    const urgentSearchParams: Record<string, unknown> = {
+      tag: 'urgent',
+      limit: 50,
+      sort: 'createdAt',
+      order: 'desc',
+    };
+    const prioritySearchParams: Record<string, unknown> = {
+      tag: 'priority',
+      limit: 50,
+      sort: 'createdAt',
+      order: 'desc',
+    };
+    const highPrioritySearchParams: Record<string, unknown> = {
+      tag: 'high-priority',
+      limit: 50,
+      sort: 'createdAt',
+      order: 'desc',
+    };
+
+    for (const params of [urgentSearchParams, prioritySearchParams, highPrioritySearchParams]) {
+      if (timeframe) params.createdAfter = '<calculated_time>';
+      if (inboxId) params.inboxId = inboxId;
+    }
 
     let timeFilter = '';
     if (timeframe) {
@@ -309,32 +371,17 @@ ${inboxId ? '3' : '4'}. Perform multiple searches for different urgent tag varia
    
    a) Search for "urgent" tag:
    \`\`\`json
-   {
-     "tag": "urgent",
-     "limit": 50,
-     "sort": "createdAt",
-     "order": "desc"${timeframe ? `,\n     "createdAfter": "<calculated_time>"` : ''}${inboxId ? `,\n     "inboxId": "${inboxId}"` : ''}
-   }
+${this.formatJsonExample(urgentSearchParams)}
    \`\`\`
 
    b) Search for "priority" tag:
    \`\`\`json
-   {
-     "tag": "priority",
-     "limit": 50,
-     "sort": "createdAt", 
-     "order": "desc"${timeframe ? `,\n     "createdAfter": "<calculated_time>"` : ''}${inboxId ? `,\n     "inboxId": "${inboxId}"` : ''}
-   }
+${this.formatJsonExample(prioritySearchParams)}
    \`\`\`
 
    c) Search for "high-priority" tag:
    \`\`\`json
-   {
-     "tag": "high-priority",
-     "limit": 50,
-     "sort": "createdAt",
-     "order": "desc"${timeframe ? `,\n     "createdAfter": "<calculated_time>"` : ''}${inboxId ? `,\n     "inboxId": "${inboxId}"` : ''}
-   }
+${this.formatJsonExample(highPrioritySearchParams)}
    \`\`\`
 
 4. Combine and deduplicate results from all searches.
@@ -360,18 +407,30 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 
   private async listInboxActivity(args: Record<string, unknown>): Promise<GetPromptResult> {
     const inboxId = args.inboxId as string;
-    const hours = args.hours as number;
-    const includeThreads = args.includeThreads as boolean | undefined;
+    const hours = this.parsePositiveHours(args.hours);
+    const includeThreads = this.parseOptionalBoolean(args.includeThreads);
 
     if (!inboxId) {
       throw new Error('inboxId argument is required for list-inbox-activity prompt');
     }
 
-    if (!hours || typeof hours !== 'number') {
-      throw new Error('hours argument is required and must be a number for list-inbox-activity prompt');
+    if (hours === null) {
+      throw new Error('hours argument is required and must be a positive number for list-inbox-activity prompt');
     }
 
-    const prompt = `To show activity in inbox "${inboxId}" over the last ${hours} hours, follow these steps:
+    if (includeThreads === null) {
+      throw new Error('includeThreads argument must be a boolean for list-inbox-activity prompt');
+    }
+
+    const searchParams = {
+      inboxId,
+      createdAfter: `<calculated_time_${hours}_hours_ago>`,
+      limit: 100,
+      sort: 'createdAt',
+      order: 'desc',
+    };
+
+    const prompt = `To show activity in inbox ${JSON.stringify(inboxId)} over the last ${hours} hours, follow these steps:
 
 1. Get current MCP host time using the "getServerTime" tool.
 
@@ -382,13 +441,7 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 
 3. Search for conversations in the specified inbox using the "searchConversations" tool:
    \`\`\`json
-   {
-     "inboxId": "${inboxId}",
-     "createdAfter": "<calculated_time_${hours}_hours_ago>",
-     "limit": 100,
-     "sort": "createdAt",
-     "order": "desc"
-   }
+${this.formatJsonExample(searchParams)}
    \`\`\`
 
 4. Analyze the results to show:
@@ -403,7 +456,7 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 This will provide a comprehensive view of inbox activity over the specified time period.`;
 
     return {
-      description: `Instructions for monitoring activity in inbox ${inboxId} over the last ${hours} hours`,
+      description: `Instructions for monitoring activity in inbox ${JSON.stringify(inboxId)} over the last ${hours} hours`,
       messages: [
         {
           role: 'user',
