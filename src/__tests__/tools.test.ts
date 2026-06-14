@@ -41,7 +41,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(36);
+      expect(tools).toHaveLength(40);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -79,6 +79,10 @@ describe('ToolHandler', () => {
         'listWebhooks',
         'getWebhook',
         'getSatisfactionRating',
+        'getCompanyReport',
+        'getConversationsReport',
+        'getHappinessReport',
+        'getHappinessRatingsReport',
       ]);
     });
 
@@ -877,6 +881,176 @@ describe('ToolHandler', () => {
         expect.objectContaining({
           field: 'ratingId',
           message: 'Rating ID must be numeric',
+        }),
+      ]));
+    });
+
+    it('should get core reporting API data for a bounded time range', async () => {
+      const reportArgs = {
+        start: '2024-01-01T00:00:00Z',
+        end: '2024-01-31T23:59:59Z',
+        previousStart: '2023-12-01T00:00:00Z',
+        previousEnd: '2023-12-31T23:59:59Z',
+        mailboxes: ['359402'],
+        tags: ['123'],
+        types: ['email'],
+        folders: ['456'],
+      };
+
+      nock(baseURL)
+        .get('/reports/company')
+        .query({
+          start: reportArgs.start,
+          end: reportArgs.end,
+          previousStart: reportArgs.previousStart,
+          previousEnd: reportArgs.previousEnd,
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+        })
+        .reply(200, {
+          current: { customersHelped: 28, totalReplies: 62 },
+          previous: { customersHelped: 27, totalReplies: 60 },
+          deltas: { customersHelped: 3.7 },
+        });
+
+      nock(baseURL)
+        .get('/reports/conversations')
+        .query({
+          start: reportArgs.start,
+          end: reportArgs.end,
+          previousStart: reportArgs.previousStart,
+          previousEnd: reportArgs.previousEnd,
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+        })
+        .reply(200, {
+          current: { totalConversations: 1816, conversationsPerDay: 60 },
+          previous: { totalConversations: 2080, conversationsPerDay: 67 },
+          busiestDay: { day: 3, hour: 0, count: 411 },
+        });
+
+      nock(baseURL)
+        .get('/reports/happiness')
+        .query({
+          start: reportArgs.start,
+          end: reportArgs.end,
+          previousStart: reportArgs.previousStart,
+          previousEnd: reportArgs.previousEnd,
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+        })
+        .reply(200, {
+          current: { happinessScore: 5.45, greatCount: 41, ratingsCount: 110 },
+          previous: { happinessScore: -0.18, greatCount: 340, ratingsCount: 1074 },
+        });
+
+      for (const [toolName, reportType, expectedField] of [
+        ['getCompanyReport', 'company', 'customersHelped'],
+        ['getConversationsReport', 'conversations', 'totalConversations'],
+        ['getHappinessReport', 'happiness', 'happinessScore'],
+      ] as const) {
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: toolName,
+            arguments: reportArgs,
+          },
+        });
+
+        const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+        expect(result.isError).toBeUndefined();
+        expect(response.reportType).toBe(reportType);
+        expect(response.filters).toEqual(expect.objectContaining({
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+        }));
+        expect(response.report.current[expectedField]).toBeDefined();
+      }
+    });
+
+    it('should get happiness ratings report rows with pagination and rating filter', async () => {
+      nock(baseURL)
+        .get('/reports/happiness/ratings')
+        .query({
+          start: '2024-01-01T00:00:00Z',
+          end: '2024-01-31T23:59:59Z',
+          page: 2,
+          sortField: 'rating',
+          sortOrder: 'ASC',
+          rating: 'great',
+        })
+        .reply(200, {
+          results: [{
+            number: 222043,
+            threadid: 1169815634,
+            id: 432207336,
+            type: 'email',
+            ratingId: 1,
+            ratingComments: 'Thanks!',
+            ratingCreatedAt: '2024-01-15T12:26:53Z',
+          }],
+          page: 2,
+          count: 100,
+          pages: 10,
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getHappinessRatingsReport',
+          arguments: {
+            start: '2024-01-01T00:00:00Z',
+            end: '2024-01-31T23:59:59Z',
+            page: 2,
+            sortField: 'rating',
+            sortOrder: 'asc',
+            rating: 'great',
+          },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.reportType).toBe('happinessRatings');
+      expect(response.filters).toEqual(expect.objectContaining({
+        page: 2,
+        sortField: 'rating',
+        sortOrder: 'ASC',
+        rating: 'great',
+      }));
+      expect(response.report.results[0]).toEqual(expect.objectContaining({
+        number: 222043,
+        ratingId: 1,
+      }));
+    });
+
+    it('should require comparison report dates to be paired', async () => {
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getCompanyReport',
+          arguments: {
+            start: '2024-01-01T00:00:00Z',
+            end: '2024-01-31T23:59:59Z',
+            previousStart: '2023-12-01T00:00:00Z',
+          },
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error.code).toBe('INVALID_INPUT');
+      expect(response.error.validationIssues).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          message: 'previousStart and previousEnd must be provided together',
         }),
       ]));
     });

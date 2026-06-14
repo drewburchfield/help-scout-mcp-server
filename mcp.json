@@ -45,7 +45,11 @@
     "listWorkflows",
     "listWebhooks",
     "getWebhook",
-    "getSatisfactionRating"
+    "getSatisfactionRating",
+    "getCompanyReport",
+    "getConversationsReport",
+    "getHappinessReport",
+    "getHappinessRatingsReport"
   ],
   "prompts": [
     "search-last-7-days",

@@ -238,6 +238,22 @@
     {
       "name": "getSatisfactionRating",
       "description": "Get a Help Scout satisfaction rating by ID"
+    },
+    {
+      "name": "getCompanyReport",
+      "description": "Get the Help Scout company overall report"
+    },
+    {
+      "name": "getConversationsReport",
+      "description": "Get the Help Scout conversations overall report"
+    },
+    {
+      "name": "getHappinessReport",
+      "description": "Get the Help Scout happiness overall report"
+    },
+    {
+      "name": "getHappinessRatingsReport",
+      "description": "Get Help Scout happiness rating rows"
     }
   ],
   "prompts": [

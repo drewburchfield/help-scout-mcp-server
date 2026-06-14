@@ -23,6 +23,9 @@ import {
   Workflow,
   Webhook,
   SatisfactionRating,
+  ReportResponse,
+  HappinessRatingsReport,
+  ReportBaseInput,
   ServerTime,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
@@ -59,6 +62,10 @@ import {
   ListWebhooksInputSchema,
   GetWebhookInputSchema,
   GetSatisfactionRatingInputSchema,
+  GetCompanyReportInputSchema,
+  GetConversationsReportInputSchema,
+  GetHappinessReportInputSchema,
+  GetHappinessRatingsReportInputSchema,
 } from '../schema/types.js';
 
 type ConversationStatus = 'active' | 'pending' | 'closed' | 'spam';
@@ -160,6 +167,22 @@ export class ToolHandler {
 
   private appendQueryClause(existingQuery: string | undefined, clause: string): string {
     return existingQuery ? `(${existingQuery}) AND (${clause})` : `(${clause})`;
+  }
+
+  private buildReportQueryParams(input: ReportBaseInput): Record<string, string | number> {
+    const params: Record<string, string | number> = {
+      start: this.normalizeApiDateParam(input.start) ?? input.start,
+      end: this.normalizeApiDateParam(input.end) ?? input.end,
+    };
+
+    if (input.previousStart) params.previousStart = this.normalizeApiDateParam(input.previousStart) ?? input.previousStart;
+    if (input.previousEnd) params.previousEnd = this.normalizeApiDateParam(input.previousEnd) ?? input.previousEnd;
+    if (input.mailboxes) params.mailboxes = input.mailboxes.join(',');
+    if (input.tags) params.tags = input.tags.join(',');
+    if (input.types) params.types = input.types.join(',');
+    if (input.folders) params.folders = input.folders.join(',');
+
+    return params;
   }
 
   /**
@@ -809,6 +832,82 @@ export class ToolHandler {
           required: ['ratingId'],
         },
       },
+      {
+        name: 'getCompanyReport',
+        description: 'Get the Help Scout company overall report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationsReport',
+        description: 'Get the Help Scout conversations overall report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getHappinessReport',
+        description: 'Get the Help Scout happiness overall report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getHappinessRatingsReport',
+        description: 'Get Help Scout happiness rating rows for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            sortField: { type: 'string', enum: ['number', 'modifiedAt', 'rating'], default: 'modifiedAt' },
+            sortOrder: { type: 'string', enum: ['ASC', 'DESC'], default: 'DESC' },
+            rating: { type: 'string', enum: ['great', 'ok', 'all', 'not-good'], description: 'Rating value filter' },
+          },
+          required: ['start', 'end'],
+        },
+      },
     ];
   }
 
@@ -977,6 +1076,18 @@ export class ToolHandler {
           break;
         case 'getSatisfactionRating':
           result = await this.getSatisfactionRating(request.params.arguments || {});
+          break;
+        case 'getCompanyReport':
+          result = await this.getCompanyReport(request.params.arguments || {});
+          break;
+        case 'getConversationsReport':
+          result = await this.getConversationsReport(request.params.arguments || {});
+          break;
+        case 'getHappinessReport':
+          result = await this.getHappinessReport(request.params.arguments || {});
+          break;
+        case 'getHappinessRatingsReport':
+          result = await this.getHappinessRatingsReport(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1787,6 +1898,62 @@ export class ToolHandler {
           ratingId: input.ratingId,
           rating,
           usage: 'Use satisfaction rating data as read-only quality context; this tool does not compute reports or trends.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getCompanyReport(args: unknown): Promise<CallToolResult> {
+    const input = GetCompanyReportInputSchema.parse(args);
+    const params = this.buildReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/company', params);
+
+    return this.formatReportResult('company', params, report);
+  }
+
+  private async getConversationsReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationsReportInputSchema.parse(args);
+    const params = this.buildReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations', params);
+
+    return this.formatReportResult('conversations', params, report);
+  }
+
+  private async getHappinessReport(args: unknown): Promise<CallToolResult> {
+    const input = GetHappinessReportInputSchema.parse(args);
+    const params = this.buildReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/happiness', params);
+
+    return this.formatReportResult('happiness', params, report);
+  }
+
+  private async getHappinessRatingsReport(args: unknown): Promise<CallToolResult> {
+    const input = GetHappinessRatingsReportInputSchema.parse(args);
+    const params = {
+      ...this.buildReportQueryParams(input),
+      page: input.page,
+      sortField: input.sortField,
+      sortOrder: input.sortOrder,
+      ...(input.rating ? { rating: input.rating } : {}),
+    };
+    const report = await helpScoutClient.get<HappinessRatingsReport>('/reports/happiness/ratings', params);
+
+    return this.formatReportResult('happinessRatings', params, report);
+  }
+
+  private formatReportResult(
+    reportType: string,
+    filters: Record<string, string | number>,
+    report: ReportResponse | HappinessRatingsReport
+  ): CallToolResult {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          reportType,
+          filters,
+          report,
+          usage: 'Reporting data is read-only Help Scout API output for the requested bounded interval; this tool does not compute dashboard summaries or trends beyond API-provided fields.',
         }, null, 2),
       }],
     };
