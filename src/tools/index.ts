@@ -22,6 +22,7 @@ import {
   SavedReply,
   Workflow,
   Webhook,
+  SatisfactionRating,
   ServerTime,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
@@ -57,6 +58,7 @@ import {
   ListWorkflowsInputSchema,
   ListWebhooksInputSchema,
   GetWebhookInputSchema,
+  GetSatisfactionRatingInputSchema,
 } from '../schema/types.js';
 
 type ConversationStatus = 'active' | 'pending' | 'closed' | 'spam';
@@ -796,6 +798,17 @@ export class ToolHandler {
           required: ['webhookId'],
         },
       },
+      {
+        name: 'getSatisfactionRating',
+        description: 'Get a Help Scout satisfaction rating by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            ratingId: { type: 'string', description: 'Satisfaction rating ID' },
+          },
+          required: ['ratingId'],
+        },
+      },
     ];
   }
 
@@ -961,6 +974,9 @@ export class ToolHandler {
           break;
         case 'getWebhook':
           result = await this.getWebhook(request.params.arguments || {});
+          break;
+        case 'getSatisfactionRating':
+          result = await this.getSatisfactionRating(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1755,6 +1771,22 @@ export class ToolHandler {
         text: JSON.stringify({
           webhook,
           usage: 'Use webhook configuration for integration inspection only; this tool does not create or update webhooks.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getSatisfactionRating(args: unknown): Promise<CallToolResult> {
+    const input = GetSatisfactionRatingInputSchema.parse(args);
+    const rating = await helpScoutClient.get<SatisfactionRating>(`/ratings/${input.ratingId}`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ratingId: input.ratingId,
+          rating,
+          usage: 'Use satisfaction rating data as read-only quality context; this tool does not compute reports or trends.',
         }, null, 2),
       }],
     };

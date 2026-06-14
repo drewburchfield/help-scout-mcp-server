@@ -36,6 +36,7 @@ const GOLDEN = {
   originalSourceThreadId: process.env.MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID,
   attachmentConversationId: process.env.MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID,
   attachmentId: process.env.MCP_DOGFOOD_ATTACHMENT_ID,
+  satisfactionRatingId: process.env.MCP_DOGFOOD_SATISFACTION_RATING_ID,
 };
 
 const EXPECTED_TOOLS = [
@@ -74,6 +75,7 @@ const EXPECTED_TOOLS = [
   'listWorkflows',
   'listWebhooks',
   'getWebhook',
+  'getSatisfactionRating',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -101,6 +103,7 @@ interface DogfoodContext {
   teamId?: string;
   savedReplyId?: string;
   webhookId?: string;
+  satisfactionRatingId?: string;
   organizationPropertySlug?: string;
   createdAfter?: string;
   createdBefore?: string;
@@ -169,6 +172,7 @@ class McpDogfoodSession {
       originalSourceThreadId: GOLDEN.originalSourceThreadId,
       attachmentConversationId: GOLDEN.attachmentConversationId,
       attachmentId: GOLDEN.attachmentId,
+      satisfactionRatingId: GOLDEN.satisfactionRatingId,
     };
   }
 
@@ -555,6 +559,17 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const webhook = getObject(data, 'webhook');
         requireCondition(webhook?.id, 'Missing webhook');
+      },
+    },
+    {
+      tool: 'getSatisfactionRating',
+      name: 'fixture satisfaction rating details',
+      skipIf: (ctx) => ctx.satisfactionRatingId ? undefined : 'No satisfaction rating fixture available',
+      args: (ctx) => ({ ratingId: ctx.satisfactionRatingId ?? '0' }),
+      validate: (data) => {
+        const rating = getObject(data, 'rating');
+        requireCondition(rating?.id, 'Missing satisfaction rating');
+        requireCondition(typeof rating.rating === 'string', 'Missing rating value');
       },
     },
     {
