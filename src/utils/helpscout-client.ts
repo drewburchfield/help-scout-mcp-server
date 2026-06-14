@@ -530,6 +530,7 @@ export class HelpScoutClient {
 
   private getDefaultCacheTtl(endpoint: string): number {
     if (endpoint.includes('/conversations')) return 300; // 5 minutes
+    if (endpoint.includes('/saved-replies')) return 300; // 5 minutes
     if (endpoint.includes('/mailboxes')) return 86400; // 24 hours
     if (endpoint.includes('/threads')) return 300; // 5 minutes
     return 300; // Default 5 minutes
