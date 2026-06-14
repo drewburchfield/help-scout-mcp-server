@@ -63,6 +63,11 @@ const EXPECTED_TOOLS = [
   'getTeamMembers',
   'listInboxCustomFields',
   'listInboxFolders',
+  'listSavedReplies',
+  'getSavedReply',
+  'listWorkflows',
+  'listWebhooks',
+  'getWebhook',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -84,6 +89,8 @@ interface DogfoodContext {
   tagId?: string;
   userId?: string;
   teamId?: string;
+  savedReplyId?: string;
+  webhookId?: string;
   organizationPropertySlug?: string;
   createdAfter?: string;
   createdBefore?: string;
@@ -482,6 +489,58 @@ function buildScenarios(): Scenario[] {
       args: (ctx) => ({ inboxId: ctx.inboxId }),
       validate: (data) => {
         requireArray(data, ['folders', 'results'], 'folders');
+      },
+    },
+    {
+      tool: 'listSavedReplies',
+      name: 'saved replies for inbox',
+      args: (ctx) => ({ inboxId: ctx.inboxId, includeChatReplies: true }),
+      validate: (data) => {
+        requireArray(data, ['savedReplies', 'replies', 'results'], 'savedReplies');
+      },
+      after: (data, _result, ctx) => {
+        const replies = getArray(data, ['savedReplies', 'replies', 'results']) as JsonObject[];
+        if (replies[0]?.id) ctx.savedReplyId = String(replies[0].id);
+      },
+    },
+    {
+      tool: 'getSavedReply',
+      name: 'discovered saved reply details',
+      skipIf: (ctx) => ctx.savedReplyId ? undefined : 'No saved reply available from listSavedReplies',
+      args: (ctx) => ({ inboxId: ctx.inboxId, replyId: ctx.savedReplyId ?? '0' }),
+      validate: (data) => {
+        const savedReply = getObject(data, 'savedReply');
+        requireCondition(savedReply?.id, 'Missing saved reply');
+      },
+    },
+    {
+      tool: 'listWorkflows',
+      name: 'workflow discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        requireArray(data, ['workflows', 'results'], 'workflows');
+      },
+    },
+    {
+      tool: 'listWebhooks',
+      name: 'webhook discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        requireArray(data, ['webhooks', 'results'], 'webhooks');
+      },
+      after: (data, _result, ctx) => {
+        const webhooks = getArray(data, ['webhooks', 'results']) as JsonObject[];
+        if (webhooks[0]?.id) ctx.webhookId = String(webhooks[0].id);
+      },
+    },
+    {
+      tool: 'getWebhook',
+      name: 'discovered webhook details',
+      skipIf: (ctx) => ctx.webhookId ? undefined : 'No webhook available from listWebhooks',
+      args: (ctx) => ({ webhookId: ctx.webhookId ?? '0' }),
+      validate: (data) => {
+        const webhook = getObject(data, 'webhook');
+        requireCondition(webhook?.id, 'Missing webhook');
       },
     },
     {

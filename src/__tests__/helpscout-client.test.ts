@@ -438,6 +438,9 @@ describe('HelpScoutClient', () => {
       
       const mailboxTtl = (client as any).getDefaultCacheTtl('/mailboxes');
       expect(mailboxTtl).toBe(86400); // 24 hours for mailboxes
+
+      const savedRepliesTtl = (client as any).getDefaultCacheTtl('/mailboxes/123/saved-replies');
+      expect(savedRepliesTtl).toBe(300); // 5 minutes for editable saved reply content
       
       const threadsTtl = (client as any).getDefaultCacheTtl('/threads');
       expect(threadsTtl).toBe(300); // 5 minutes for threads

@@ -37,7 +37,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(28);
+      expect(tools).toHaveLength(33);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -67,6 +67,11 @@ describe('ToolHandler', () => {
         'getTeamMembers',
         'listInboxCustomFields',
         'listInboxFolders',
+        'listSavedReplies',
+        'getSavedReply',
+        'listWorkflows',
+        'listWebhooks',
+        'getWebhook',
       ]);
     });
 
@@ -95,6 +100,8 @@ describe('ToolHandler', () => {
         'listUsers',
         'listTeams',
         'getTeamMembers',
+        'listWorkflows',
+        'listWebhooks',
       ];
 
       for (const toolName of pageBasedTools) {
@@ -547,6 +554,147 @@ describe('ToolHandler', () => {
       expect(fieldsResponse.fields[0]).toEqual(expect.objectContaining({ id: 104, name: 'Plan', type: 'dropdown' }));
       expect(fieldsResponse.fields[0].options[0]).toEqual(expect.objectContaining({ id: 168, label: 'Pro' }));
       expect(foldersResponse.folders[0]).toEqual(expect.objectContaining({ id: 1234, name: 'Mine', activeCount: 1 }));
+    });
+
+    it('should list and get saved replies for an inbox', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402/saved-replies')
+        .query({ includeChatReplies: true })
+        .reply(200, [
+          {
+            id: 1001,
+            name: 'Refund policy',
+            preview: 'Refunds take 5-7 business days.',
+            chatPreview: 'Refund timing',
+            text: 'Refunds take 5-7 business days.',
+            chatText: 'Refund timing',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-02T00:00:00Z',
+          },
+        ]);
+      nock(baseURL)
+        .get('/mailboxes/359402/saved-replies/1001')
+        .reply(200, {
+          id: 1001,
+          name: 'Refund policy',
+          text: 'Refunds take 5-7 business days.',
+          chatText: 'Refund timing',
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-02T00:00:00Z',
+        });
+
+      const list = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listSavedReplies',
+          arguments: { inboxId: '359402', includeChatReplies: true },
+        },
+      });
+      const get = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getSavedReply',
+          arguments: { inboxId: '359402', replyId: '1001' },
+        },
+      });
+
+      const listResponse = JSON.parse((list.content[0] as { type: 'text'; text: string }).text);
+      const getResponse = JSON.parse((get.content[0] as { type: 'text'; text: string }).text);
+      expect(list.isError).toBeUndefined();
+      expect(get.isError).toBeUndefined();
+      expect(listResponse.inboxId).toBe('359402');
+      expect(listResponse.includeChatReplies).toBe(true);
+      expect(listResponse.savedReplies[0]).toEqual(expect.objectContaining({ id: 1001, name: 'Refund policy' }));
+      expect(listResponse.nextPage).toBeNull();
+      expect(getResponse.savedReply).toEqual(expect.objectContaining({ id: 1001, text: 'Refunds take 5-7 business days.' }));
+    });
+
+    it('should list workflows', async () => {
+      nock(baseURL)
+        .get('/workflows')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            workflows: [
+              {
+                id: 501,
+                name: 'Auto assign VIP',
+                type: 'automatic',
+                status: 'active',
+                order: 1,
+                createdAt: '2023-01-01T00:00:00Z',
+                updatedAt: '2023-01-02T00:00:00Z',
+              },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listWorkflows',
+          arguments: {},
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.workflows[0]).toEqual(expect.objectContaining({ id: 501, name: 'Auto assign VIP', type: 'automatic' }));
+      expect(response.nextPage).toBeNull();
+    });
+
+    it('should list and get webhooks', async () => {
+      nock(baseURL)
+        .get('/webhooks')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            webhooks: [
+              {
+                id: 91,
+                url: 'https://example.com/webhook',
+                events: ['convo.created', 'convo.updated'],
+                state: 'enabled',
+                createdAt: '2023-01-01T00:00:00Z',
+                updatedAt: '2023-01-02T00:00:00Z',
+              },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+      nock(baseURL)
+        .get('/webhooks/91')
+        .reply(200, {
+          id: 91,
+          url: 'https://example.com/webhook',
+          events: ['convo.created', 'convo.updated'],
+          state: 'enabled',
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-02T00:00:00Z',
+        });
+
+      const list = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listWebhooks',
+          arguments: {},
+        },
+      });
+      const get = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getWebhook',
+          arguments: { webhookId: '91' },
+        },
+      });
+
+      const listResponse = JSON.parse((list.content[0] as { type: 'text'; text: string }).text);
+      const getResponse = JSON.parse((get.content[0] as { type: 'text'; text: string }).text);
+      expect(list.isError).toBeUndefined();
+      expect(get.isError).toBeUndefined();
+      expect(listResponse.webhooks[0]).toEqual(expect.objectContaining({ id: 91, state: 'enabled' }));
+      expect(getResponse.webhook).toEqual(expect.objectContaining({ id: 91, url: 'https://example.com/webhook' }));
     });
   });
 

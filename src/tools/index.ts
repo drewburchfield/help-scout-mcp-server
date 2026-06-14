@@ -19,6 +19,9 @@ import {
   Team,
   InboxCustomField,
   InboxFolder,
+  SavedReply,
+  Workflow,
+  Webhook,
   ServerTime,
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
@@ -47,6 +50,11 @@ import {
   GetTeamMembersInputSchema,
   ListInboxCustomFieldsInputSchema,
   ListInboxFoldersInputSchema,
+  ListSavedRepliesInputSchema,
+  GetSavedReplyInputSchema,
+  ListWorkflowsInputSchema,
+  ListWebhooksInputSchema,
+  GetWebhookInputSchema,
 } from '../schema/types.js';
 
 type ConversationStatus = 'active' | 'pending' | 'closed' | 'spam';
@@ -707,6 +715,61 @@ export class ToolHandler {
           required: ['inboxId'],
         },
       },
+      {
+        name: 'listSavedReplies',
+        description: 'List saved replies for a Help Scout inbox. Use to discover saved reply IDs and inspect reusable response templates.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
+            includeChatReplies: { type: 'boolean', default: false, description: 'Include chat-only saved replies in the response' },
+          },
+          required: ['inboxId'],
+        },
+      },
+      {
+        name: 'getSavedReply',
+        description: 'Get one saved reply from a Help Scout inbox by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
+            replyId: { type: 'string', description: 'Saved reply ID from listSavedReplies' },
+          },
+          required: ['inboxId', 'replyId'],
+        },
+      },
+      {
+        name: 'listWorkflows',
+        description: 'List Help Scout workflows. Use to inspect account workflow configuration and discover workflow IDs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'listWebhooks',
+        description: 'List Help Scout webhooks. Use to inspect webhook configuration and discover webhook IDs.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getWebhook',
+        description: 'Get a Help Scout webhook by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            webhookId: { type: 'string', description: 'Webhook ID from listWebhooks' },
+          },
+          required: ['webhookId'],
+        },
+      },
     ];
   }
 
@@ -851,6 +914,21 @@ export class ToolHandler {
           break;
         case 'listInboxFolders':
           result = await this.listInboxFolders(request.params.arguments || {});
+          break;
+        case 'listSavedReplies':
+          result = await this.listSavedReplies(request.params.arguments || {});
+          break;
+        case 'getSavedReply':
+          result = await this.getSavedReply(request.params.arguments || {});
+          break;
+        case 'listWorkflows':
+          result = await this.listWorkflows(request.params.arguments || {});
+          break;
+        case 'listWebhooks':
+          result = await this.listWebhooks(request.params.arguments || {});
+          break;
+        case 'getWebhook':
+          result = await this.getWebhook(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1481,6 +1559,112 @@ export class ToolHandler {
           usage: folders.length > 0
             ? 'Use folder.id with structuredConversationFilter for folder-scoped lookups.'
             : 'No folders returned for this inbox.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listSavedReplies(args: unknown): Promise<CallToolResult> {
+    const input = ListSavedRepliesInputSchema.parse(args);
+    const response = await helpScoutClient.get<SavedReply[] | PaginatedResponse<SavedReply>>(
+      `/mailboxes/${input.inboxId}/saved-replies`,
+      { includeChatReplies: input.includeChatReplies }
+    );
+    const savedReplies = Array.isArray(response)
+      ? response
+      : response._embedded?.['saved-replies'] || response._embedded?.savedReplies || response._embedded?.replies || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          inboxId: input.inboxId,
+          includeChatReplies: input.includeChatReplies,
+          savedReplies,
+          totalSavedReplies: savedReplies.length,
+          pagination: Array.isArray(response) ? undefined : response.page,
+          nextPage: Array.isArray(response) ? null : getNextPage(response.page),
+          usage: savedReplies.length > 0
+            ? 'Use savedReply.id with getSavedReply to inspect the full reusable response template.'
+            : 'No saved replies returned for this inbox.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getSavedReply(args: unknown): Promise<CallToolResult> {
+    const input = GetSavedReplyInputSchema.parse(args);
+    const savedReply = await helpScoutClient.get<SavedReply>(`/mailboxes/${input.inboxId}/saved-replies/${input.replyId}`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          inboxId: input.inboxId,
+          replyId: input.replyId,
+          savedReply,
+          usage: 'Use saved reply content as reference context only; this tool does not send or draft replies.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listWorkflows(args: unknown): Promise<CallToolResult> {
+    const input = ListWorkflowsInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<Workflow>>('/workflows', {
+      page: input.page,
+    });
+    const workflows = response._embedded?.workflows || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          workflows,
+          totalWorkflows: workflows.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: workflows.length > 0
+            ? 'Use workflow.id when a direct workflow lookup or future API parity tool requires it.'
+            : 'No workflows returned for this Help Scout account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listWebhooks(args: unknown): Promise<CallToolResult> {
+    const input = ListWebhooksInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<Webhook>>('/webhooks', {
+      page: input.page,
+    });
+    const webhooks = response._embedded?.webhooks || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          webhooks,
+          totalWebhooks: webhooks.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: webhooks.length > 0
+            ? 'Use webhook.id with getWebhook to inspect a specific webhook configuration.'
+            : 'No webhooks returned for this Help Scout account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getWebhook(args: unknown): Promise<CallToolResult> {
+    const input = GetWebhookInputSchema.parse(args);
+    const webhook = await helpScoutClient.get<Webhook>(`/webhooks/${input.webhookId}`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          webhook,
+          usage: 'Use webhook configuration for integration inspection only; this tool does not create or update webhooks.',
         }, null, 2),
       }],
     };

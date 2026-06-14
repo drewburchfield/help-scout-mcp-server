@@ -206,6 +206,26 @@
     {
       "name": "listInboxFolders",
       "description": "List folders and counts for a Help Scout inbox"
+    },
+    {
+      "name": "listSavedReplies",
+      "description": "List saved replies for a Help Scout inbox"
+    },
+    {
+      "name": "getSavedReply",
+      "description": "Get one saved reply for a Help Scout inbox"
+    },
+    {
+      "name": "listWorkflows",
+      "description": "List Help Scout workflows"
+    },
+    {
+      "name": "listWebhooks",
+      "description": "List Help Scout webhooks"
+    },
+    {
+      "name": "getWebhook",
+      "description": "Get a Help Scout webhook by ID"
     }
   ],
   "prompts": [
