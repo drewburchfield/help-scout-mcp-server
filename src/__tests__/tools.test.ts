@@ -1,5 +1,8 @@
 import nock from 'nock';
 import { ToolHandler } from '../tools/index.js';
+import { cache } from '../utils/cache.js';
+import { config } from '../utils/config.js';
+import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 
 describe('ToolHandler', () => {
@@ -13,6 +16,7 @@ describe('ToolHandler', () => {
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
     
     nock.cleanAll();
+    cache.clear();
     
     // Mock OAuth2 authentication endpoint
     nock(baseURL)
@@ -633,6 +637,36 @@ describe('ToolHandler', () => {
       expect(response.originalSource).toEqual({ original: 'From: customer@example.com\nSubject: Raw source' });
     });
 
+    it('should redact a thread original source when message redaction is enabled', async () => {
+      const originalRedactMessageContent = config.security.redactMessageContent;
+      config.security.redactMessageContent = true;
+
+      try {
+        const scope = nock(baseURL)
+          .get('/conversations/123/threads/456/original-source')
+          .reply(200, {
+            original: 'From: customer@example.com\nSubject: Raw source',
+          });
+
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: 'getOriginalSource',
+            arguments: { conversationId: '123', threadId: '456' },
+          },
+        });
+
+        const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+        expect(result.isError).toBeUndefined();
+        expect(response.conversationId).toBe('123');
+        expect(response.threadId).toBe('456');
+        expect(response.originalSource).toBe(REDACTED_MESSAGE_BODY);
+        expect(scope.isDone()).toBe(false);
+      } finally {
+        config.security.redactMessageContent = originalRedactMessageContent;
+      }
+    });
+
     it('should get attachment data', async () => {
       nock(baseURL)
         .get('/conversations/123/attachments/789/data')
@@ -657,6 +691,39 @@ describe('ToolHandler', () => {
         encoding: 'base64',
         source: 'Help Scout attachment data endpoint',
       }));
+    });
+
+    it('should not cache attachment data responses', async () => {
+      const scope = nock(baseURL)
+        .get('/conversations/123/attachments/789/data')
+        .reply(200, {
+          data: 'Zmlyc3Q=',
+        })
+        .get('/conversations/123/attachments/789/data')
+        .reply(200, {
+          data: 'c2Vjb25k',
+        });
+
+      const first = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getAttachment',
+          arguments: { conversationId: '123', attachmentId: '789' },
+        },
+      });
+      const second = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getAttachment',
+          arguments: { conversationId: '123', attachmentId: '789' },
+        },
+      });
+
+      const firstResponse = JSON.parse((first.content[0] as { type: 'text'; text: string }).text);
+      const secondResponse = JSON.parse((second.content[0] as { type: 'text'; text: string }).text);
+      expect(firstResponse.attachment).toEqual({ data: 'Zmlyc3Q=' });
+      expect(secondResponse.attachment).toEqual({ data: 'c2Vjb25k' });
+      expect(scope.isDone()).toBe(true);
     });
 
     it('should list workflows', async () => {

@@ -1643,6 +1643,20 @@ export class ToolHandler {
 
   private async getOriginalSource(args: unknown): Promise<CallToolResult> {
     const input = GetOriginalSourceInputSchema.parse(args);
+    if (config.security.redactMessageContent) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            conversationId: input.conversationId,
+            threadId: input.threadId,
+            originalSource: REDACTED_MESSAGE_BODY,
+            usage: 'Original source content is hidden because REDACT_MESSAGE_CONTENT is enabled.',
+          }, null, 2),
+        }],
+      };
+    }
+
     const originalSource = await helpScoutClient.get<Record<string, unknown>>(
       `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`
     );
@@ -1663,7 +1677,9 @@ export class ToolHandler {
   private async getAttachment(args: unknown): Promise<CallToolResult> {
     const input = GetAttachmentInputSchema.parse(args);
     const attachment = await helpScoutClient.get<Record<string, unknown>>(
-      `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`
+      `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`,
+      undefined,
+      { ttl: 0 }
     );
 
     return {
