@@ -12,10 +12,32 @@ SRC_VERSION=$(grep 'version:' src/index.ts | sed "s/.*version: *['\"]\\([^'\"]*\
 DOCKER_VERSION=$(grep 'version=' Dockerfile | sed 's/.*version="\([^"]*\)".*/\1/')
 TEST_VERSION=$(grep 'version:' src/__tests__/index.test.ts | sed "s/.*version: *['\"]\\([^'\"]*\\)['\"].*/\\1/")
 
+require_version() {
+  local source="$1"
+  local version="$2"
+
+  if [ -z "$version" ]; then
+    echo "❌ Could not parse version from $source"
+    return 1
+  fi
+}
+
 echo "📦 package.json:     $PKG_VERSION"
 echo "🔧 src/index.ts:     $SRC_VERSION"  
 echo "🐳 Dockerfile:       $DOCKER_VERSION"
 echo "🧪 Test file:        $TEST_VERSION"
+
+PARSE_OK=true
+require_version "package.json" "$PKG_VERSION" || PARSE_OK=false
+require_version "src/index.ts" "$SRC_VERSION" || PARSE_OK=false
+require_version "Dockerfile" "$DOCKER_VERSION" || PARSE_OK=false
+require_version "src/__tests__/index.test.ts" "$TEST_VERSION" || PARSE_OK=false
+
+if [ "$PARSE_OK" = false ]; then
+  echo ""
+  echo "📋 Fix version extraction before comparing versions."
+  exit 1
+fi
 
 # Check for consistency
 ALL_VERSIONS=("$PKG_VERSION" "$SRC_VERSION" "$DOCKER_VERSION" "$TEST_VERSION")
