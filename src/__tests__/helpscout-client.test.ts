@@ -152,6 +152,45 @@ describe('HelpScoutClient', () => {
       expect(apiScope.isDone()).toBe(true);
       await client.closePool();
     });
+
+    it('should refresh a stale OAuth bearer before retrying a 401', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+      const staleApiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', 'Bearer stale-token')
+        .reply(401, { message: 'Unauthorized' });
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'fresh-token',
+          expires_in: 7200,
+        });
+
+      const freshApiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', 'Bearer fresh-token')
+        .reply(200, { _embedded: { mailboxes: [] } });
+
+      const client = new HelpScoutClient();
+      (client as any).accessToken = 'stale-token';
+      (client as any).tokenExpiresAt = Date.now() + 60_000;
+      jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect(client.get('/mailboxes', { page: 1, size: 1 })).resolves.toEqual({
+        _embedded: { mailboxes: [] },
+      });
+
+      expect(staleApiScope.isDone()).toBe(true);
+      expect(authScope.isDone()).toBe(true);
+      expect(freshApiScope.isDone()).toBe(true);
+      await client.closePool();
+    });
   });
 
   describe('error handling', () => {

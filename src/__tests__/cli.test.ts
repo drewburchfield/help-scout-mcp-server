@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { runCli } from '../cli.js';
+import { isDirectCliInvocation, runCli } from '../cli.js';
 import { logger } from '../utils/logger.js';
 
 jest.mock('../utils/logger.js', () => ({
@@ -60,5 +60,17 @@ describe('CLI entrypoint', () => {
 
     expect(packageJson.bin['help-scout-mcp-server']).toBe('dist/cli.js');
     expect(packageJson.scripts.prepare).toBe('node scripts/prepare.cjs');
+  });
+
+  it('should detect installed package bin shims as direct CLI invocation', () => {
+    expect(isDirectCliInvocation('/usr/local/bin/help-scout-mcp-server')).toBe(true);
+    expect(isDirectCliInvocation('C:\\Users\\dev\\AppData\\help-scout-mcp-server.cmd')).toBe(true);
+  });
+
+  it('should detect direct execution by real entrypoint path', () => {
+    const cliPath = path.join(process.cwd(), 'src/cli.ts');
+
+    expect(isDirectCliInvocation(cliPath)).toBe(true);
+    expect(isDirectCliInvocation('/tmp/not-this-command')).toBe(false);
   });
 });

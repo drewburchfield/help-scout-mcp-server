@@ -619,7 +619,7 @@ describe('ToolHandler', () => {
     it('should pass page through advancedConversationSearch and omit v2 cursors', async () => {
       nock(baseURL)
         .get('/conversations')
-        .query(params => params.page === '2' && typeof params.query === 'string' && params.query.includes('billing'))
+        .query(params => params.page === '2' && params.status === 'active' && typeof params.query === 'string' && params.query.includes('billing'))
         .reply(200, {
           _embedded: {
             conversations: [
@@ -634,7 +634,7 @@ describe('ToolHandler', () => {
         method: 'tools/call',
         params: {
           name: 'advancedConversationSearch',
-          arguments: { tags: ['billing'], page: 2 },
+          arguments: { tags: ['billing'], status: 'active', page: 2 },
         },
       });
       const textContent = result.content[0] as { type: 'text'; text: string };
@@ -649,7 +649,7 @@ describe('ToolHandler', () => {
     it('should pass page through structuredConversationFilter and omit v2 cursors', async () => {
       nock(baseURL)
         .get('/conversations')
-        .query(params => params.page === '2' && Number(params.assigned_to) === 123)
+        .query(params => params.page === '2' && params.status === 'active' && Number(params.assigned_to) === 123)
         .reply(200, {
           _embedded: {
             conversations: [
@@ -664,7 +664,7 @@ describe('ToolHandler', () => {
         method: 'tools/call',
         params: {
           name: 'structuredConversationFilter',
-          arguments: { assignedTo: 123, page: 2 },
+          arguments: { assignedTo: 123, status: 'active', page: 2 },
         },
       });
       const textContent = result.content[0] as { type: 'text'; text: string };
@@ -1604,6 +1604,7 @@ describe('ToolHandler', () => {
 
       nock(baseURL)
         .get('/conversations')
+        .times(3)
         .query(() => true)
         .reply(200, mockResponse);
 
@@ -1666,6 +1667,73 @@ describe('ToolHandler', () => {
         expect(response.results[0]).toEqual({ id: 1, subject: 'Test' });
         expect(response.results[0].extraField).toBeUndefined();
       }
+    });
+
+    it('should fan out default advanced search across active pending and closed only', async () => {
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'active')
+        .reply(200, {
+          _embedded: { conversations: [{ id: 1, status: 'active', createdAt: '2023-01-03T00:00:00Z' }] },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'pending')
+        .reply(200, {
+          _embedded: { conversations: [{ id: 2, status: 'pending', createdAt: '2023-01-02T00:00:00Z' }] },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'closed')
+        .reply(200, {
+          _embedded: { conversations: [{ id: 3, status: 'closed', createdAt: '2023-01-01T00:00:00Z' }] },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'advancedConversationSearch',
+          arguments: { tags: ['billing'] },
+        },
+      });
+
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.statusesSearched).toEqual(['active', 'pending', 'closed']);
+      expect(response.results.map((conversation: { status: string }) => conversation.status)).toEqual(['active', 'pending', 'closed']);
+      expect(response.pagination.totalByStatus).toEqual({ active: 1, pending: 1, closed: 1 });
+    });
+
+    it('should keep explicit spam advanced search as a single-status call', async () => {
+      nock(baseURL)
+        .get('/conversations')
+        .query(params => params.status === 'spam')
+        .reply(200, {
+          _embedded: { conversations: [{ id: 4, status: 'spam', createdAt: '2023-01-04T00:00:00Z' }] },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'advancedConversationSearch',
+          arguments: { tags: ['billing'], status: 'spam' },
+        },
+      });
+
+      const textContent = result.content[0] as { type: 'text'; text: string };
+      const response = JSON.parse(textContent.text);
+
+      expect(response.statusesSearched).toEqual(['spam']);
+      expect(response.results).toHaveLength(1);
+      expect(response.results[0].status).toBe('spam');
+      expect(response.nextPage).toBeNull();
     });
   });
 
@@ -2114,6 +2182,7 @@ describe('ToolHandler', () => {
             name: 'advancedConversationSearch',
             arguments: {
               tags: ['billing'],
+              status: 'active',
               createdBefore: '2023-01-12T00:00:00Z'
             }
           }
@@ -2158,6 +2227,7 @@ describe('ToolHandler', () => {
             name: 'advancedConversationSearch',
             arguments: {
               tags: ['billing'],
+              status: 'active',
               createdBefore: '2023-01-01T00:00:00Z' // Before all results
             }
           }
@@ -2207,6 +2277,7 @@ describe('ToolHandler', () => {
             name: 'advancedConversationSearch',
             arguments: {
               tags: ['boundary-test'],
+              status: 'active',
               createdBefore: '2023-01-12T00:00:00Z' // Exact match with id:3
             }
           }
@@ -2242,7 +2313,8 @@ describe('ToolHandler', () => {
           params: {
             name: 'advancedConversationSearch',
             arguments: {
-              tags: ['billing']
+              tags: ['normal-pagination'],
+              status: 'active'
             }
           }
         };
@@ -2263,6 +2335,48 @@ describe('ToolHandler', () => {
     });
 
     describe('structuredConversationFilter client-side filtering', () => {
+      it('should fan out status all across active pending and closed only', async () => {
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'active' && Number(params.assigned_to) === 123)
+          .reply(200, {
+            _embedded: { conversations: [{ id: 1, status: 'active', createdAt: '2023-01-03T00:00:00Z' }] },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'pending' && Number(params.assigned_to) === 123)
+          .reply(200, {
+            _embedded: { conversations: [{ id: 2, status: 'pending', createdAt: '2023-01-02T00:00:00Z' }] },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params => params.status === 'closed' && Number(params.assigned_to) === 123)
+          .reply(200, {
+            _embedded: { conversations: [{ id: 3, status: 'closed', createdAt: '2023-01-01T00:00:00Z' }] },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: 'structuredConversationFilter',
+            arguments: { assignedTo: 123, status: 'all' },
+          },
+        });
+
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        expect(response.filterApplied.status).toBe('all');
+        expect(response.statusesSearched).toEqual(['active', 'pending', 'closed']);
+        expect(response.results.map((conversation: { status: string }) => conversation.status)).toEqual(['active', 'pending', 'closed']);
+        expect(response.pagination.totalByStatus).toEqual({ active: 1, pending: 1, closed: 1 });
+      });
+
       it('should distinguish filtered count from API total', async () => {
         const mockResponse = {
           _embedded: {
@@ -2287,6 +2401,7 @@ describe('ToolHandler', () => {
             name: 'structuredConversationFilter',
             arguments: {
               assignedTo: 123,
+              status: 'active',
               createdBefore: '2023-01-08T00:00:00Z'
             }
           }
@@ -2331,6 +2446,7 @@ describe('ToolHandler', () => {
             name: 'structuredConversationFilter',
             arguments: {
               assignedTo: 123,
+              status: 'active',
               createdBefore: '2023-01-01T00:00:00Z' // Before all results
             }
           }

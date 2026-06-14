@@ -74,9 +74,10 @@ export class HelpScoutClient {
     retryDelay: 1000, // 1 second
     maxRetryDelay: 10000, // 10 seconds
     retryCondition: (error: AxiosError) => {
-      // Retry on network errors, timeouts, and 5xx responses
+      // Retry on network errors, timeouts, OAuth token refresh, and 5xx responses
       return !error.response || 
              error.code === 'ECONNABORTED' ||
+             (error.response.status === 401 && Boolean(config.helpscout.clientSecret)) ||
              (error.response.status >= 500 && error.response.status < 600) ||
              error.response.status === 429; // Rate limits
     }
@@ -195,8 +196,17 @@ export class HelpScoutClient {
           break;
         }
         
-        // Handle rate limits specially
-        if (lastError.response?.status === 429) {
+        // Handle retryable auth failures by forcing a fresh OAuth token.
+        if (lastError.response?.status === 401) {
+          this.invalidateAccessToken();
+
+          logger.warn('Authentication failed, refreshing token before retry', {
+            attempt: attempt + 1,
+            requestId: lastError.config?.metadata?.requestId,
+          });
+
+          await this.sleep(this.calculateRetryDelay(attempt, retryConfig.retryDelay, retryConfig.maxRetryDelay));
+        } else if (lastError.response?.status === 429) {
           const delay = this.parseRetryAfterMs(lastError.response.headers['retry-after']);
           
           logger.warn('Rate limit hit, waiting before retry', {
@@ -230,6 +240,12 @@ export class HelpScoutClient {
       throw this.transformError(lastError);
     }
     throw new Error('Request failed without error details');
+  }
+
+  private invalidateAccessToken(): void {
+    this.accessToken = null;
+    this.tokenExpiresAt = 0;
+    this.authenticationPromise = null;
   }
 
   private setupInterceptors(): void {
@@ -361,7 +377,7 @@ export class HelpScoutClient {
     });
 
     if (error.response?.status === 401) {
-      this.accessToken = null; // Force re-authentication
+      this.invalidateAccessToken(); // Force re-authentication
       return {
         code: 'UNAUTHORIZED',
         message: 'Help Scout authentication failed. Please check your API credentials.',
