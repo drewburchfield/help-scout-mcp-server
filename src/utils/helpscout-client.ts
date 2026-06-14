@@ -184,6 +184,10 @@ export class HelpScoutClient {
       try {
         return await operation();
       } catch (error) {
+        if (!axios.isAxiosError(error)) {
+          throw error;
+        }
+
         lastError = error as AxiosError;
         
         // Don't retry if it's the last attempt
@@ -341,6 +345,12 @@ export class HelpScoutClient {
         ? configuredBaseUrl
         : `${configuredBaseUrl}/`;
       const tokenUrl = new URL('oauth2/token', baseUrl).toString();
+      const authRetryConfig: RetryConfig = {
+        ...this.defaultRetryConfig,
+        retryCondition: (error) =>
+          error.response?.status !== 401 &&
+          Boolean(this.defaultRetryConfig.retryCondition?.(error)),
+      };
 
       const response = await this.executeWithRetry(() => axios.post(tokenUrl, {
         grant_type: 'client_credentials',
@@ -351,7 +361,7 @@ export class HelpScoutClient {
         httpAgent: this.httpAgent,
         httpsAgent: this.httpsAgent,
         validateStatus: (status) => status >= 200 && status < 300,
-      }));
+      }), authRetryConfig);
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer

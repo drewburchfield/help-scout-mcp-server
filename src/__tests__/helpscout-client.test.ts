@@ -191,6 +191,27 @@ describe('HelpScoutClient', () => {
       expect(freshApiScope.isDone()).toBe(true);
       await client.closePool();
     });
+
+    it('should not retry invalid OAuth credentials on token endpoint 401', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'bad-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'bad-client-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .once()
+        .reply(401, { message: 'Invalid credentials' });
+
+      const client = new HelpScoutClient();
+      jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
+
+      await expect(client.get('/mailboxes', { page: 1, size: 1 })).rejects.toThrow(
+        'Failed to authenticate with Help Scout API. Check your OAuth2 credentials.'
+      );
+
+      expect(authScope.isDone()).toBe(true);
+      await client.closePool();
+    });
   });
 
   describe('error handling', () => {
@@ -278,6 +299,7 @@ describe('HelpScoutClient', () => {
     it('honors long Retry-After delta seconds instead of capping at retry backoff max', async () => {
       const client = new HelpScoutClient();
       const retryError = {
+        isAxiosError: true,
         response: {
           status: 429,
           headers: { 'retry-after': '60' },
@@ -308,6 +330,7 @@ describe('HelpScoutClient', () => {
       const client = new HelpScoutClient();
       const retryAt = new Date(now + 45000).toUTCString();
       const retryError = {
+        isAxiosError: true,
         response: {
           status: 429,
           headers: { 'retry-after': retryAt },
