@@ -216,6 +216,14 @@
       "description": "Get one saved reply for a Help Scout inbox"
     },
     {
+      "name": "getOriginalSource",
+      "description": "Get original source JSON for a Help Scout conversation thread"
+    },
+    {
+      "name": "getAttachment",
+      "description": "Get base64-encoded Help Scout attachment data"
+    },
+    {
       "name": "listWorkflows",
       "description": "List Help Scout workflows"
     },

@@ -442,6 +442,16 @@ export const GetSavedReplyInputSchema = z.object({
   replyId: z.string().regex(/^\d+$/, 'Saved reply ID must be numeric').describe('Saved reply ID'),
 });
 
+export const GetOriginalSourceInputSchema = z.object({
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric').describe('Conversation ID'),
+  threadId: z.string().regex(/^\d+$/, 'Thread ID must be numeric').describe('Thread ID'),
+});
+
+export const GetAttachmentInputSchema = z.object({
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric').describe('Conversation ID'),
+  attachmentId: z.string().regex(/^\d+$/, 'Attachment ID must be numeric').describe('Attachment ID'),
+});
+
 export const ListWorkflowsInputSchema = z.object({
   page: z.number().int().min(1).default(1),
 });
@@ -513,6 +523,8 @@ export type ListInboxCustomFieldsInput = z.infer<typeof ListInboxCustomFieldsInp
 export type ListInboxFoldersInput = z.infer<typeof ListInboxFoldersInputSchema>;
 export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
 export type GetSavedReplyInput = z.infer<typeof GetSavedReplyInputSchema>;
+export type GetOriginalSourceInput = z.infer<typeof GetOriginalSourceInputSchema>;
+export type GetAttachmentInput = z.infer<typeof GetAttachmentInputSchema>;
 export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;
 export type ListWebhooksInput = z.infer<typeof ListWebhooksInputSchema>;
 export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;

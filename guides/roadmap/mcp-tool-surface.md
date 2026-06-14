@@ -16,16 +16,15 @@ Current:
 - `structuredConversationFilter`
 - `getConversationSummary`
 - `getThreads`
+- `getOriginalSource`
+- `getAttachment`
 - `searchInboxes`
 - `listAllInboxes`
 
 Next:
 
-- Fix status filter consistency, especially `status=all` and spam handling.
-- Add original source retrieval for cases where rendered thread content is not
-  enough.
-- Add attachment retrieval with metadata-first defaults and explicit content
-  fetches.
+- Add narrower thread/attachment fixture coverage as the dogfood account gets
+  richer test data.
 
 ## 2. Customer And Account Context
 

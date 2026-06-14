@@ -32,6 +32,10 @@ const GOLDEN = {
   inboxName: process.env.MCP_DOGFOOD_INBOX_NAME ?? 'Client Support',
   tag: process.env.MCP_DOGFOOD_TAG ?? 'mcp-test',
   searchTerm: process.env.MCP_DOGFOOD_SEARCH_TERM ?? 'test',
+  originalSourceConversationId: process.env.MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID,
+  originalSourceThreadId: process.env.MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID,
+  attachmentConversationId: process.env.MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID,
+  attachmentId: process.env.MCP_DOGFOOD_ATTACHMENT_ID,
 };
 
 const EXPECTED_TOOLS = [
@@ -65,6 +69,8 @@ const EXPECTED_TOOLS = [
   'listInboxFolders',
   'listSavedReplies',
   'getSavedReply',
+  'getOriginalSource',
+  'getAttachment',
   'listWorkflows',
   'listWebhooks',
   'getWebhook',
@@ -85,6 +91,10 @@ interface DogfoodContext {
   organizationId: string;
   conversationId?: string;
   conversationNumber?: number;
+  originalSourceConversationId?: string;
+  originalSourceThreadId?: string;
+  attachmentConversationId?: string;
+  attachmentId?: string;
   assigneeId?: number;
   tagId?: string;
   userId?: string;
@@ -155,6 +165,10 @@ class McpDogfoodSession {
       customerId: GOLDEN.customerId,
       customerEmail: GOLDEN.customerEmail,
       organizationId: GOLDEN.organizationId,
+      originalSourceConversationId: GOLDEN.originalSourceConversationId,
+      originalSourceThreadId: GOLDEN.originalSourceThreadId,
+      attachmentConversationId: GOLDEN.attachmentConversationId,
+      attachmentId: GOLDEN.attachmentId,
     };
   }
 
@@ -798,6 +812,19 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         requireArray(data, ['threads'], 'threads');
       },
+      after: (data, _result, ctx) => {
+        const threads = getArray(data, ['threads']) as JsonObject[];
+        if (ctx.attachmentId) return;
+        for (const thread of threads) {
+          const attachments = Array.isArray(thread.attachments) ? thread.attachments as JsonObject[] : [];
+          const attachment = attachments.find((item) => item.id);
+          if (attachment?.id) {
+            ctx.attachmentConversationId = ctx.conversationId;
+            ctx.attachmentId = String(attachment.id);
+            break;
+          }
+        }
+      },
     },
     {
       tool: 'getThreads',
@@ -815,6 +842,36 @@ function buildScenarios(): Scenario[] {
       expectError: true,
       validate: (data) => {
         requireCondition(data !== undefined, 'Expected validation response');
+      },
+    },
+    {
+      tool: 'getOriginalSource',
+      name: 'discovered thread original source',
+      skipIf: (ctx) => ctx.originalSourceConversationId && ctx.originalSourceThreadId
+        ? undefined
+        : 'No original-source fixture available',
+      args: (ctx) => ({
+        conversationId: ctx.originalSourceConversationId ?? '1',
+        threadId: ctx.originalSourceThreadId ?? '1',
+      }),
+      validate: (data) => {
+        const originalSource = getObject(data, 'originalSource');
+        requireCondition(originalSource && 'original' in originalSource, 'Missing original source payload');
+      },
+    },
+    {
+      tool: 'getAttachment',
+      name: 'discovered attachment data',
+      skipIf: (ctx) => ctx.attachmentConversationId && ctx.attachmentId
+        ? undefined
+        : 'No attachment fixture available from getThreads',
+      args: (ctx) => ({
+        conversationId: ctx.attachmentConversationId ?? '1',
+        attachmentId: ctx.attachmentId ?? '1',
+      }),
+      validate: (data) => {
+        const attachment = getObject(data, 'attachment');
+        requireCondition(typeof attachment?.data === 'string', 'Missing base64 attachment data');
       },
     },
     {
