@@ -354,6 +354,73 @@ export const SatisfactionRatingSchema = z.object({
   }).passthrough().optional(),
 }).passthrough();
 
+export const ReportResponseSchema = z.object({
+  current: z.unknown().optional(),
+  previous: z.unknown().optional(),
+  deltas: z.unknown().optional(),
+}).passthrough();
+
+export const HappinessRatingsReportSchema = z.object({
+  facets: z.record(z.unknown()).optional(),
+  results: z.array(z.object({
+    number: z.number().optional(),
+    threadid: z.number().optional(),
+    threadCreatedAt: z.string().optional(),
+    id: z.number().optional(),
+    type: z.enum(['email', 'chat', 'phone']).or(z.string()).optional(),
+    ratingId: z.number().optional(),
+    ratingCustomerId: z.number().optional(),
+    ratingComments: z.string().nullable().optional(),
+    ratingCreatedAt: z.string().optional(),
+    ratingCustomerName: z.string().nullable().optional(),
+    ratingUserId: z.number().optional(),
+    ratingUserName: z.string().nullable().optional(),
+  }).passthrough()).optional(),
+  page: z.number().optional(),
+  count: z.number().optional(),
+  pages: z.number().optional(),
+}).passthrough();
+
+const ReportDateSchema = z.string().regex(
+  /^\d{4}-\d{2}-\d{2}(T[\d:.]+([+-]\d{2}:\d{2}|Z)?)?$/,
+  'Report dates must be ISO 8601 strings'
+);
+const ReportIdListSchema = z.array(
+  z.string().regex(/^\d+$/, 'Report filter IDs must be numeric')
+).min(1).max(50);
+const ReportConversationTypesSchema = z.array(z.enum(['email', 'chat', 'phone'])).min(1).max(3);
+
+const ReportBaseInputObjectSchema = z.object({
+  start: ReportDateSchema.describe('Start of the reporting interval, ISO 8601'),
+  end: ReportDateSchema.describe('End of the reporting interval, ISO 8601'),
+  previousStart: ReportDateSchema.optional().describe('Optional start of the comparison interval'),
+  previousEnd: ReportDateSchema.optional().describe('Optional end of the comparison interval'),
+  mailboxes: ReportIdListSchema.optional().describe('Inbox IDs to filter by'),
+  tags: ReportIdListSchema.optional().describe('Tag IDs to filter by'),
+  types: ReportConversationTypesSchema.optional().describe('Conversation types to filter by'),
+  folders: ReportIdListSchema.optional().describe('Folder IDs to filter by'),
+});
+
+export const ReportBaseInputSchema = ReportBaseInputObjectSchema.refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const GetCompanyReportInputSchema = ReportBaseInputSchema;
+export const GetConversationsReportInputSchema = ReportBaseInputSchema;
+export const GetHappinessReportInputSchema = ReportBaseInputSchema;
+
+export const GetHappinessRatingsReportInputSchema = ReportBaseInputObjectSchema.extend({
+  page: z.number().int().min(1).default(1),
+  sortField: z.enum(['number', 'modifiedAt', 'rating']).default('modifiedAt'),
+  sortOrder: z.enum(['ASC', 'DESC', 'asc', 'desc']).default('DESC')
+    .transform((value) => value.toUpperCase() as 'ASC' | 'DESC'),
+  rating: z.enum(['great', 'ok', 'all', 'not-good']).optional(),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
 // Customer & Organization Input Schemas
 export const GetCustomerInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
@@ -525,6 +592,8 @@ export type SavedReply = z.infer<typeof SavedReplySchema>;
 export type Workflow = z.infer<typeof WorkflowSchema>;
 export type Webhook = z.infer<typeof WebhookSchema>;
 export type SatisfactionRating = z.infer<typeof SatisfactionRatingSchema>;
+export type ReportResponse = z.infer<typeof ReportResponseSchema>;
+export type HappinessRatingsReport = z.infer<typeof HappinessRatingsReportSchema>;
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
@@ -559,5 +628,10 @@ export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;
 export type ListWebhooksInput = z.infer<typeof ListWebhooksInputSchema>;
 export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;
 export type GetSatisfactionRatingInput = z.infer<typeof GetSatisfactionRatingInputSchema>;
+export type ReportBaseInput = z.infer<typeof ReportBaseInputSchema>;
+export type GetCompanyReportInput = z.infer<typeof GetCompanyReportInputSchema>;
+export type GetConversationsReportInput = z.infer<typeof GetConversationsReportInputSchema>;
+export type GetHappinessReportInput = z.infer<typeof GetHappinessReportInputSchema>;
+export type GetHappinessRatingsReportInput = z.infer<typeof GetHappinessRatingsReportInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

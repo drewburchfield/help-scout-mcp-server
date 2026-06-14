@@ -84,11 +84,17 @@ managers and recurring analysis.
 Current:
 
 - `getSatisfactionRating`
+- `getCompanyReport`
+- `getConversationsReport`
+- `getHappinessReport`
+- `getHappinessRatingsReport`
 
 Next:
 
 - Rating fixture coverage when the dogfood account has known rating data.
-- Reporting API coverage.
+- Productivity report coverage.
+- User and team report coverage.
+- Report drilldown coverage with strict pagination and bounded filters.
 - Time-windowed trend queries that return compact, chartable data.
 - Guardrails to avoid large, slow account-wide report pulls by default.
 

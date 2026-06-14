@@ -21,6 +21,13 @@ const SERVER_PATH = resolve(import.meta.dirname, '../dist/cli.js');
 const REQUEST_TIMEOUT_MS = Number(process.env.MCP_DOGFOOD_TIMEOUT_MS ?? 90000);
 const SCENARIO_COOLDOWN_MS = Number(process.env.MCP_DOGFOOD_COOLDOWN_MS ?? 0);
 
+function daysAgoIso(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 const GOLDEN = {
   customerId: process.env.MCP_DOGFOOD_CUSTOMER_ID ?? '860587086',
   customerEmail: process.env.MCP_DOGFOOD_CUSTOMER_EMAIL ?? 'testuser@meridian-testing.com',
@@ -37,6 +44,9 @@ const GOLDEN = {
   attachmentConversationId: process.env.MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID,
   attachmentId: process.env.MCP_DOGFOOD_ATTACHMENT_ID,
   satisfactionRatingId: process.env.MCP_DOGFOOD_SATISFACTION_RATING_ID,
+  reportStart: process.env.MCP_DOGFOOD_REPORT_START ?? daysAgoIso(30),
+  reportEnd: process.env.MCP_DOGFOOD_REPORT_END ?? daysAgoIso(0),
+  skipReports: process.env.MCP_DOGFOOD_SKIP_REPORTS === 'true',
 };
 
 const EXPECTED_TOOLS = [
@@ -76,6 +86,10 @@ const EXPECTED_TOOLS = [
   'listWebhooks',
   'getWebhook',
   'getSatisfactionRating',
+  'getCompanyReport',
+  'getConversationsReport',
+  'getHappinessReport',
+  'getHappinessRatingsReport',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -104,6 +118,9 @@ interface DogfoodContext {
   savedReplyId?: string;
   webhookId?: string;
   satisfactionRatingId?: string;
+  reportStart: string;
+  reportEnd: string;
+  skipReports: boolean;
   organizationPropertySlug?: string;
   createdAfter?: string;
   createdBefore?: string;
@@ -173,6 +190,9 @@ class McpDogfoodSession {
       attachmentConversationId: GOLDEN.attachmentConversationId,
       attachmentId: GOLDEN.attachmentId,
       satisfactionRatingId: GOLDEN.satisfactionRatingId,
+      reportStart: GOLDEN.reportStart,
+      reportEnd: GOLDEN.reportEnd,
+      skipReports: GOLDEN.skipReports,
     };
   }
 
@@ -570,6 +590,50 @@ function buildScenarios(): Scenario[] {
         const rating = getObject(data, 'rating');
         requireCondition(rating?.id, 'Missing satisfaction rating');
         requireCondition(typeof rating.rating === 'string', 'Missing rating value');
+      },
+    },
+    {
+      tool: 'getCompanyReport',
+      name: 'company overall report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId] }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing company report');
+        requireCondition(getObject(report, 'current'), 'Missing current company report data');
+      },
+    },
+    {
+      tool: 'getConversationsReport',
+      name: 'conversations overall report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId] }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing conversations report');
+        requireCondition(getObject(report, 'current'), 'Missing current conversations report data');
+      },
+    },
+    {
+      tool: 'getHappinessReport',
+      name: 'happiness overall report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId] }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing happiness report');
+        requireCondition(getObject(report, 'current'), 'Missing current happiness report data');
+      },
+    },
+    {
+      tool: 'getHappinessRatingsReport',
+      name: 'happiness ratings report rows',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], page: 1, sortField: 'modifiedAt', sortOrder: 'DESC', rating: 'all' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing happiness ratings report');
+        requireArray(report, ['results'], 'rating results');
       },
     },
     {
