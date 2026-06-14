@@ -254,6 +254,30 @@
     {
       "name": "getHappinessRatingsReport",
       "description": "Get Help Scout happiness rating rows"
+    },
+    {
+      "name": "getProductivityReport",
+      "description": "Get the Help Scout productivity overall report"
+    },
+    {
+      "name": "getProductivityFirstResponseTimeReport",
+      "description": "Get Help Scout productivity first response time series"
+    },
+    {
+      "name": "getProductivityRepliesSentReport",
+      "description": "Get Help Scout productivity replies sent time series"
+    },
+    {
+      "name": "getProductivityResolutionTimeReport",
+      "description": "Get Help Scout productivity resolution time series"
+    },
+    {
+      "name": "getProductivityResolvedReport",
+      "description": "Get Help Scout productivity resolved conversations time series"
+    },
+    {
+      "name": "getProductivityResponseTimeReport",
+      "description": "Get Help Scout productivity response time series"
     }
   ],
   "prompts": [

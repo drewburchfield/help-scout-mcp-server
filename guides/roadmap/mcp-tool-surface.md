@@ -88,11 +88,16 @@ Current:
 - `getConversationsReport`
 - `getHappinessReport`
 - `getHappinessRatingsReport`
+- `getProductivityReport`
+- `getProductivityFirstResponseTimeReport`
+- `getProductivityRepliesSentReport`
+- `getProductivityResolutionTimeReport`
+- `getProductivityResolvedReport`
+- `getProductivityResponseTimeReport`
 
 Next:
 
 - Rating fixture coverage when the dogfood account has known rating data.
-- Productivity report coverage.
 - User and team report coverage.
 - Report drilldown coverage with strict pagination and bounded filters.
 - Time-windowed trend queries that return compact, chartable data.

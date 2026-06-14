@@ -41,7 +41,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(40);
+      expect(tools).toHaveLength(46);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -83,6 +83,12 @@ describe('ToolHandler', () => {
         'getConversationsReport',
         'getHappinessReport',
         'getHappinessRatingsReport',
+        'getProductivityReport',
+        'getProductivityFirstResponseTimeReport',
+        'getProductivityRepliesSentReport',
+        'getProductivityResolutionTimeReport',
+        'getProductivityResolvedReport',
+        'getProductivityResponseTimeReport',
       ]);
     });
 
@@ -1030,6 +1036,119 @@ describe('ToolHandler', () => {
         number: 222043,
         ratingId: 1,
       }));
+    });
+
+    it('should get productivity reports with office hours and view granularity', async () => {
+      const reportArgs = {
+        start: '2024-01-01T00:00:00Z',
+        end: '2024-01-31T23:59:59Z',
+        previousStart: '2023-12-01T00:00:00Z',
+        previousEnd: '2023-12-31T23:59:59Z',
+        mailboxes: ['359402'],
+        tags: ['123'],
+        types: ['email'],
+        folders: ['456'],
+        officeHours: true,
+      };
+
+      nock(baseURL)
+        .get('/reports/productivity')
+        .query({
+          start: reportArgs.start,
+          end: reportArgs.end,
+          previousStart: reportArgs.previousStart,
+          previousEnd: reportArgs.previousEnd,
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+          officeHours: 'true',
+        })
+        .reply(200, {
+          current: {
+            totalConversations: 12,
+            firstResponseTime: 42,
+            repliesSent: 31,
+          },
+          previous: {
+            totalConversations: 10,
+            firstResponseTime: 50,
+            repliesSent: 29,
+          },
+        });
+
+      const overallResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getProductivityReport',
+          arguments: reportArgs,
+        },
+      });
+
+      const overallResponse = JSON.parse((overallResult.content[0] as { type: 'text'; text: string }).text);
+      expect(overallResult.isError).toBeUndefined();
+      expect(overallResponse.reportType).toBe('productivity');
+      expect(overallResponse.filters).toEqual(expect.objectContaining({
+        mailboxes: '359402',
+        tags: '123',
+        types: 'email',
+        folders: '456',
+        officeHours: 'true',
+      }));
+      expect(overallResponse.report.current.firstResponseTime).toBe(42);
+
+      for (const [toolName, path, reportType, expectedField] of [
+        ['getProductivityFirstResponseTimeReport', '/reports/productivity/first-response-time', 'productivityFirstResponseTime', 'time'],
+        ['getProductivityRepliesSentReport', '/reports/productivity/replies-sent', 'productivityRepliesSent', 'replies'],
+        ['getProductivityResolutionTimeReport', '/reports/productivity/resolution-time', 'productivityResolutionTime', 'time'],
+        ['getProductivityResolvedReport', '/reports/productivity/resolved', 'productivityResolved', 'resolved'],
+        ['getProductivityResponseTimeReport', '/reports/productivity/response-time', 'productivityResponseTime', 'time'],
+      ] as const) {
+        nock(baseURL)
+          .get(path)
+          .query({
+            start: reportArgs.start,
+            end: reportArgs.end,
+            previousStart: reportArgs.previousStart,
+            previousEnd: reportArgs.previousEnd,
+            mailboxes: '359402',
+            tags: '123',
+            types: 'email',
+            folders: '456',
+            officeHours: 'true',
+            viewBy: 'week',
+          })
+          .reply(200, {
+            current: [{
+              date: '2024-01-01T00:00:00Z',
+              [expectedField]: 10,
+            }],
+            previous: [{
+              date: '2023-12-01T00:00:00Z',
+              [expectedField]: 20,
+            }],
+          });
+
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: toolName,
+            arguments: {
+              ...reportArgs,
+              viewBy: 'week',
+            },
+          },
+        });
+
+        const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+        expect(result.isError).toBeUndefined();
+        expect(response.reportType).toBe(reportType);
+        expect(response.filters).toEqual(expect.objectContaining({
+          officeHours: 'true',
+          viewBy: 'week',
+        }));
+        expect(response.report.current[0][expectedField]).toBe(10);
+      }
     });
 
     it('should require comparison report dates to be paired', async () => {

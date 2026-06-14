@@ -90,6 +90,12 @@ const EXPECTED_TOOLS = [
   'getConversationsReport',
   'getHappinessReport',
   'getHappinessRatingsReport',
+  'getProductivityReport',
+  'getProductivityFirstResponseTimeReport',
+  'getProductivityRepliesSentReport',
+  'getProductivityResolutionTimeReport',
+  'getProductivityResolvedReport',
+  'getProductivityResponseTimeReport',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -634,6 +640,72 @@ function buildScenarios(): Scenario[] {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing happiness ratings report');
         requireArray(report, ['results'], 'rating results');
+      },
+    },
+    {
+      tool: 'getProductivityReport',
+      name: 'productivity overall report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing productivity report');
+        requireCondition(getObject(report, 'current'), 'Missing current productivity report data');
+      },
+    },
+    {
+      tool: 'getProductivityFirstResponseTimeReport',
+      name: 'productivity first response time series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false, viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing first response time report');
+        requireArray(report, ['current'], 'first response time points');
+      },
+    },
+    {
+      tool: 'getProductivityRepliesSentReport',
+      name: 'productivity replies sent series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false, viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing replies sent report');
+        requireArray(report, ['current'], 'replies sent points');
+      },
+    },
+    {
+      tool: 'getProductivityResolutionTimeReport',
+      name: 'productivity resolution time series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false, viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing resolution time report');
+        requireArray(report, ['current'], 'resolution time points');
+      },
+    },
+    {
+      tool: 'getProductivityResolvedReport',
+      name: 'productivity resolved series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false, viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing resolved report');
+        requireArray(report, ['current'], 'resolved points');
+      },
+    },
+    {
+      tool: 'getProductivityResponseTimeReport',
+      name: 'productivity response time series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false, viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing response time report');
+        requireArray(report, ['current'], 'response time points');
       },
     },
     {
