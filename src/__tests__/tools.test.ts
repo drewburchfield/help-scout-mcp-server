@@ -107,6 +107,29 @@ describe('ToolHandler', () => {
         expect(properties.cursor).toBeUndefined();
       }
     });
+
+    it('should advertise structuredConversationFilter unique selector requirements', async () => {
+      const tools = await toolHandler.listTools();
+      const structuredFilter = tools.find(tool => tool.name === 'structuredConversationFilter');
+      const schema = structuredFilter?.inputSchema as {
+        anyOf?: Array<{ required?: string[]; properties?: { sortBy?: { enum?: string[] } } }>;
+      };
+
+      expect(schema.anyOf).toEqual(expect.arrayContaining([
+        expect.objectContaining({ required: ['assignedTo'] }),
+        expect.objectContaining({ required: ['folderId'] }),
+        expect.objectContaining({ required: ['customerIds'] }),
+        expect.objectContaining({ required: ['conversationNumber'] }),
+        expect.objectContaining({
+          required: ['sortBy'],
+          properties: {
+            sortBy: expect.objectContaining({
+              enum: ['waitingSince', 'customerName', 'customerEmail'],
+            }),
+          },
+        }),
+      ]));
+    });
   });
 
   describe('getServerTime', () => {

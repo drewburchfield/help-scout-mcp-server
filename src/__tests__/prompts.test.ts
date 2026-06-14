@@ -448,6 +448,92 @@ describe('PromptHandler', () => {
         expect(promptText).toContain('Since includeThreads is enabled');
       });
 
+      it('should parse string includeThreads values', async () => {
+        const falseRequest = {
+          method: 'prompts/get',
+          params: {
+            name: 'list-inbox-activity',
+            arguments: {
+              inboxId: 'inbox-456',
+              hours: '12',
+              includeThreads: 'false',
+            }
+          }
+        };
+        const trueRequest = {
+          method: 'prompts/get',
+          params: {
+            name: 'list-inbox-activity',
+            arguments: {
+              inboxId: 'inbox-456',
+              hours: '12',
+              includeThreads: 'true',
+            }
+          }
+        };
+
+        const falseResult = await promptHandler.getPrompt(falseRequest);
+        const trueResult = await promptHandler.getPrompt(trueRequest);
+
+        expect(falseResult.messages[0].content.text).toContain('For a quick overview');
+        expect(falseResult.messages[0].content.text).not.toContain('Since includeThreads is enabled');
+        expect(trueResult.messages[0].content.text).toContain('Since includeThreads is enabled');
+      });
+
+      it('should reject invalid includeThreads values', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'list-inbox-activity',
+            arguments: {
+              inboxId: 'inbox-456',
+              hours: 12,
+              includeThreads: 'sometimes',
+            }
+          }
+        };
+
+        await expect(promptHandler.getPrompt(request)).rejects.toThrow(
+          'includeThreads argument must be a boolean for list-inbox-activity prompt'
+        );
+      });
+
+      it('should accept numeric string hours', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'list-inbox-activity',
+            arguments: {
+              inboxId: 'inbox-123',
+              hours: '24',
+            }
+          }
+        };
+
+        const result = await promptHandler.getPrompt(request);
+        const [searchParams] = jsonBlocks(result.messages[0].content.text);
+
+        expect(result.description).toContain('24 hours');
+        expect(searchParams.createdAfter).toBe('<calculated_time_24_hours_ago>');
+      });
+
+      it('should throw error when hours is not positive', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'list-inbox-activity',
+            arguments: {
+              inboxId: 'inbox-123',
+              hours: '0',
+            }
+          }
+        };
+
+        await expect(promptHandler.getPrompt(request)).rejects.toThrow(
+          'hours argument is required and must be a positive number for list-inbox-activity prompt'
+        );
+      });
+
       it('should not include thread details when includeThreads is false', async () => {
         const request = {
           method: 'prompts/get',
@@ -492,7 +578,7 @@ describe('PromptHandler', () => {
         };
 
         await expect(promptHandler.getPrompt(request)).rejects.toThrow(
-          'hours argument is required and must be a number for list-inbox-activity prompt'
+          'hours argument is required and must be a positive number for list-inbox-activity prompt'
         );
       });
 
@@ -509,7 +595,7 @@ describe('PromptHandler', () => {
         };
 
         await expect(promptHandler.getPrompt(request)).rejects.toThrow(
-          'hours argument is required and must be a number for list-inbox-activity prompt'
+          'hours argument is required and must be a positive number for list-inbox-activity prompt'
         );
       });
     });

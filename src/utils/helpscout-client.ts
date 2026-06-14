@@ -255,6 +255,9 @@ export class HelpScoutClient {
   private setupInterceptors(): void {
     // Request interceptor for authentication
     this.client.interceptors.request.use(async (config) => {
+      delete (config.headers as Record<string, unknown>).Authorization;
+      delete (config.headers as Record<string, unknown>).authorization;
+
       await this.ensureAuthenticated();
       if (this.accessToken) {
         config.headers.Authorization = `Bearer ${this.accessToken}`;
@@ -496,17 +499,25 @@ export class HelpScoutClient {
 
   async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {
     const cacheKey = `GET:${endpoint}`;
-    const cachedResult = cache.get<T>(cacheKey, params);
-    
-    if (cachedResult) {
-      return cachedResult;
+    const bypassCache = cacheOptions?.ttl !== undefined && cacheOptions.ttl <= 0;
+
+    if (!bypassCache) {
+      const cachedResult = cache.get<T>(cacheKey, params);
+      
+      if (cachedResult) {
+        return cachedResult;
+      }
     }
 
     const response = await this.executeWithRetry<T>(() => 
       this.client.get<T>(endpoint, { params })
     );
+
+    if (bypassCache) {
+      return response.data;
+    }
     
-    if (cacheOptions?.ttl || cacheOptions?.ttl === 0) {
+    if (cacheOptions?.ttl !== undefined) {
       cache.set(cacheKey, params, response.data, { ttl: cacheOptions.ttl });
     } else {
       // Default cache TTL based on endpoint
@@ -534,6 +545,10 @@ export class HelpScoutClient {
     }
   }
 
+  private countAgentBucketEntries(buckets: { [key: string]: readonly unknown[] | undefined }): number {
+    return Object.values(buckets).reduce((total, entries) => total + (entries?.length ?? 0), 0);
+  }
+
   /**
    * Get connection pool statistics for monitoring
    */
@@ -551,14 +566,14 @@ export class HelpScoutClient {
   } {
     return {
       http: {
-        sockets: Object.keys(this.httpAgent.sockets).length,
-        freeSockets: Object.keys(this.httpAgent.freeSockets).length,
-        pending: Object.keys(this.httpAgent.requests).length,
+        sockets: this.countAgentBucketEntries(this.httpAgent.sockets),
+        freeSockets: this.countAgentBucketEntries(this.httpAgent.freeSockets),
+        pending: this.countAgentBucketEntries(this.httpAgent.requests),
       },
       https: {
-        sockets: Object.keys(this.httpsAgent.sockets).length,
-        freeSockets: Object.keys(this.httpsAgent.freeSockets).length,
-        pending: Object.keys(this.httpsAgent.requests).length,
+        sockets: this.countAgentBucketEntries(this.httpsAgent.sockets),
+        freeSockets: this.countAgentBucketEntries(this.httpsAgent.freeSockets),
+        pending: this.countAgentBucketEntries(this.httpsAgent.requests),
       },
     };
   }

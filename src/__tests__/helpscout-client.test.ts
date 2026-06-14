@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import nock from 'nock';
 import { HelpScoutClient } from '../utils/helpscout-client.js';
+import { cache } from '../utils/cache.js';
 
 // Set a more generous timeout for all tests in this file
 jest.setTimeout(15000);
@@ -56,6 +57,7 @@ describe('HelpScoutClient', () => {
     nock.cleanAll();
     nock.restore();
     nock.activate();
+    (cache as jest.Mocked<typeof cache>).get.mockReturnValue(null);
     
     // Clear any environment variables from previous tests
     delete process.env.HELPSCOUT_API_KEY;
@@ -174,7 +176,7 @@ describe('HelpScoutClient', () => {
       const freshApiScope = nock(baseURL)
         .get('/mailboxes')
         .query({ page: 1, size: 1 })
-        .matchHeader('authorization', 'Bearer fresh-token')
+        .matchHeader('authorization', value => value === 'Bearer fresh-token')
         .reply(200, { _embedded: { mailboxes: [] } });
 
       const client = new HelpScoutClient();
@@ -182,8 +184,13 @@ describe('HelpScoutClient', () => {
       (client as any).tokenExpiresAt = Date.now() + 60_000;
       jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
 
-      await expect(client.get('/mailboxes', { page: 1, size: 1 })).resolves.toEqual({
-        _embedded: { mailboxes: [] },
+      await expect((client as any).executeWithRetry(() =>
+        (client as any).client.get('/mailboxes', {
+          params: { page: 1, size: 1 },
+          headers: { authorization: 'Bearer stale-token' },
+        })
+      )).resolves.toMatchObject({
+        data: { _embedded: { mailboxes: [] } },
       });
 
       expect(staleApiScope.isDone()).toBe(true);
@@ -434,6 +441,39 @@ describe('HelpScoutClient', () => {
       
       const threadsTtl = (client as any).getDefaultCacheTtl('/threads');
       expect(threadsTtl).toBe(300); // 5 minutes for threads
+    });
+
+    it('should bypass cache reads and writes when ttl is zero', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+      const staleResponse = { _embedded: { mailboxes: [{ id: 'old', name: 'Old Inbox' }] } };
+      const freshResponse = { _embedded: { mailboxes: [{ id: 'new', name: 'Fresh Inbox' }] } };
+      const mockedCache = cache as jest.Mocked<typeof cache>;
+
+      mockedCache.get.mockReturnValue(staleResponse);
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, {
+          access_token: 'fresh-token',
+          expires_in: 7200,
+        });
+
+      const apiScope = nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1, size: 1 })
+        .matchHeader('authorization', 'Bearer fresh-token')
+        .reply(200, freshResponse);
+
+      const client = new HelpScoutClient();
+
+      await expect(client.get('/mailboxes', { page: 1, size: 1 }, { ttl: 0 })).resolves.toEqual(freshResponse);
+
+      expect(mockedCache.get).not.toHaveBeenCalled();
+      expect(mockedCache.set).not.toHaveBeenCalled();
+      expect(authScope.isDone()).toBe(true);
+      expect(apiScope.isDone()).toBe(true);
+      await client.closePool();
     });
   });
 

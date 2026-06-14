@@ -61,6 +61,21 @@ describe('HelpScoutAPIConstraints', () => {
       expect(result.errors).toContain('Invalid conversation ID format');
     });
 
+    it('should validate getThreads conversation ID format', () => {
+      const context: ToolCallContext = {
+        toolName: 'getThreads',
+        arguments: { conversationId: 'invalid-id' },
+        userQuery: '',
+        previousCalls: []
+      };
+
+      const result = HelpScoutAPIConstraints.validateToolCall(context);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Invalid conversation ID format');
+      expect(result.suggestions).toContain('Conversation IDs should be numeric strings');
+    });
+
     it('should suggest comprehensiveConversationSearch for searches without status', () => {
       const context: ToolCallContext = {
         toolName: 'searchConversations',

@@ -9,6 +9,33 @@ export class PromptHandler {
       .join('\n');
   }
 
+  private parsePositiveHours(value: unknown): number | null {
+    if (typeof value !== 'number' && typeof value !== 'string') {
+      return null;
+    }
+
+    const hours = typeof value === 'string' ? Number(value.trim()) : value;
+    return Number.isFinite(hours) && hours > 0 ? hours : null;
+  }
+
+  private parseOptionalBoolean(value: unknown): boolean | null {
+    if (value === undefined) {
+      return false;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true') return true;
+      if (normalized === 'false') return false;
+    }
+
+    return null;
+  }
+
   async listPrompts(): Promise<Prompt[]> {
     return [
       {
@@ -380,15 +407,19 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 
   private async listInboxActivity(args: Record<string, unknown>): Promise<GetPromptResult> {
     const inboxId = args.inboxId as string;
-    const hours = args.hours as number;
-    const includeThreads = args.includeThreads as boolean | undefined;
+    const hours = this.parsePositiveHours(args.hours);
+    const includeThreads = this.parseOptionalBoolean(args.includeThreads);
 
     if (!inboxId) {
       throw new Error('inboxId argument is required for list-inbox-activity prompt');
     }
 
-    if (!hours || typeof hours !== 'number') {
-      throw new Error('hours argument is required and must be a number for list-inbox-activity prompt');
+    if (hours === null) {
+      throw new Error('hours argument is required and must be a positive number for list-inbox-activity prompt');
+    }
+
+    if (includeThreads === null) {
+      throw new Error('includeThreads argument must be a boolean for list-inbox-activity prompt');
     }
 
     const searchParams = {

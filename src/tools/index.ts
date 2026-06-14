@@ -463,6 +463,18 @@ export class ToolHandler {
             limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
           },
+          anyOf: [
+            { required: ['assignedTo'] },
+            { required: ['folderId'] },
+            { required: ['customerIds'] },
+            { required: ['conversationNumber'] },
+            {
+              required: ['sortBy'],
+              properties: {
+                sortBy: { type: 'string', enum: ['waitingSince', 'customerName', 'customerEmail'] },
+              },
+            },
+          ],
         },
       },
       // Customer tools (NAS-680, NAS-727, NAS-728)
