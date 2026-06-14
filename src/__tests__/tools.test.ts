@@ -41,7 +41,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(35);
+      expect(tools).toHaveLength(36);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -78,6 +78,7 @@ describe('ToolHandler', () => {
         'listWorkflows',
         'listWebhooks',
         'getWebhook',
+        'getSatisfactionRating',
       ]);
     });
 
@@ -812,6 +813,72 @@ describe('ToolHandler', () => {
       expect(get.isError).toBeUndefined();
       expect(listResponse.webhooks[0]).toEqual(expect.objectContaining({ id: 91, state: 'enabled' }));
       expect(getResponse.webhook).toEqual(expect.objectContaining({ id: 91, url: 'https://example.com/webhook' }));
+    });
+
+    it('should get a satisfaction rating by ID', async () => {
+      nock(baseURL)
+        .get('/ratings/9001')
+        .reply(200, {
+          id: 9001,
+          threadId: 456,
+          conversationId: 123,
+          conversationNumber: 321,
+          mailboxId: 359402,
+          rating: 'great',
+          comments: 'Well done!',
+          createdAt: '2024-01-02T03:04:05Z',
+          user: {
+            id: 42,
+            email: 'agent@example.com',
+            firstName: 'Ava',
+            lastName: 'Agent',
+          },
+          customer: {
+            id: 77,
+            email: 'customer@example.com',
+            firstName: 'Chris',
+            lastName: 'Customer',
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getSatisfactionRating',
+          arguments: { ratingId: '9001' },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.ratingId).toBe('9001');
+      expect(response.rating).toEqual(expect.objectContaining({
+        id: 9001,
+        rating: 'great',
+        comments: 'Well done!',
+        conversationId: 123,
+      }));
+      expect(response.usage).toContain('read-only quality context');
+    });
+
+    it('should validate satisfaction rating IDs before calling Help Scout', async () => {
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getSatisfactionRating',
+          arguments: { ratingId: 'abc' },
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error.code).toBe('INVALID_INPUT');
+      expect(response.error.validationIssues).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          field: 'ratingId',
+          message: 'Rating ID must be numeric',
+        }),
+      ]));
     });
   });
 

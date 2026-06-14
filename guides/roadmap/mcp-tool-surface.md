@@ -81,9 +81,13 @@ Next:
 These tools are less frequent than the core support loop, but important for
 managers and recurring analysis.
 
+Current:
+
+- `getSatisfactionRating`
+
 Next:
 
-- Satisfaction ratings.
+- Rating fixture coverage when the dogfood account has known rating data.
 - Reporting API coverage.
 - Time-windowed trend queries that return compact, chartable data.
 - Guardrails to avoid large, slow account-wide report pulls by default.

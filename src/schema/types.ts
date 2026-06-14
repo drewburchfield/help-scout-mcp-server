@@ -329,6 +329,31 @@ export const WebhookSchema = z.object({
   updatedAt: z.string().optional(),
 }).passthrough();
 
+export const SatisfactionRatingSchema = z.object({
+  id: z.number(),
+  threadId: z.number().optional(),
+  conversationId: z.number().optional(),
+  conversationNumber: z.number().optional(),
+  mailboxId: z.number().optional(),
+  rating: z.enum(['great', 'not_good', 'okay', 'unknown']).or(z.string()).optional(),
+  comments: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  modifiedAt: z.string().optional(),
+  user: z.object({
+    id: z.number(),
+    email: z.string().nullable().optional(),
+    firstName: z.string().nullable().optional(),
+    lastName: z.string().nullable().optional(),
+  }).passthrough().optional(),
+  customer: z.object({
+    id: z.number(),
+    email: z.string().nullable().optional(),
+    firstName: z.string().nullable().optional(),
+    lastName: z.string().nullable().optional(),
+    photoUrl: z.string().nullable().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
 // Customer & Organization Input Schemas
 export const GetCustomerInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
@@ -464,6 +489,10 @@ export const GetWebhookInputSchema = z.object({
   webhookId: z.string().regex(/^\d+$/, 'Webhook ID must be numeric').describe('Webhook ID'),
 });
 
+export const GetSatisfactionRatingInputSchema = z.object({
+  ratingId: z.string().regex(/^\d+$/, 'Rating ID must be numeric').describe('Satisfaction rating ID'),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -495,6 +524,7 @@ export type InboxFolder = z.infer<typeof InboxFolderSchema>;
 export type SavedReply = z.infer<typeof SavedReplySchema>;
 export type Workflow = z.infer<typeof WorkflowSchema>;
 export type Webhook = z.infer<typeof WebhookSchema>;
+export type SatisfactionRating = z.infer<typeof SatisfactionRatingSchema>;
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
@@ -528,5 +558,6 @@ export type GetAttachmentInput = z.infer<typeof GetAttachmentInputSchema>;
 export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;
 export type ListWebhooksInput = z.infer<typeof ListWebhooksInputSchema>;
 export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;
+export type GetSatisfactionRatingInput = z.infer<typeof GetSatisfactionRatingInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

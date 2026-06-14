@@ -64,8 +64,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 35 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(35);
+    it('should have all 36 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(36);
 
       const expectedTools = [
         'searchInboxes',
@@ -102,7 +102,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getAttachment',
         'listWorkflows',
         'listWebhooks',
-        'getWebhook'
+        'getWebhook',
+        'getSatisfactionRating'
       ];
 
       const toolNames = manifest.tools.map((tool: any) => tool.name);

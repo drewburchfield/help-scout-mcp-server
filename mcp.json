@@ -44,7 +44,8 @@
     "getAttachment",
     "listWorkflows",
     "listWebhooks",
-    "getWebhook"
+    "getWebhook",
+    "getSatisfactionRating"
   ],
   "prompts": [
     "search-last-7-days",

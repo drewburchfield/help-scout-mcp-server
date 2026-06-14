@@ -234,6 +234,10 @@
     {
       "name": "getWebhook",
       "description": "Get a Help Scout webhook by ID"
+    },
+    {
+      "name": "getSatisfactionRating",
+      "description": "Get a Help Scout satisfaction rating by ID"
     }
   ],
   "prompts": [
