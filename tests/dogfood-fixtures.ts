@@ -1,6 +1,11 @@
 export interface ThreadDef {
   type: 'customer' | 'reply' | 'customer-follow-up';
   text: string;
+  attachments?: Array<{
+    fileName: string;
+    mimeType: string;
+    data: string;
+  }>;
 }
 
 export interface ConversationDef {
@@ -14,11 +19,6 @@ export interface ConversationDef {
   reportFixture?: boolean;
   createdAtDaysAgo?: number;
   closedAtDaysAgo?: number;
-  attachment?: {
-    fileName: string;
-    mimeType: string;
-    data: string;
-  };
 }
 
 export const INTEGRATION_CONSTANTS = {
@@ -135,11 +135,6 @@ export const INTEGRATION_SEED_CONVERSATIONS: ConversationDef[] = [
     tags: ['mcp-test'],
     status: 'active',
     createdAtDaysAgo: 2,
-    attachment: {
-      fileName: 'mcp-test-export-diagnostics.txt',
-      mimeType: 'text/plain',
-      data: Buffer.from('MCP dogfood attachment fixture for getAttachment coverage.\n', 'utf8').toString('base64'),
-    },
     threads: [
       {
         type: 'customer',
@@ -152,6 +147,15 @@ export const INTEGRATION_SEED_CONVERSATIONS: ConversationDef[] = [
       {
         type: 'customer-follow-up',
         text: "Thanks for the workaround. Quick follow-up: we're also seeing the same timeout when exporting from the analytics dashboard, even with smaller datasets around 5,000 rows. Might be related?",
+      },
+      {
+        type: 'reply',
+        text: 'I attached a small diagnostics note so the attachment retrieval path can be verified against this test conversation.',
+        attachments: [{
+          fileName: 'mcp-test-export-diagnostics.txt',
+          mimeType: 'text/plain',
+          data: Buffer.from('MCP dogfood attachment fixture for getAttachment coverage.\n', 'utf8').toString('base64'),
+        }],
       },
     ],
   },

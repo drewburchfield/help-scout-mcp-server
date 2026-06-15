@@ -30,6 +30,7 @@
     "dogfood:mcp": "npm run build && node --loader ts-node/esm tests/mcp-client-dogfood.ts",
     "dogfood:workflows": "npm run build && node --loader ts-node/esm tests/integration-workflows.ts",
     "dogfood:full": "npm run dogfood:mcp && npm run dogfood:workflows",
+    "dogfood:audit": "node --loader ts-node/esm tests/audit-dogfood-account.ts",
     "test:forensic": "node --loader ts-node/esm tests/test-all-tools-edge-cases.ts",
     "test:docker": "node tests/test-docker.cjs",
     "test:docker:ci": "node tests/test-docker-ci.cjs",

@@ -25,11 +25,13 @@ describe('dogfood seed fixtures', () => {
     expect(INTEGRATION_ACCOUNT_FIXTURES.webhook.mailboxIds).toEqual([Number(INTEGRATION_CONSTANTS.inboxId)]);
   });
 
-  it('defines a conversation fixture with an uploadable attachment', () => {
-    const attachmentFixtures = INTEGRATION_SEED_CONVERSATIONS.filter((conversation) => conversation.attachment);
+  it('defines a thread fixture with an uploadable attachment', () => {
+    const attachmentFixtures = INTEGRATION_SEED_CONVERSATIONS.flatMap((conversation) =>
+      conversation.threads.flatMap((thread) => thread.attachments || [])
+    );
 
     expect(attachmentFixtures.length).toBeGreaterThanOrEqual(1);
-    expect(attachmentFixtures[0].attachment).toEqual(expect.objectContaining({
+    expect(attachmentFixtures[0]).toEqual(expect.objectContaining({
       fileName: expect.stringMatching(/^mcp-test-/),
       mimeType: 'text/plain',
       data: expect.any(String),

@@ -40,6 +40,7 @@ const GOLDEN = {
   inboxName: process.env.MCP_DOGFOOD_INBOX_NAME ?? 'Client Support',
   tag: process.env.MCP_DOGFOOD_TAG ?? 'mcp-test',
   searchTerm: process.env.MCP_DOGFOOD_SEARCH_TERM ?? 'test',
+  attachmentSubject: process.env.MCP_DOGFOOD_ATTACHMENT_SUBJECT ?? 'MCP-TEST: Data export CSV failure',
   originalSourceConversationId: process.env.MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID,
   originalSourceThreadId: process.env.MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID,
   attachmentConversationId: process.env.MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID,
@@ -889,9 +890,16 @@ function buildScenarios(): Scenario[] {
     {
       tool: 'searchConversations',
       name: 'tag filter',
-      args: (ctx) => ({ inboxId: ctx.inboxId, tag: GOLDEN.tag, limit: 5 }),
+      args: (ctx) => ({ inboxId: ctx.inboxId, tag: GOLDEN.tag, limit: 10 }),
       validate: (data) => {
         requireArray(data, ['results', 'conversations'], 'conversations');
+      },
+      after: (data, _result, ctx) => {
+        const conversations = getArray(data, ['results', 'conversations']) as JsonObject[];
+        const fixture = conversations.find((conversation) =>
+          getString(conversation.subject) === GOLDEN.attachmentSubject
+        );
+        if (fixture?.id) ctx.attachmentConversationId = String(fixture.id);
       },
     },
     {
@@ -1141,6 +1149,28 @@ function buildScenarios(): Scenario[] {
       expectError: true,
       validate: (data) => {
         requireCondition(data !== undefined, 'Expected validation response');
+      },
+    },
+    {
+      tool: 'getThreads',
+      name: 'attachment fixture threads',
+      skipIf: (ctx) => ctx.attachmentConversationId
+        ? undefined
+        : 'No attachment fixture conversation available',
+      args: (ctx) => ({ conversationId: ctx.attachmentConversationId ?? '1', limit: 10 }),
+      validate: (data) => {
+        requireArray(data, ['threads'], 'threads');
+      },
+      after: (data, _result, ctx) => {
+        if (ctx.attachmentId) return;
+        const threads = getArray(data, ['threads']) as JsonObject[];
+        for (const thread of threads) {
+          const attachment = getThreadAttachments(thread).find((item) => item.id);
+          if (attachment?.id) {
+            ctx.attachmentId = String(attachment.id);
+            break;
+          }
+        }
       },
     },
     {
