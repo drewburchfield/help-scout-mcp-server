@@ -12,6 +12,8 @@ export interface Config {
     clientSecret?: string;  // OAuth2 client secret (required)
     baseUrl: string;
     defaultInboxId?: string; // Optional: default inbox for scoped searches
+    docsApiKey?: string;    // Docs API v1 key (optional; required only for Docs tools)
+    docsBaseUrl: string;    // Docs API v1 base URL
   };
   cache: {
     ttlSeconds: number;
@@ -56,6 +58,8 @@ export const config: Config = {
     clientSecret: process.env.HELPSCOUT_APP_SECRET || process.env.HELPSCOUT_CLIENT_SECRET || '',
     baseUrl: process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/',
     defaultInboxId: process.env.HELPSCOUT_DEFAULT_INBOX_ID,
+    docsApiKey: process.env.HELPSCOUT_DOCS_API_KEY,
+    docsBaseUrl: process.env.HELPSCOUT_DOCS_BASE_URL || 'https://docsapi.helpscout.net/v1/',
   },
   cache: {
     ttlSeconds: parseIntegerEnv('CACHE_TTL_SECONDS', 300),

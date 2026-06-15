@@ -29,6 +29,8 @@
         "HELPSCOUT_APP_SECRET": "${user_config.app_secret}",
         "HELPSCOUT_DEFAULT_INBOX_ID": "${user_config.default_inbox_id}",
         "HELPSCOUT_BASE_URL": "${user_config.base_url}",
+        "HELPSCOUT_DOCS_API_KEY": "${user_config.docs_api_key}",
+        "HELPSCOUT_DOCS_BASE_URL": "${user_config.docs_base_url}",
         "REDACT_MESSAGE_CONTENT": "${user_config.redact_message_content}",
         "LOG_LEVEL": "${user_config.log_level}",
         "CACHE_TTL_SECONDS": "${user_config.cache_ttl}",
@@ -63,6 +65,21 @@
       "title": "API Base URL",
       "description": "Help Scout API base URL",
       "default": "https://api.helpscout.net/v2/",
+      "required": false
+    },
+    "docs_api_key": {
+      "type": "string",
+      "title": "Docs API Key (Optional)",
+      "description": "Help Scout Docs API key for knowledge base tools",
+      "sensitive": true,
+      "default": "",
+      "required": false
+    },
+    "docs_base_url": {
+      "type": "string",
+      "title": "Docs API Base URL",
+      "description": "Help Scout Docs API v1 base URL",
+      "default": "https://docsapi.helpscout.net/v1/",
       "required": false
     },
     "redact_message_content": {
@@ -314,6 +331,66 @@
     {
       "name": "getUserChatReport",
       "description": "Get Help Scout user or team chat report"
+    },
+    {
+      "name": "listDocsSites",
+      "description": "List Help Scout Docs sites"
+    },
+    {
+      "name": "getDocsSite",
+      "description": "Get a Help Scout Docs site by ID"
+    },
+    {
+      "name": "listDocsCollections",
+      "description": "List Help Scout Docs collections"
+    },
+    {
+      "name": "getDocsCollection",
+      "description": "Get a Help Scout Docs collection by ID or number"
+    },
+    {
+      "name": "listDocsCategories",
+      "description": "List Help Scout Docs categories for a collection"
+    },
+    {
+      "name": "getDocsCategory",
+      "description": "Get a Help Scout Docs category by ID or number"
+    },
+    {
+      "name": "listDocsArticles",
+      "description": "List Help Scout Docs articles for a collection or category"
+    },
+    {
+      "name": "searchDocsArticles",
+      "description": "Search Help Scout Docs articles"
+    },
+    {
+      "name": "getDocsArticle",
+      "description": "Get a Help Scout Docs article by ID or number"
+    },
+    {
+      "name": "listDocsRelatedArticles",
+      "description": "List related Help Scout Docs articles"
+    },
+    {
+      "name": "listDocsArticleRevisions",
+      "description": "List revisions for a Help Scout Docs article"
+    },
+    {
+      "name": "getDocsArticleRevision",
+      "description": "Get a Help Scout Docs article revision by ID"
+    },
+    {
+      "name": "listDocsRedirects",
+      "description": "List Help Scout Docs redirects for a site"
+    },
+    {
+      "name": "getDocsRedirect",
+      "description": "Get a Help Scout Docs redirect by ID"
+    },
+    {
+      "name": "findDocsRedirect",
+      "description": "Resolve a Help Scout Docs redirect target"
     }
   ],
   "prompts": [

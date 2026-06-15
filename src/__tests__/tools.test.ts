@@ -8,12 +8,16 @@ import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 describe('ToolHandler', () => {
   let toolHandler: ToolHandler;
   const baseURL = 'https://api.helpscout.net/v2';
+  const docsBaseURL = 'https://docsapi.helpscout.net/v1';
 
   beforeEach(() => {
     // Mock environment for tests
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+    process.env.HELPSCOUT_DOCS_API_KEY = 'test-docs-api-key';
+    process.env.HELPSCOUT_DOCS_BASE_URL = `${docsBaseURL}/`;
+    delete process.env.HELPSCOUT_DISABLE_DOCS;
     
     nock.cleanAll();
     cache.clear();
@@ -41,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(55);
+      expect(tools).toHaveLength(70);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -98,6 +102,21 @@ describe('ToolHandler', () => {
         'getUserRepliesReport',
         'getUserResolutionsReport',
         'getUserChatReport',
+        'listDocsSites',
+        'getDocsSite',
+        'listDocsCollections',
+        'getDocsCollection',
+        'listDocsCategories',
+        'getDocsCategory',
+        'listDocsArticles',
+        'searchDocsArticles',
+        'getDocsArticle',
+        'listDocsRelatedArticles',
+        'listDocsArticleRevisions',
+        'getDocsArticleRevision',
+        'listDocsRedirects',
+        'getDocsRedirect',
+        'findDocsRedirect',
       ]);
     });
 
@@ -162,6 +181,163 @@ describe('ToolHandler', () => {
           },
         }),
       ]));
+    });
+  });
+
+  describe('Docs API tools', () => {
+    const docsAuthHeader = `Basic ${Buffer.from('test-docs-api-key:X').toString('base64')}`;
+
+    it('should list Docs sites using Docs API Basic authentication', async () => {
+      nock(docsBaseURL, {
+        reqheaders: {
+          authorization: docsAuthHeader,
+        },
+      })
+        .get('/sites')
+        .query({ page: 1 })
+        .reply(200, {
+          page: 1,
+          pages: 1,
+          count: 1,
+          items: [
+            {
+              id: 'site_123',
+              status: 'active',
+              subDomain: 'acme',
+              title: 'Acme Help Center',
+              updatedAt: '2026-06-01T00:00:00Z',
+            },
+          ],
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listDocsSites',
+          arguments: {},
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.results).toHaveLength(1);
+      expect(response.results[0]).toEqual(expect.objectContaining({
+        id: 'site_123',
+        title: 'Acme Help Center',
+      }));
+      expect(response.pagination).toEqual(expect.objectContaining({ page: 1, pages: 1, count: 1 }));
+    });
+
+    it('should search Docs articles with query filters', async () => {
+      nock(docsBaseURL, {
+        reqheaders: {
+          authorization: docsAuthHeader,
+        },
+      })
+        .get('/search/articles')
+        .query({
+          query: 'refund policy',
+          siteId: 'site_123',
+          status: 'published',
+          visibility: 'public',
+          page: 2,
+        })
+        .reply(200, {
+          articles: {
+            page: 2,
+            pages: 3,
+            count: 4,
+            items: [
+              {
+                id: 'article_123',
+                collectionId: 'collection_123',
+                name: 'Refund policy',
+                status: 'published',
+                visibility: 'public',
+                publicUrl: 'https://docs.example.com/article/1-refund-policy',
+              },
+            ],
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'searchDocsArticles',
+          arguments: {
+            query: 'refund policy',
+            siteId: 'site_123',
+            status: 'published',
+            visibility: 'public',
+            page: 2,
+          },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.results).toHaveLength(1);
+      expect(response.results[0]).toEqual(expect.objectContaining({
+        id: 'article_123',
+        name: 'Refund policy',
+      }));
+      expect(response.nextPage).toBe(3);
+    });
+
+    it('should return a clear error when Docs credentials are missing', async () => {
+      delete process.env.HELPSCOUT_DOCS_API_KEY;
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listDocsSites',
+          arguments: {},
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error.message).toContain('HELPSCOUT_DOCS_API_KEY');
+      expect(response.error.message).toContain('Docs API');
+    });
+
+    it('should not serve cached Docs data after Docs credentials are removed', async () => {
+      nock(docsBaseURL, {
+        reqheaders: {
+          authorization: docsAuthHeader,
+        },
+      })
+        .get('/sites')
+        .query({ page: 1 })
+        .reply(200, {
+          page: 1,
+          pages: 1,
+          count: 1,
+          items: [{ id: 'site_cached', title: 'Cached Site' }],
+        });
+
+      const firstResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listDocsSites',
+          arguments: {},
+        },
+      });
+      expect(firstResult.isError).toBeUndefined();
+
+      delete process.env.HELPSCOUT_DOCS_API_KEY;
+
+      const secondResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listDocsSites',
+          arguments: {},
+        },
+      });
+
+      expect(secondResult.isError).toBe(true);
+      const response = JSON.parse((secondResult.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error.message).toContain('HELPSCOUT_DOCS_API_KEY');
     });
   });
 

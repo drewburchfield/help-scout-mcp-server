@@ -665,6 +665,99 @@ export const GetSatisfactionRatingInputSchema = z.object({
   ratingId: z.string().regex(/^\d+$/, 'Rating ID must be numeric').describe('Satisfaction rating ID'),
 });
 
+const DocsIdSchema = z.union([
+  z.string().trim().min(1),
+  z.number().int().positive(),
+]).transform(String);
+
+const DocsPageInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+});
+
+const DocsOrderSchema = z.enum(['asc', 'desc']);
+const DocsStatusSchema = z.enum(['all', 'published', 'notpublished']);
+const DocsVisibilitySchema = z.enum(['all', 'public', 'private']);
+
+export const ListDocsSitesInputSchema = DocsPageInputSchema;
+
+export const GetDocsSiteInputSchema = z.object({
+  siteId: DocsIdSchema.describe('Docs site ID'),
+});
+
+export const ListDocsCollectionsInputSchema = DocsPageInputSchema.extend({
+  siteId: DocsIdSchema.describe('Docs site ID').optional(),
+  visibility: DocsVisibilitySchema.default('all'),
+  sort: z.enum(['number', 'visibility', 'order', 'name', 'createdAt', 'updatedAt']).default('order'),
+  order: DocsOrderSchema.default('asc'),
+});
+
+export const GetDocsCollectionInputSchema = z.object({
+  collectionId: DocsIdSchema.describe('Docs collection ID or number'),
+});
+
+export const ListDocsCategoriesInputSchema = DocsPageInputSchema.extend({
+  collectionId: DocsIdSchema.describe('Docs collection ID'),
+  sort: z.enum(['number', 'order', 'name', 'articleCount', 'createdAt', 'updatedAt']).default('order'),
+  order: DocsOrderSchema.default('asc'),
+});
+
+export const GetDocsCategoryInputSchema = z.object({
+  categoryId: DocsIdSchema.describe('Docs category ID or number'),
+});
+
+export const ListDocsArticlesInputSchema = DocsPageInputSchema.extend({
+  collectionId: DocsIdSchema.describe('Docs collection ID').optional(),
+  categoryId: DocsIdSchema.describe('Docs category ID').optional(),
+  status: DocsStatusSchema.default('all'),
+  sort: z.enum(['order', 'number', 'status', 'name', 'popularity', 'createdAt', 'updatedAt']).default('order'),
+  order: DocsOrderSchema.default('desc'),
+  pageSize: z.number().int().min(1).max(100).default(50),
+}).refine(
+  (data) => Boolean(data.collectionId || data.categoryId) && !(data.collectionId && data.categoryId),
+  { message: 'Provide exactly one of collectionId or categoryId' }
+);
+
+export const SearchDocsArticlesInputSchema = DocsPageInputSchema.extend({
+  query: z.string().trim().min(1),
+  collectionId: DocsIdSchema.describe('Docs collection ID').optional(),
+  siteId: DocsIdSchema.describe('Docs site ID').optional(),
+  status: DocsStatusSchema.default('all'),
+  visibility: DocsVisibilitySchema.default('all'),
+});
+
+export const GetDocsArticleInputSchema = z.object({
+  articleId: DocsIdSchema.describe('Docs article ID or number'),
+  draft: z.boolean().default(false),
+});
+
+export const ListDocsRelatedArticlesInputSchema = DocsPageInputSchema.extend({
+  articleId: DocsIdSchema.describe('Docs article ID'),
+  status: DocsStatusSchema.default('all'),
+  sort: z.enum(['order', 'number', 'status', 'name', 'popularity', 'createdAt', 'updatedAt']).default('order'),
+  order: DocsOrderSchema.default('desc'),
+});
+
+export const ListDocsArticleRevisionsInputSchema = DocsPageInputSchema.extend({
+  articleId: DocsIdSchema.describe('Docs article ID'),
+});
+
+export const GetDocsArticleRevisionInputSchema = z.object({
+  revisionId: DocsIdSchema.describe('Docs article revision ID'),
+});
+
+export const ListDocsRedirectsInputSchema = DocsPageInputSchema.extend({
+  siteId: DocsIdSchema.describe('Docs site ID'),
+});
+
+export const GetDocsRedirectInputSchema = z.object({
+  redirectId: DocsIdSchema.describe('Docs redirect ID'),
+});
+
+export const FindDocsRedirectInputSchema = z.object({
+  siteId: DocsIdSchema.describe('Docs site ID'),
+  url: z.string().trim().min(1).describe('Docs URL path to resolve, e.g. /old/path'),
+});
+
 // Response Types
 export const ServerTimeSchema = z.object({
   isoTime: z.string(),
@@ -733,6 +826,21 @@ export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;
 export type ListWebhooksInput = z.infer<typeof ListWebhooksInputSchema>;
 export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;
 export type GetSatisfactionRatingInput = z.infer<typeof GetSatisfactionRatingInputSchema>;
+export type ListDocsSitesInput = z.infer<typeof ListDocsSitesInputSchema>;
+export type GetDocsSiteInput = z.infer<typeof GetDocsSiteInputSchema>;
+export type ListDocsCollectionsInput = z.infer<typeof ListDocsCollectionsInputSchema>;
+export type GetDocsCollectionInput = z.infer<typeof GetDocsCollectionInputSchema>;
+export type ListDocsCategoriesInput = z.infer<typeof ListDocsCategoriesInputSchema>;
+export type GetDocsCategoryInput = z.infer<typeof GetDocsCategoryInputSchema>;
+export type ListDocsArticlesInput = z.infer<typeof ListDocsArticlesInputSchema>;
+export type SearchDocsArticlesInput = z.infer<typeof SearchDocsArticlesInputSchema>;
+export type GetDocsArticleInput = z.infer<typeof GetDocsArticleInputSchema>;
+export type ListDocsRelatedArticlesInput = z.infer<typeof ListDocsRelatedArticlesInputSchema>;
+export type ListDocsArticleRevisionsInput = z.infer<typeof ListDocsArticleRevisionsInputSchema>;
+export type GetDocsArticleRevisionInput = z.infer<typeof GetDocsArticleRevisionInputSchema>;
+export type ListDocsRedirectsInput = z.infer<typeof ListDocsRedirectsInputSchema>;
+export type GetDocsRedirectInput = z.infer<typeof GetDocsRedirectInputSchema>;
+export type FindDocsRedirectInput = z.infer<typeof FindDocsRedirectInputSchema>;
 export type ReportBaseInput = z.infer<typeof ReportBaseInputSchema>;
 export type GetCompanyReportInput = z.infer<typeof GetCompanyReportInputSchema>;
 export type GetConversationsReportInput = z.infer<typeof GetConversationsReportInputSchema>;
