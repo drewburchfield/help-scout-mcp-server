@@ -1,7 +1,19 @@
 # MCP Tool Surface Roadmap
 
-This roadmap sorts future Help Scout MCP work by likely support-team usage. It
-is a product map, not a release plan.
+This roadmap sorts direct Help Scout API-parity MCP work by likely support-team
+usage. It is a product map, not a release plan; deferred ideas are called out
+separately so they are not mistaken for current build scope.
+
+## Dogfood Fixture Rule
+
+Each direct API-surface PR must include or reuse idempotent dogfood seed data
+that exercises the core path and meaningful parameter permutations for that
+surface. If a live dogfood failure is caused by missing account data, fix the
+fixture setup instead of weakening coverage.
+
+Use `npm run dogfood:seed` before authenticated dogfood runs. When a new API
+family needs data that the shared seed set cannot create, add the family-specific
+seed step and wire it into that command.
 
 ## 1. Core Support Loop
 
@@ -25,6 +37,8 @@ Next:
 
 - Add narrower thread/attachment fixture coverage as the dogfood account gets
   richer test data.
+- Seed thread original-source and attachment fixtures so core support-loop
+  dogfood does not depend on optional account history.
 
 ## 2. Customer And Account Context
 
@@ -94,12 +108,25 @@ Current:
 - `getProductivityResolutionTimeReport`
 - `getProductivityResolvedReport`
 - `getProductivityResponseTimeReport`
+- `getUserReport`
+- `getUserConversationHistoryReport`
+- `getUserCustomersHelpedReport`
+- `getUserDrilldownReport`
+- `getUserHappinessReport`
+- `getUserRatingsReport`
+- `getUserRepliesReport`
+- `getUserResolutionsReport`
+- `getUserChatReport`
 
 Next:
 
 - Rating fixture coverage when the dogfood account has known rating data.
-- User and team report coverage.
-- Report drilldown coverage with strict pagination and bounded filters.
+- Seed reporting fixtures with assigned users, closed conversations, replies,
+  resolution history, and satisfaction ratings so report dogfood can assert
+  non-empty rows across company, conversation, productivity, happiness, and user
+  report families.
+- Remaining company and conversations drilldown coverage with strict pagination
+  and bounded filters.
 - Time-windowed trend queries that return compact, chartable data.
 - Guardrails to avoid large, slow account-wide report pulls by default.
 
@@ -129,9 +156,11 @@ Next:
 
 - Integration health metadata if available through supported APIs.
 
-## 7. MCP Apps Views
+## 7. Deferred MCP Apps Views
 
-Interactive views should compose existing tool data rather than introduce a
+MCP Apps views are future ideas, not current plan. Do not schedule these until
+the direct API-parity tool surface is complete. When they are revisited,
+interactive views should compose existing tool data rather than introduce a
 second data path.
 
 Candidate views:

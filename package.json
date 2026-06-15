@@ -26,6 +26,7 @@
     "test": "jest",
     "test:contract": "TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/api-contract.ts",
     "test:mcp": "npm run dogfood:mcp",
+    "dogfood:seed": "node --loader ts-node/esm tests/seed-test-data.ts && node --loader ts-node/esm tests/seed-org-customers.ts && node --loader ts-node/esm tests/seed-integration-data.ts",
     "dogfood:mcp": "npm run build && node --loader ts-node/esm tests/mcp-client-dogfood.ts",
     "dogfood:workflows": "npm run build && node --loader ts-node/esm tests/integration-workflows.ts",
     "dogfood:full": "npm run dogfood:mcp && npm run dogfood:workflows",

@@ -96,6 +96,15 @@ const EXPECTED_TOOLS = [
   'getProductivityResolutionTimeReport',
   'getProductivityResolvedReport',
   'getProductivityResponseTimeReport',
+  'getUserReport',
+  'getUserConversationHistoryReport',
+  'getUserCustomersHelpedReport',
+  'getUserDrilldownReport',
+  'getUserHappinessReport',
+  'getUserRatingsReport',
+  'getUserRepliesReport',
+  'getUserResolutionsReport',
+  'getUserChatReport',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -706,6 +715,106 @@ function buildScenarios(): Scenario[] {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing response time report');
         requireArray(report, ['current'], 'response time points');
+      },
+    },
+    {
+      tool: 'getUserReport',
+      name: 'user overall report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user report');
+        requireCondition(getObject(report, 'current'), 'Missing current user report data');
+      },
+    },
+    {
+      tool: 'getUserConversationHistoryReport',
+      name: 'user conversation history rows',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false, page: 1 }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user conversation history report');
+        requireArray(report, ['results'], 'user conversation history rows');
+      },
+    },
+    {
+      tool: 'getUserCustomersHelpedReport',
+      name: 'user customers helped series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user customers helped report');
+        requireArray(report, ['current'], 'customers helped points');
+      },
+    },
+    {
+      tool: 'getUserDrilldownReport',
+      name: 'user drilldown conversations',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], page: 1, rows: 10 }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        const conversations = getObject(report, 'conversations');
+        requireCondition(conversations, 'Missing user drilldown conversations');
+        requireArray(conversations, ['results'], 'user drilldown rows');
+      },
+    },
+    {
+      tool: 'getUserHappinessReport',
+      name: 'user happiness report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId] }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user happiness report');
+        requireCondition(getObject(report, 'current'), 'Missing current user happiness report data');
+      },
+    },
+    {
+      tool: 'getUserRatingsReport',
+      name: 'user happiness rating rows',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], page: 1, rating: 'all' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user ratings report');
+        requireArray(report, ['results'], 'user rating rows');
+      },
+    },
+    {
+      tool: 'getUserRepliesReport',
+      name: 'user replies series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user replies report');
+        requireArray(report, ['current'], 'user reply points');
+      },
+    },
+    {
+      tool: 'getUserResolutionsReport',
+      name: 'user resolutions series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user resolutions report');
+        requireArray(report, ['current'], 'user resolution points');
+      },
+    },
+    {
+      tool: 'getUserChatReport',
+      name: 'user chat report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ user: ctx.userId ?? '0', start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing user chat report');
+        requireCondition(getObject(report, 'current'), 'Missing current user chat report data');
       },
     },
     {

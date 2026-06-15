@@ -55,7 +55,16 @@
     "getProductivityRepliesSentReport",
     "getProductivityResolutionTimeReport",
     "getProductivityResolvedReport",
-    "getProductivityResponseTimeReport"
+    "getProductivityResponseTimeReport",
+    "getUserReport",
+    "getUserConversationHistoryReport",
+    "getUserCustomersHelpedReport",
+    "getUserDrilldownReport",
+    "getUserHappinessReport",
+    "getUserRatingsReport",
+    "getUserRepliesReport",
+    "getUserResolutionsReport",
+    "getUserChatReport"
   ],
   "prompts": [
     "search-last-7-days",

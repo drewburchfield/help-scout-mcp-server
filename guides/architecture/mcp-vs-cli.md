@@ -63,7 +63,7 @@ dependent PR.
 ## Testing Account Policy
 
 The connected Help Scout account is the complete test lane for dogfood. Test
-fixtures should be deterministic enough for broad tool coverage, but the server
+fixtures must be deterministic enough for broad tool coverage, but the server
 must tolerate normal Help Scout account variation:
 
 - Optional fields may be absent.
@@ -71,8 +71,18 @@ must tolerate normal Help Scout account variation:
 - Pagination may return fewer objects than requested.
 - Deleted or inaccessible IDs should return model-correctable tool errors.
 
-Test scripts may require known fixture IDs through environment variables. MCP
-tools should not assume those fixture IDs in production behavior.
+Every API-surface PR is responsible for loading or extending fixture data that
+exercises the core path and meaningful permutations for that surface before the
+PR is reviewed. Missing account data should drive fixture work, not weaker
+dogfood assertions.
+
+Use `npm run dogfood:seed` to load the shared customer, organization,
+conversation, and organization-member fixtures before authenticated dogfood
+runs. New API families should add their own idempotent seed data and wire it
+into that script when existing fixtures cannot produce non-empty coverage.
+
+Test scripts may require known fixture IDs through environment variables after
+seeding. MCP tools should not assume those fixture IDs in production behavior.
 
 ## No Docker Publishing In Feature PRs
 

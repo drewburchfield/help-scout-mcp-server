@@ -388,8 +388,18 @@ const ReportDateSchema = z.string().regex(
 const ReportIdListSchema = z.array(
   z.string().regex(/^\d+$/, 'Report filter IDs must be numeric')
 ).min(1).max(50);
+const ReportIdSchema = z.union([
+  z.string().regex(/^\d+$/, 'Report IDs must be numeric'),
+  z.number().int().positive(),
+]).transform(String);
 const ReportConversationTypesSchema = z.array(z.enum(['email', 'chat', 'phone'])).min(1).max(3);
 const ReportViewBySchema = z.enum(['day', 'week', 'month']);
+const ReportSortOrderSchema = z.enum(['ASC', 'DESC', 'asc', 'desc'])
+  .default('DESC')
+  .transform((value) => value.toUpperCase() as 'ASC' | 'DESC');
+const OptionalReportSortOrderSchema = z.enum(['ASC', 'DESC', 'asc', 'desc'])
+  .transform((value) => value.toUpperCase() as 'ASC' | 'DESC')
+  .optional();
 
 const ReportBaseInputObjectSchema = z.object({
   start: ReportDateSchema.describe('Start of the reporting interval, ISO 8601'),
@@ -400,6 +410,10 @@ const ReportBaseInputObjectSchema = z.object({
   tags: ReportIdListSchema.optional().describe('Tag IDs to filter by'),
   types: ReportConversationTypesSchema.optional().describe('Conversation types to filter by'),
   folders: ReportIdListSchema.optional().describe('Folder IDs to filter by'),
+});
+const ReportCurrentInputObjectSchema = ReportBaseInputObjectSchema.omit({
+  previousStart: true,
+  previousEnd: true,
 });
 
 export const ReportBaseInputSchema = ReportBaseInputObjectSchema.refine(
@@ -436,9 +450,77 @@ export const GetProductivityResponseTimeReportInputSchema = ProductivityTimeline
 export const GetHappinessRatingsReportInputSchema = ReportBaseInputObjectSchema.extend({
   page: z.number().int().min(1).default(1),
   sortField: z.enum(['number', 'modifiedAt', 'rating']).default('modifiedAt'),
-  sortOrder: z.enum(['ASC', 'DESC', 'asc', 'desc']).default('DESC')
-    .transform((value) => value.toUpperCase() as 'ASC' | 'DESC'),
+  sortOrder: ReportSortOrderSchema,
   rating: z.enum(['great', 'ok', 'all', 'not-good']).optional(),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+const UserReportBaseInputObjectSchema = ReportBaseInputObjectSchema.extend({
+  user: ReportIdSchema.describe('User ID or team ID for the report'),
+});
+
+const UserOfficeHoursReportInputObjectSchema = UserReportBaseInputObjectSchema.extend({
+  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
+});
+
+export const GetUserReportInputSchema = UserOfficeHoursReportInputObjectSchema.refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const UserTimelineReportInputSchema = UserReportBaseInputObjectSchema.extend({
+  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const GetUserCustomersHelpedReportInputSchema = UserTimelineReportInputSchema;
+export const GetUserRepliesReportInputSchema = UserTimelineReportInputSchema;
+export const GetUserResolutionsReportInputSchema = UserTimelineReportInputSchema;
+
+export const GetUserHappinessReportInputSchema = UserReportBaseInputObjectSchema.refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const GetUserRatingsReportInputSchema = UserReportBaseInputObjectSchema.extend({
+  page: z.number().int().min(1).default(1),
+  sortField: z.enum(['number', 'modifiedAt', 'rating']).optional(),
+  sortOrder: OptionalReportSortOrderSchema,
+  rating: z.enum(['great', 'ok', 'all', 'not-good']).optional(),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const GetUserConversationHistoryReportInputSchema = UserOfficeHoursReportInputObjectSchema.extend({
+  status: z.enum(['active', 'pending', 'closed']).optional(),
+  page: z.number().int().min(1).default(1),
+  sortField: z.enum(['number', 'repliesSent', 'responseTime', 'resolveTime']).default('number'),
+  sortOrder: ReportSortOrderSchema,
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const GetUserDrilldownReportInputSchema = ReportCurrentInputObjectSchema.extend({
+  user: ReportIdSchema.describe('User ID or team ID for the report'),
+  page: z.number().int().min(1).default(1),
+  rows: z.number().int().min(1).max(50).default(25),
+});
+
+export const GetUserChatReportInputSchema = z.object({
+  user: ReportIdSchema.describe('User ID or team ID for the report'),
+  start: ReportDateSchema.describe('Start of the reporting interval, ISO 8601'),
+  end: ReportDateSchema.describe('End of the reporting interval, ISO 8601'),
+  previousStart: ReportDateSchema.optional().describe('Optional start of the comparison interval'),
+  previousEnd: ReportDateSchema.optional().describe('Optional end of the comparison interval'),
+  mailboxes: ReportIdListSchema.optional().describe('Inbox IDs to filter by'),
+  tags: ReportIdListSchema.optional().describe('Tag IDs to filter by'),
+  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
 }).refine(
   (data) => (!!data.previousStart) === (!!data.previousEnd),
   { message: 'previousStart and previousEnd must be provided together' }
@@ -658,5 +740,7 @@ export type GetHappinessReportInput = z.infer<typeof GetHappinessReportInputSche
 export type GetHappinessRatingsReportInput = z.infer<typeof GetHappinessRatingsReportInputSchema>;
 export type GetProductivityReportInput = z.infer<typeof GetProductivityReportInputSchema>;
 export type ProductivityTimelineReportInput = z.infer<typeof ProductivityTimelineReportInputSchema>;
+export type GetUserReportInput = z.infer<typeof GetUserReportInputSchema>;
+export type UserTimelineReportInput = z.infer<typeof UserTimelineReportInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;
