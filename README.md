@@ -14,6 +14,7 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 - **Pull full thread history** into context before drafting a reply
 - **Get conversation summaries** with the original customer message and latest staff response
 - **Search and retrieve Docs articles** from the separate Help Scout Docs API
+- **Pull Help Scout reports** for company, conversations, Docs, channel, productivity, happiness, and user/team metrics
 - **Monitor inbox activity** across multiple inboxes with a single query
 - **Reduce message payloads** with optional message content redaction and scoped inbox access
 

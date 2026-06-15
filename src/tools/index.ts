@@ -64,9 +64,22 @@ import {
   GetWebhookInputSchema,
   GetSatisfactionRatingInputSchema,
   GetCompanyReportInputSchema,
+  GetCompanyCustomersHelpedReportInputSchema,
+  GetCompanyDrilldownReportInputSchema,
   GetConversationsReportInputSchema,
+  GetConversationVolumeByChannelReportInputSchema,
+  GetConversationBusyTimesReportInputSchema,
+  GetConversationDrilldownReportInputSchema,
+  GetConversationFieldDrilldownReportInputSchema,
+  GetConversationNewReportInputSchema,
+  GetConversationNewDrilldownReportInputSchema,
+  GetConversationReceivedMessagesReportInputSchema,
   GetHappinessReportInputSchema,
   GetHappinessRatingsReportInputSchema,
+  GetDocsReportInputSchema,
+  GetChatReportInputSchema,
+  GetEmailReportInputSchema,
+  GetPhoneReportInputSchema,
   GetProductivityReportInputSchema,
   GetProductivityFirstResponseTimeReportInputSchema,
   GetProductivityRepliesSentReportInputSchema,
@@ -255,6 +268,51 @@ export class ToolHandler {
     if (input.sortField) params.sortField = input.sortField;
     if (input.sortOrder) params.sortOrder = input.sortOrder;
     if (input.rating) params.rating = input.rating;
+    return params;
+  }
+
+  private buildReportQueryParamsWithExtras(
+    input: Record<string, unknown>,
+    extraKeys: readonly string[] = []
+  ): Record<string, string | number> {
+    const params: Record<string, string | number> = {
+      start: this.normalizeApiDateParam(String(input.start)) ?? String(input.start),
+      end: this.normalizeApiDateParam(String(input.end)) ?? String(input.end),
+    };
+
+    const addValue = (key: string): void => {
+      const value = input[key];
+      if (value === undefined) return;
+      if (Array.isArray(value)) {
+        params[key] = value.join(',');
+        return;
+      }
+      if (typeof value === 'boolean') {
+        params[key] = String(value);
+        return;
+      }
+      if (typeof value === 'string') {
+        params[key] = this.normalizeApiDateParam(value) ?? value;
+        return;
+      }
+      if (typeof value === 'number') {
+        params[key] = value;
+      }
+    };
+
+    for (const key of [
+      'previousStart',
+      'previousEnd',
+      'mailboxes',
+      'tags',
+      'types',
+      'folders',
+      'sites',
+      ...extraKeys,
+    ]) {
+      addValue(key);
+    }
+
     return params;
   }
 
@@ -924,6 +982,45 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getCompanyCustomersHelpedReport',
+        description: 'Get Help Scout company customers helped time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getCompanyDrilldownReport',
+        description: 'Get Help Scout company drilldown conversation rows for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
+            range: { type: 'string', enum: ['replies', 'firstReplyResolved', 'resolved', 'responseTime', 'firstResponseTime', 'handleTime'], description: 'Required drilldown range filter' },
+            rangeId: { type: 'number', minimum: 1, maximum: 10, description: 'Optional documented drilldown range bucket ID' },
+          },
+          required: ['start', 'end', 'range'],
+        },
+      },
+      {
         name: 'getConversationsReport',
         description: 'Get the Help Scout conversations overall report for a bounded time range.',
         inputSchema: {
@@ -937,6 +1034,152 @@ export class ToolHandler {
             tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
             types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
             folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationVolumeByChannelReport',
+        description: 'Get Help Scout conversation volume by channel time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationBusyTimesReport',
+        description: 'Get Help Scout busiest time of day conversation report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationDrilldownReport',
+        description: 'Get Help Scout conversation drilldown rows for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationFieldDrilldownReport',
+        description: 'Get Help Scout conversation drilldown rows for a tag, saved reply, workflow, or customer field value.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            field: { type: 'string', enum: ['tagid', 'replyid', 'workflowid', 'customerid'], description: 'Field to drill into' },
+            fieldid: { type: 'string', description: 'Identifier for the selected field value' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
+          },
+          required: ['start', 'end', 'field', 'fieldid'],
+        },
+      },
+      {
+        name: 'getConversationNewReport',
+        description: 'Get Help Scout new conversations time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationNewDrilldownReport',
+        description: 'Get Help Scout new conversation drilldown rows for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getConversationReceivedMessagesReport',
+        description: 'Get Help Scout received customer messages time series for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getDocsReport',
+        description: 'Get the Help Scout Docs overall report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            sites: { type: 'array', items: { type: 'string' }, description: 'Docs site IDs to filter by' },
           },
           required: ['start', 'end'],
         },
@@ -1281,6 +1524,60 @@ export class ToolHandler {
             officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
           },
           required: ['user', 'start', 'end'],
+        },
+      },
+      {
+        name: 'getChatReport',
+        description: 'Get the Help Scout chat report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getEmailReport',
+        description: 'Get the Help Scout email report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getPhoneReport',
+        description: 'Get the Help Scout phone report for a bounded time range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+          },
+          required: ['start', 'end'],
         },
       },
       {
@@ -1643,8 +1940,38 @@ export class ToolHandler {
         case 'getCompanyReport':
           result = await this.getCompanyReport(request.params.arguments || {});
           break;
+        case 'getCompanyCustomersHelpedReport':
+          result = await this.getCompanyCustomersHelpedReport(request.params.arguments || {});
+          break;
+        case 'getCompanyDrilldownReport':
+          result = await this.getCompanyDrilldownReport(request.params.arguments || {});
+          break;
         case 'getConversationsReport':
           result = await this.getConversationsReport(request.params.arguments || {});
+          break;
+        case 'getConversationVolumeByChannelReport':
+          result = await this.getConversationVolumeByChannelReport(request.params.arguments || {});
+          break;
+        case 'getConversationBusyTimesReport':
+          result = await this.getConversationBusyTimesReport(request.params.arguments || {});
+          break;
+        case 'getConversationDrilldownReport':
+          result = await this.getConversationDrilldownReport(request.params.arguments || {});
+          break;
+        case 'getConversationFieldDrilldownReport':
+          result = await this.getConversationFieldDrilldownReport(request.params.arguments || {});
+          break;
+        case 'getConversationNewReport':
+          result = await this.getConversationNewReport(request.params.arguments || {});
+          break;
+        case 'getConversationNewDrilldownReport':
+          result = await this.getConversationNewDrilldownReport(request.params.arguments || {});
+          break;
+        case 'getConversationReceivedMessagesReport':
+          result = await this.getConversationReceivedMessagesReport(request.params.arguments || {});
+          break;
+        case 'getDocsReport':
+          result = await this.getDocsReport(request.params.arguments || {});
           break;
         case 'getHappinessReport':
           result = await this.getHappinessReport(request.params.arguments || {});
@@ -1696,6 +2023,15 @@ export class ToolHandler {
           break;
         case 'getUserChatReport':
           result = await this.getUserChatReport(request.params.arguments || {});
+          break;
+        case 'getChatReport':
+          result = await this.getChatReport(request.params.arguments || {});
+          break;
+        case 'getEmailReport':
+          result = await this.getEmailReport(request.params.arguments || {});
+          break;
+        case 'getPhoneReport':
+          result = await this.getPhoneReport(request.params.arguments || {});
           break;
         case 'listDocsSites':
           result = await this.listDocsSites(request.params.arguments || {});
@@ -2564,12 +2900,92 @@ export class ToolHandler {
     return this.formatReportResult('company', params, report);
   }
 
+  private async getCompanyCustomersHelpedReport(args: unknown): Promise<CallToolResult> {
+    const input = GetCompanyCustomersHelpedReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/company/customers-helped', params);
+
+    return this.formatReportResult('companyCustomersHelped', params, report);
+  }
+
+  private async getCompanyDrilldownReport(args: unknown): Promise<CallToolResult> {
+    const input = GetCompanyDrilldownReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows', 'range', 'rangeId']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/company/drilldown', params);
+
+    return this.formatReportResult('companyDrilldown', params, report);
+  }
+
   private async getConversationsReport(args: unknown): Promise<CallToolResult> {
     const input = GetConversationsReportInputSchema.parse(args);
     const params = this.buildReportQueryParams(input);
     const report = await helpScoutClient.get<ReportResponse>('/reports/conversations', params);
 
     return this.formatReportResult('conversations', params, report);
+  }
+
+  private async getConversationVolumeByChannelReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationVolumeByChannelReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/volume-by-channel', params);
+
+    return this.formatReportResult('conversationVolumeByChannel', params, report);
+  }
+
+  private async getConversationBusyTimesReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationBusyTimesReportInputSchema.parse(args);
+    const params = this.buildReportQueryParams(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/busy-times', params);
+
+    return this.formatReportResult('conversationBusyTimes', params, report);
+  }
+
+  private async getConversationDrilldownReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationDrilldownReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/drilldown', params);
+
+    return this.formatReportResult('conversationDrilldown', params, report);
+  }
+
+  private async getConversationFieldDrilldownReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationFieldDrilldownReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['field', 'fieldid', 'page', 'rows']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/fields-drilldown', params);
+
+    return this.formatReportResult('conversationFieldDrilldown', params, report);
+  }
+
+  private async getConversationNewReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationNewReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new', params);
+
+    return this.formatReportResult('conversationNew', params, report);
+  }
+
+  private async getConversationNewDrilldownReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationNewDrilldownReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new-drilldown', params);
+
+    return this.formatReportResult('conversationNewDrilldown', params, report);
+  }
+
+  private async getConversationReceivedMessagesReport(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationReceivedMessagesReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/received-messages', params);
+
+    return this.formatReportResult('conversationReceivedMessages', params, report);
+  }
+
+  private async getDocsReport(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/docs', params);
+
+    return this.formatReportResult('docs', params, report);
   }
 
   private async getHappinessReport(args: unknown): Promise<CallToolResult> {
@@ -2712,6 +3128,30 @@ export class ToolHandler {
     const report = await helpScoutClient.get<ReportResponse>('/reports/user/chat', params);
 
     return this.formatReportResult('userChat', params, report);
+  }
+
+  private async getChatReport(args: unknown): Promise<CallToolResult> {
+    const input = GetChatReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/chat', params);
+
+    return this.formatReportResult('chat', params, report);
+  }
+
+  private async getEmailReport(args: unknown): Promise<CallToolResult> {
+    const input = GetEmailReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/email', params);
+
+    return this.formatReportResult('email', params, report);
+  }
+
+  private async getPhoneReport(args: unknown): Promise<CallToolResult> {
+    const input = GetPhoneReportInputSchema.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/phone', params);
+
+    return this.formatReportResult('phone', params, report);
   }
 
   private formatReportResult(

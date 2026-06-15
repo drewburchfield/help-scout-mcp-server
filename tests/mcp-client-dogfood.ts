@@ -98,7 +98,17 @@ const EXPECTED_TOOLS = [
   'getWebhook',
   'getSatisfactionRating',
   'getCompanyReport',
+  'getCompanyCustomersHelpedReport',
+  'getCompanyDrilldownReport',
   'getConversationsReport',
+  'getConversationVolumeByChannelReport',
+  'getConversationBusyTimesReport',
+  'getConversationDrilldownReport',
+  'getConversationFieldDrilldownReport',
+  'getConversationNewReport',
+  'getConversationNewDrilldownReport',
+  'getConversationReceivedMessagesReport',
+  'getDocsReport',
   'getHappinessReport',
   'getHappinessRatingsReport',
   'getProductivityReport',
@@ -116,6 +126,9 @@ const EXPECTED_TOOLS = [
   'getUserRepliesReport',
   'getUserResolutionsReport',
   'getUserChatReport',
+  'getChatReport',
+  'getEmailReport',
+  'getPhoneReport',
   'listDocsSites',
   'getDocsSite',
   'listDocsCollections',
@@ -728,6 +741,29 @@ function buildScenarios(): Scenario[] {
       },
     },
     {
+      tool: 'getCompanyCustomersHelpedReport',
+      name: 'company customers helped series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing company customers helped report');
+        requireArray(report, ['current'], 'customers helped points');
+      },
+    },
+    {
+      tool: 'getCompanyDrilldownReport',
+      name: 'company drilldown conversations',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], page: 1, rows: 10, range: 'replies' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        const conversations = getObject(report, 'conversations');
+        requireCondition(conversations, 'Missing company drilldown conversations');
+        requireArray(conversations, ['results'], 'company drilldown rows');
+      },
+    },
+    {
       tool: 'getConversationsReport',
       name: 'conversations overall report',
       skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
@@ -738,6 +774,107 @@ function buildScenarios(): Scenario[] {
         const current = getObject(report, 'current');
         requireCondition(current, 'Missing current conversations report data');
         requirePositiveMetric(current, ['totalConversations', 'conversationsCreated', 'newConversations'], 'Seeded conversation report activity');
+      },
+    },
+    {
+      tool: 'getConversationVolumeByChannelReport',
+      name: 'conversation volume by channel series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing volume by channel report');
+        requireArray(report, ['current'], 'volume by channel points');
+      },
+    },
+    {
+      tool: 'getConversationBusyTimesReport',
+      name: 'conversation busy times report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId] }),
+      validate: (data) => {
+        const report = getArray(data, ['report']);
+        requireCondition(report.length >= 0, 'Missing busy times report array');
+      },
+    },
+    {
+      tool: 'getConversationDrilldownReport',
+      name: 'conversation drilldown rows',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], page: 1, rows: 10 }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        const conversations = getObject(report, 'conversations');
+        requireCondition(conversations, 'Missing conversation drilldown conversations');
+        requireArray(conversations, ['results'], 'conversation drilldown rows');
+      },
+    },
+    {
+      tool: 'getConversationFieldDrilldownReport',
+      name: 'conversation field drilldown by tag',
+      skipIf: (ctx) => {
+        if (ctx.skipReports) return 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS';
+        return ctx.tagId ? undefined : 'No tag available for field drilldown';
+      },
+      args: (ctx) => ({
+        start: ctx.reportStart,
+        end: ctx.reportEnd,
+        field: 'tagid',
+        fieldid: ctx.tagId ?? '0',
+        mailboxes: [ctx.inboxId],
+        page: 1,
+        rows: 10,
+      }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        const conversations = getObject(report, 'conversations');
+        requireCondition(conversations, 'Missing field drilldown conversations');
+        requireArray(conversations, ['results'], 'field drilldown rows');
+      },
+    },
+    {
+      tool: 'getConversationNewReport',
+      name: 'new conversations series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing new conversations report');
+        requireArray(report, ['current'], 'new conversation points');
+      },
+    },
+    {
+      tool: 'getConversationNewDrilldownReport',
+      name: 'new conversation drilldown rows',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], page: 1, rows: 10 }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        const conversations = getObject(report, 'conversations');
+        requireCondition(conversations, 'Missing new conversation drilldown conversations');
+        requireArray(conversations, ['results'], 'new conversation drilldown rows');
+      },
+    },
+    {
+      tool: 'getConversationReceivedMessagesReport',
+      name: 'received messages series',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], viewBy: 'day' }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing received messages report');
+        requireArray(report, ['current'], 'received message points');
+      },
+    },
+    {
+      tool: 'getDocsReport',
+      name: 'docs overall report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, ...(ctx.docsSiteId ? { sites: [ctx.docsSiteId] } : {}) }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing docs report');
+        requireCondition(getObject(report, 'current'), 'Missing current docs report data');
       },
     },
     {
@@ -947,6 +1084,39 @@ function buildScenarios(): Scenario[] {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing user chat report');
         requireCondition(getObject(report, 'current'), 'Missing current user chat report data');
+      },
+    },
+    {
+      tool: 'getChatReport',
+      name: 'chat report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing chat report');
+        requireCondition(getObject(report, 'current'), 'Missing current chat report data');
+      },
+    },
+    {
+      tool: 'getEmailReport',
+      name: 'email report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing email report');
+        requireCondition(getObject(report, 'current'), 'Missing current email report data');
+      },
+    },
+    {
+      tool: 'getPhoneReport',
+      name: 'phone report',
+      skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
+      args: (ctx) => ({ start: ctx.reportStart, end: ctx.reportEnd, mailboxes: [ctx.inboxId], officeHours: false }),
+      validate: (data) => {
+        const report = getObject(data, 'report');
+        requireCondition(report, 'Missing phone report');
+        requireCondition(getObject(report, 'current'), 'Missing current phone report data');
       },
     },
     {
