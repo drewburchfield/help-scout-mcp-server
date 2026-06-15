@@ -16,6 +16,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { resolve } from 'path';
 import 'dotenv/config';
+import { INTEGRATION_ACCOUNT_FIXTURES } from './dogfood-fixtures.js';
 
 const SERVER_PATH = resolve(import.meta.dirname, '../dist/cli.js');
 const REQUEST_TIMEOUT_MS = Number(process.env.MCP_DOGFOOD_TIMEOUT_MS ?? 90000);
@@ -258,6 +259,18 @@ function getObject(data: unknown, key: string): Record<string, unknown> | undefi
     : undefined;
 }
 
+function getThreadAttachments(thread: JsonObject): JsonObject[] {
+  if (Array.isArray(thread.attachments)) return thread.attachments as JsonObject[];
+
+  const embedded = thread._embedded;
+  if (embedded && typeof embedded === 'object' && !Array.isArray(embedded)) {
+    const attachments = (embedded as JsonObject).attachments;
+    if (Array.isArray(attachments)) return attachments as JsonObject[];
+  }
+
+  return [];
+}
+
 function requireCondition(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -427,7 +440,10 @@ function buildScenarios(): Scenario[] {
       },
       after: (data, _result, ctx) => {
         const properties = getArray(data, ['organizationProperties', 'properties', 'results']) as JsonObject[];
-        if (properties[0]?.slug) ctx.organizationPropertySlug = String(properties[0].slug);
+        const preferred = properties.find((property) =>
+          getString(property.slug) === INTEGRATION_ACCOUNT_FIXTURES.organizationProperty.slug
+        ) ?? properties[0];
+        if (preferred?.slug) ctx.organizationPropertySlug = String(preferred.slug);
       },
     },
     {
@@ -558,7 +574,10 @@ function buildScenarios(): Scenario[] {
       },
       after: (data, _result, ctx) => {
         const replies = getArray(data, ['savedReplies', 'replies', 'results']) as JsonObject[];
-        if (replies[0]?.id) ctx.savedReplyId = String(replies[0].id);
+        const preferred = replies.find((reply) =>
+          getString(reply.name) === INTEGRATION_ACCOUNT_FIXTURES.savedReply.name
+        ) ?? replies[0];
+        if (preferred?.id) ctx.savedReplyId = String(preferred.id);
       },
     },
     {
@@ -588,7 +607,10 @@ function buildScenarios(): Scenario[] {
       },
       after: (data, _result, ctx) => {
         const webhooks = getArray(data, ['webhooks', 'results']) as JsonObject[];
-        if (webhooks[0]?.id) ctx.webhookId = String(webhooks[0].id);
+        const preferred = webhooks.find((webhook) =>
+          getString(webhook.label) === INTEGRATION_ACCOUNT_FIXTURES.webhook.label
+        ) ?? webhooks[0];
+        if (preferred?.id) ctx.webhookId = String(preferred.id);
       },
     },
     {
@@ -599,17 +621,6 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const webhook = getObject(data, 'webhook');
         requireCondition(webhook?.id, 'Missing webhook');
-      },
-    },
-    {
-      tool: 'getSatisfactionRating',
-      name: 'fixture satisfaction rating details',
-      skipIf: (ctx) => ctx.satisfactionRatingId ? undefined : 'No satisfaction rating fixture available',
-      args: (ctx) => ({ ratingId: ctx.satisfactionRatingId ?? '0' }),
-      validate: (data) => {
-        const rating = getObject(data, 'rating');
-        requireCondition(rating?.id, 'Missing satisfaction rating');
-        requireCondition(typeof rating.rating === 'string', 'Missing rating value');
       },
     },
     {
@@ -656,6 +667,23 @@ function buildScenarios(): Scenario[] {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing happiness ratings report');
         requireArray(report, ['results'], 'rating results');
+      },
+      after: (data, _result, ctx) => {
+        const report = getObject(data, 'report');
+        const ratings = getArray(report, ['results']) as JsonObject[];
+        const rating = ratings.find((row) => row.id);
+        if (rating?.id) ctx.satisfactionRatingId = String(rating.id);
+      },
+    },
+    {
+      tool: 'getSatisfactionRating',
+      name: 'fixture satisfaction rating details',
+      skipIf: (ctx) => ctx.satisfactionRatingId ? undefined : 'No satisfaction rating fixture available',
+      args: (ctx) => ({ ratingId: ctx.satisfactionRatingId ?? '0' }),
+      validate: (data) => {
+        const rating = getObject(data, 'rating');
+        requireCondition(rating?.id, 'Missing satisfaction rating');
+        requireCondition(typeof rating.rating === 'string', 'Missing rating value');
       },
     },
     {
@@ -1087,7 +1115,7 @@ function buildScenarios(): Scenario[] {
         const threads = getArray(data, ['threads']) as JsonObject[];
         if (ctx.attachmentId) return;
         for (const thread of threads) {
-          const attachments = Array.isArray(thread.attachments) ? thread.attachments as JsonObject[] : [];
+          const attachments = getThreadAttachments(thread);
           const attachment = attachments.find((item) => item.id);
           if (attachment?.id) {
             ctx.attachmentConversationId = ctx.conversationId;

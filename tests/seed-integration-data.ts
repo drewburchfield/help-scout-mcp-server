@@ -29,6 +29,16 @@ interface ExistingConversation {
   assigneeId?: number;
 }
 
+interface ExistingThread {
+  id?: number;
+  body?: string;
+  text?: string;
+  attachments?: Array<Record<string, unknown>>;
+  _embedded?: {
+    attachments?: Array<Record<string, unknown>>;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Config (mirrors src/utils/config.ts without importing the full module tree)
 // ---------------------------------------------------------------------------
@@ -250,18 +260,24 @@ async function seedConversation(def: ConversationDef): Promise<number> {
     }
   }
 
+  await ensureAttachment({ id: convId, subject: def.subject, status: def.status, assigneeId: def.assigneeId }, def);
+
   return convId;
 }
 
-async function getThreadTexts(conversationId: number): Promise<string[]> {
+async function getThreads(conversationId: number): Promise<ExistingThread[]> {
   const client = await api();
   const res = await client.get(`/conversations/${conversationId}/threads`);
   if (res.status !== 200) {
     log(`  Warning: list threads on conversation ${conversationId} returned ${res.status}: ${JSON.stringify(res.data)}`);
     return [];
   }
-  const threads = res.data?._embedded?.threads || [];
-  return threads.map((thread: any) => String(thread.body ?? thread.text ?? ''));
+  return res.data?._embedded?.threads || [];
+}
+
+async function getThreadTexts(conversationId: number): Promise<string[]> {
+  const threads = await getThreads(conversationId);
+  return threads.map((thread) => String(thread.body ?? thread.text ?? ''));
 }
 
 async function patchExistingConversation(existing: ExistingConversation, def: ConversationDef): Promise<void> {
@@ -304,6 +320,42 @@ async function backfillMissingThreads(existing: ExistingConversation, def: Conve
   }
 }
 
+function attachmentExists(threads: ExistingThread[], fileName: string): boolean {
+  return threads.some((thread) =>
+    [...(thread.attachments || []), ...(thread._embedded?.attachments || [])].some((attachment) =>
+      String(attachment.fileName ?? attachment.filename ?? attachment.name ?? '').includes(fileName)
+    )
+  );
+}
+
+async function uploadAttachment(conversationId: number, threadId: number, def: ConversationDef): Promise<void> {
+  if (!def.attachment) return;
+  const client = await api();
+  const res = await client.post(`/conversations/${conversationId}/threads/${threadId}/attachments`, def.attachment);
+
+  if (res.status === 201 || res.status === 200) {
+    log(`  Uploaded attachment "${def.attachment.fileName}" on conversation ${conversationId}`);
+    return;
+  }
+
+  log(`  Warning: attachment upload on conversation ${conversationId} returned ${res.status}: ${JSON.stringify(res.data)}`);
+}
+
+async function ensureAttachment(existing: ExistingConversation, def: ConversationDef): Promise<void> {
+  if (!def.attachment) return;
+
+  const threads = await getThreads(existing.id);
+  if (attachmentExists(threads, def.attachment.fileName)) return;
+
+  const targetThread = threads.find((thread) => thread.id);
+  if (!targetThread?.id) {
+    log(`  Warning: no thread ID available for attachment upload on conversation ${existing.id}`);
+    return;
+  }
+
+  await uploadAttachment(existing.id, targetThread.id, def);
+}
+
 async function ensureExistingConversationFixtures(existing: ExistingConversation[]): Promise<void> {
   const bySubject = new Map(existing.map((conversation) => [conversation.subject, conversation]));
   for (const def of CONVERSATIONS) {
@@ -311,6 +363,7 @@ async function ensureExistingConversationFixtures(existing: ExistingConversation
     if (match) {
       await patchExistingConversation(match, def);
       await backfillMissingThreads(match, def);
+      await ensureAttachment(match, def);
       continue;
     }
 
