@@ -2042,6 +2042,28 @@ function printFixtureHints(ctx: DogfoodContext): void {
     hints.push(`MCP_DOGFOOD_TEAM_ID=${ctx.teamId}`);
   }
 
+  if (ctx.docsSiteId) {
+    hints.push(`MCP_DOGFOOD_DOCS_SITE_ID=${ctx.docsSiteId}`);
+  }
+  if (ctx.docsCollectionId) {
+    hints.push(`MCP_DOGFOOD_DOCS_COLLECTION_ID=${ctx.docsCollectionId}`);
+  }
+  if (ctx.docsCategoryId) {
+    hints.push(`MCP_DOGFOOD_DOCS_CATEGORY_ID=${ctx.docsCategoryId}`);
+  }
+  if (ctx.docsArticleId) {
+    hints.push(`MCP_DOGFOOD_DOCS_ARTICLE_ID=${ctx.docsArticleId}`);
+  }
+  if (ctx.docsRevisionId) {
+    hints.push(`MCP_DOGFOOD_DOCS_REVISION_ID=${ctx.docsRevisionId}`);
+  }
+  if (ctx.docsRedirectId) {
+    hints.push(`MCP_DOGFOOD_DOCS_REDIRECT_ID=${ctx.docsRedirectId}`);
+  }
+  if (ctx.docsRedirectUrl) {
+    hints.push(`MCP_DOGFOOD_DOCS_REDIRECT_URL=${ctx.docsRedirectUrl}`);
+  }
+
   process.stderr.write('\nFixture hints:\n');
   if (hints.length > 0) {
     for (const hint of hints) process.stderr.write(`  ${hint}\n`);
@@ -2060,6 +2082,13 @@ function printFixtureHints(ctx: DogfoodContext): void {
   }
   if (!process.env.HELPSCOUT_DOCS_API_KEY) {
     process.stderr.write('  Missing Docs fixture: set HELPSCOUT_DOCS_API_KEY and stable Docs records for non-skipping Docs dogfood.\n');
+  } else {
+    if (!ctx.docsRevisionId) {
+      process.stderr.write('  Missing Docs revision fixture: run npm run dogfood:seed:docs or set MCP_DOGFOOD_DOCS_REVISION_ID.\n');
+    }
+    if (!ctx.docsRedirectId || !ctx.docsRedirectUrl) {
+      process.stderr.write('  Missing Docs redirect fixture: run npm run dogfood:seed:docs or set MCP_DOGFOOD_DOCS_REDIRECT_ID and MCP_DOGFOOD_DOCS_REDIRECT_URL.\n');
+    }
   }
 }
 

@@ -13,8 +13,10 @@ fixture setup instead of weakening coverage.
 
 Use `npm run dogfood:seed` before authenticated dogfood runs. When a new API
 family needs data that the shared seed set cannot create, add the family-specific
-seed step and wire it into that command. Keep the detailed per-tool fixture map
-current in [`guides/testing/dogfood-fixture-matrix.md`](../testing/dogfood-fixture-matrix.md).
+seed step and wire it into that command. Optional credential-gated seeders, such
+as Docs API fixtures, should no-op when their credentials are missing. Keep the
+detailed per-tool fixture map current in
+[`guides/testing/dogfood-fixture-matrix.md`](../testing/dogfood-fixture-matrix.md).
 
 ## 1. Core Support Loop
 
@@ -175,8 +177,9 @@ Next:
 
 - Add structured output schemas for Docs article, collection, category, and
   redirect envelopes after the repository-wide MCP response-envelope work lands.
-- Add Docs fixture setup notes for accounts where the API key cannot create
-  read-only knowledge base fixtures.
+- Use `tests/seed-docs-data.ts` to keep Docs dogfood seeded with Help
+  Scout-native article HTML derived from local source notes, plus revision and
+  redirect fixtures.
 
 ## 6. Admin And Integration Metadata
 
