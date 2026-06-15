@@ -11,7 +11,9 @@ Run shared fixture setup before authenticated dogfood:
 npm run dogfood:seed
 ```
 
-Audit live account-only fixtures that cannot be created by the seed scripts:
+Audit live account-only fixtures that cannot be created by the seed scripts.
+When it verifies a fixture, the audit prints the matching `MCP_DOGFOOD_*`
+environment value so CI or local dogfood can pin the same record:
 
 ```bash
 npm run dogfood:audit
@@ -50,7 +52,7 @@ npm run dogfood:audit
 | `tests/seed-test-data.ts` | Golden customer, organization, customer contacts, address, customer property value, deterministic organization property definition/value, saved reply, and webhook. | customer profile, organization profile, contact retrieval, customer and organization property visibility, saved reply retrieval, webhook retrieval |
 | `tests/seed-org-customers.ts` | Fifteen organization members under Meridian Testing Corp. | organization member pagination |
 | `tests/seed-integration-data.ts` | `MCP-TEST:` conversations in active, pending, and closed states with customer and staff threads plus tags; report-rich closed fixtures are assigned to the test user; one fixture includes an attachment-bearing thread. | conversation search, status filters, tag filters, thread retrieval, workflow-style integration dogfood, user report row assertions, attachment retrieval |
-| `tests/audit-dogfood-account.ts` | Read-only audit of team membership, satisfaction rating, original-source, and attachment fixture readiness. | names account-only fixture gaps before dogfood runs |
+| `tests/audit-dogfood-account.ts` | Read-only audit of team membership, satisfaction rating, original-source, and attachment fixture readiness. It verifies pinned env IDs, discovers fixture IDs when possible, and scans recent live conversations for original-source coverage when seeded records cannot provide it. | names account-only fixture gaps before dogfood runs and prints env values for verified fixtures |
 
 ## Capability Coverage
 
@@ -59,12 +61,12 @@ npm run dogfood:audit
 | Inbox discovery | `searchInboxes`, `listAllInboxes` | Uses configured Client Support inbox and live account inbox list. | Discovery, narrowing, invalid limit validation. | None known. |
 | Conversation search | `searchConversations`, `advancedConversationSearch`, `comprehensiveConversationSearch`, `structuredConversationFilter` | `MCP-TEST:` conversations cover active, pending, closed, tags, customers, dates, and subjects. | Discovery, narrowing, pagination, permutation, validation. | Add a deterministic spam conversation only if Help Scout supports safe seed/cleanup for spam state. |
 | Conversation retrieval | `getConversationSummary`, `getThreads` | Seeded conversations include customer and staff threads, and one conversation fixture includes an attachment-bearing thread. | Retrieval, pagination, redaction, invalid ID validation, attachment discovery under thread `_embedded.attachments`. | Add a known original-source thread. |
-| Thread original source and attachments | `getOriginalSource`, `getAttachment` | Harness can use `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID`, `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`, `MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID`, and `MCP_DOGFOOD_ATTACHMENT_ID`; attachment IDs are discovered from the seeded attachment fixture conversation. | Retrieval when fixture IDs are provided; attachment retrieval through seeded live fixture discovery. | Original source still requires known email-source fixture IDs. |
+| Thread original source and attachments | `getOriginalSource`, `getAttachment` | Harness can use `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID`, `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`, `MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID`, and `MCP_DOGFOOD_ATTACHMENT_ID`; attachment IDs are discovered from the seeded attachment fixture conversation. Dogfood probes discovered thread IDs for readable original source before skipping. | Retrieval when fixture IDs are provided; attachment retrieval through seeded live fixture discovery; original-source retrieval when a readable source is discovered. | Original source still requires an inbound email-source fixture when no live thread exposes source data. |
 | Customer context | `getCustomer`, `listCustomers`, `searchCustomersByEmail`, `getCustomerContacts` | Golden customer and Meridian org members cover profile, email, name, mailbox, modified date, pagination, contacts, and invalid IDs. | Discovery, retrieval, narrowing, pagination, permutation, validation. | Add a customer with multiple values per contact type if future tools expose contact editing or richer contact filtering. |
 | Organization context | `getOrganization`, `listOrganizations`, `getOrganizationMembers`, `getOrganizationConversations` | Golden organization, fifteen org members, and seeded conversations cover include flags, sort fields, pagination, members, and conversations. | Retrieval, narrowing, pagination, permutation, validation. | Add organization property-heavy fixtures if property output schemas become stricter. |
 | Property metadata | `listCustomerProperties`, `listOrganizationProperties`, `getOrganizationProperty` | Customer property and deterministic organization property are seeded. | Discovery and retrieval. | None known. |
 | Tags | `listTags`, `getTag` | Seeded conversations use `mcp-test`; dogfood prefers that tag when present. | Discovery, narrowing, retrieval. | None known if tag creation remains stable through conversation seeding. |
-| Users and teams | `listUsers`, `getUser`, `listTeams`, `getTeamMembers` | Live users and teams are discovered; `getUser me` is deterministic for authenticated credentials. | Discovery, retrieval, inbox filter. | Team/member coverage depends on account team setup. Add an account fixture or documented 1Password-backed setup step if API cannot create teams. |
+| Users and teams | `listUsers`, `getUser`, `listTeams`, `getTeamMembers` | Live users and teams are discovered; `MCP_DOGFOOD_TEAM_ID` can pin a known team; `getUser me` is deterministic for authenticated credentials. | Discovery, retrieval, inbox filter. | Team/member coverage depends on account team setup. Add an account fixture or documented 1Password-backed setup step if API cannot create teams. |
 | Inbox metadata | `listInboxCustomFields`, `listInboxFolders`, `listSavedReplies`, `getSavedReply` | Inbox custom fields and folders are discovered from Client Support. A deterministic saved reply is seeded in Client Support. | Discovery, retrieval. | None known for saved replies. |
 | Workflows | `listWorkflows` | Discovers live account workflows. | Discovery. | Add a stable workflow fixture or account setup note if workflow APIs cannot create read-only test workflows. |
 | Webhooks | `listWebhooks`, `getWebhook` | A deterministic test webhook is seeded with a non-routable callback URL and Client Support mailbox scope. | Discovery and retrieval. | None known. |
@@ -79,9 +81,9 @@ npm run dogfood:audit
 
 | Skip source | Current reason | Preferred fix |
 | --- | --- | --- |
-| `getOriginalSource` | No known original-source fixture IDs. | Add original-source conversation/thread discovery to seed output or environment setup. |
-| `getSatisfactionRating` | No known satisfaction rating fixture ID. | Seed or configure a known rating and expose `MCP_DOGFOOD_SATISFACTION_RATING_ID`. |
-| `getTeamMembers` | No team may exist in the test account. | Configure or seed a team with at least one member. |
+| `getOriginalSource` | No known original-source fixture IDs. | Send or import an inbound email fixture, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID` and `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`. |
+| `getSatisfactionRating` | No known satisfaction rating fixture ID. | Submit a known rating, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_SATISFACTION_RATING_ID`. |
+| `getTeamMembers` | No team may exist in the test account. | Configure a team with at least one member, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_TEAM_ID` if discovery should be pinned. |
 | Docs API tools | Docs API requires separate `HELPSCOUT_DOCS_API_KEY`, and the shared seed command cannot create Docs knowledge base fixtures. | Configure a Docs API key and stable Docs records, then set the `MCP_DOGFOOD_DOCS_*` environment IDs when auto-discovery is insufficient. |
 
 ## PR Checklist For New API Surfaces

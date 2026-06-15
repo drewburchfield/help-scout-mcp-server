@@ -25,6 +25,7 @@ interface AuditResult {
   name: string;
   status: 'PASS' | 'GAP';
   detail: string;
+  env?: Record<string, string>;
 }
 
 let accessToken: string | null = null;
@@ -71,10 +72,29 @@ function daysAgoIso(days: number): string {
 
 async function auditTeams(client: AxiosInstance): Promise<AuditResult> {
   try {
+    const envTeamId = process.env.MCP_DOGFOOD_TEAM_ID;
+    if (envTeamId) {
+      const membersRes = await client.get(`/teams/${envTeamId}/members`, { params: { page: 1 } });
+      const members = membersRes.status === 200 ? (membersRes.data?._embedded?.users || []) : [];
+      if (members.length > 0) {
+        return {
+          name: 'getTeamMembers',
+          status: 'PASS',
+          detail: `teamId=${envTeamId}`,
+          env: { MCP_DOGFOOD_TEAM_ID: envTeamId },
+        };
+      }
+    }
+
     const res = await client.get('/teams', { params: { page: 1 } });
     const teams = res.status === 200 ? (res.data?._embedded?.teams || []) : [];
     if (teams.length > 0) {
-      return { name: 'getTeamMembers', status: 'PASS', detail: `teamId=${teams[0].id}` };
+      return {
+        name: 'getTeamMembers',
+        status: 'PASS',
+        detail: `teamId=${teams[0].id}`,
+        env: { MCP_DOGFOOD_TEAM_ID: String(teams[0].id) },
+      };
     }
 
     return {
@@ -93,7 +113,12 @@ async function auditSatisfactionRating(client: AxiosInstance): Promise<AuditResu
     if (envId) {
       const res = await client.get(`/ratings/${envId}`);
       if (res.status === 200) {
-        return { name: 'getSatisfactionRating', status: 'PASS', detail: `ratingId=${envId}` };
+        return {
+          name: 'getSatisfactionRating',
+          status: 'PASS',
+          detail: `ratingId=${envId}`,
+          env: { MCP_DOGFOOD_SATISFACTION_RATING_ID: envId },
+        };
       }
     }
 
@@ -111,7 +136,12 @@ async function auditSatisfactionRating(client: AxiosInstance): Promise<AuditResu
     const ratings = res.status === 200 ? (res.data?._embedded?.results || res.data?.results || []) : [];
     const rating = ratings.find((item: any) => item.id);
     if (rating?.id) {
-      return { name: 'getSatisfactionRating', status: 'PASS', detail: `ratingId=${rating.id}` };
+      return {
+        name: 'getSatisfactionRating',
+        status: 'PASS',
+        detail: `ratingId=${rating.id}`,
+        env: { MCP_DOGFOOD_SATISFACTION_RATING_ID: String(rating.id) },
+      };
     }
 
     return {
@@ -140,6 +170,39 @@ async function listSeededConversations(client: AxiosInstance): Promise<Array<{ i
   }
 }
 
+async function listRecentConversations(client: AxiosInstance): Promise<Array<{ id: number; subject?: string }>> {
+  try {
+    const res = await client.get('/conversations', {
+      params: {
+        mailbox: INTEGRATION_CONSTANTS.inboxId,
+        status: 'all',
+        page: 1,
+      },
+    });
+    return res.status === 200 ? (res.data?._embedded?.conversations || []) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function findOriginalSource(
+  client: AxiosInstance,
+  conversations: Array<{ id: number }>
+): Promise<{ conversationId: string; threadId: string } | null> {
+  for (const conversation of conversations.slice(0, 25)) {
+    const threadsRes = await client.get(`/conversations/${conversation.id}/threads`, { params: { page: 1, size: 25 } });
+    const threads = threadsRes.status === 200 ? (threadsRes.data?._embedded?.threads || []) : [];
+    for (const thread of threads) {
+      if (!thread.id) continue;
+      const sourceRes = await client.get(`/conversations/${conversation.id}/threads/${thread.id}/original-source`);
+      if (sourceRes.status === 200) {
+        return { conversationId: String(conversation.id), threadId: String(thread.id) };
+      }
+    }
+  }
+  return null;
+}
+
 async function auditOriginalSource(client: AxiosInstance, conversations: Array<{ id: number }>): Promise<AuditResult> {
   try {
     const envConversationId = process.env.MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID;
@@ -147,26 +210,48 @@ async function auditOriginalSource(client: AxiosInstance, conversations: Array<{
     if (envConversationId && envThreadId) {
       const res = await client.get(`/conversations/${envConversationId}/threads/${envThreadId}/original-source`);
       if (res.status === 200) {
-        return { name: 'getOriginalSource', status: 'PASS', detail: `conversationId=${envConversationId} threadId=${envThreadId}` };
+        return {
+          name: 'getOriginalSource',
+          status: 'PASS',
+          detail: `conversationId=${envConversationId} threadId=${envThreadId}`,
+          env: {
+            MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID: envConversationId,
+            MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID: envThreadId,
+          },
+        };
       }
     }
 
-    for (const conversation of conversations.slice(0, 25)) {
-      const threadsRes = await client.get(`/conversations/${conversation.id}/threads`, { params: { page: 1, size: 25 } });
-      const threads = threadsRes.status === 200 ? (threadsRes.data?._embedded?.threads || []) : [];
-      for (const thread of threads) {
-        if (!thread.id) continue;
-        const sourceRes = await client.get(`/conversations/${conversation.id}/threads/${thread.id}/original-source`);
-        if (sourceRes.status === 200) {
-          return { name: 'getOriginalSource', status: 'PASS', detail: `conversationId=${conversation.id} threadId=${thread.id}` };
-        }
-      }
+    const seeded = await findOriginalSource(client, conversations);
+    if (seeded) {
+      return {
+        name: 'getOriginalSource',
+        status: 'PASS',
+        detail: `conversationId=${seeded.conversationId} threadId=${seeded.threadId}`,
+        env: {
+          MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID: seeded.conversationId,
+          MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID: seeded.threadId,
+        },
+      };
+    }
+
+    const recent = await findOriginalSource(client, await listRecentConversations(client));
+    if (recent) {
+      return {
+        name: 'getOriginalSource',
+        status: 'PASS',
+        detail: `conversationId=${recent.conversationId} threadId=${recent.threadId} (recent live conversation)`,
+        env: {
+          MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID: recent.conversationId,
+          MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID: recent.threadId,
+        },
+      };
     }
 
     return {
       name: 'getOriginalSource',
       status: 'GAP',
-      detail: 'No seeded MCP-TEST thread exposes original email source; create or import an inbound email fixture and set MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID plus MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID.',
+      detail: 'No seeded or recent live thread exposes original email source; create or import an inbound email fixture and set MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID plus MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID.',
     };
   } catch (err) {
     return { name: 'getOriginalSource', status: 'GAP', detail: `Original-source audit failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -188,7 +273,15 @@ async function auditAttachment(client: AxiosInstance, conversations: Array<{ id:
 
         const dataRes = await client.get(`/conversations/${conversation.id}/attachments/${attachment.id}/data`);
         if (dataRes.status === 200) {
-          return { name: 'getAttachment', status: 'PASS', detail: `conversationId=${conversation.id} attachmentId=${attachment.id}` };
+          return {
+            name: 'getAttachment',
+            status: 'PASS',
+            detail: `conversationId=${conversation.id} attachmentId=${attachment.id}`,
+            env: {
+              MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID: String(conversation.id),
+              MCP_DOGFOOD_ATTACHMENT_ID: String(attachment.id),
+            },
+          };
         }
       }
     }
@@ -226,6 +319,14 @@ async function main(): Promise<void> {
 
   for (const result of results) {
     process.stdout.write(`${result.status}: ${result.name} - ${result.detail}\n`);
+  }
+
+  const envHints = results.flatMap((result) => Object.entries(result.env || {}));
+  if (envHints.length > 0) {
+    process.stdout.write('\nDiscovered dogfood fixture env:\n');
+    for (const [key, value] of envHints) {
+      process.stdout.write(`${key}=${value}\n`);
+    }
   }
 
   const gaps = results.filter((result) => result.status === 'GAP');
