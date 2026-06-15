@@ -263,6 +263,10 @@ async function scenario1_customerInvestigation(): Promise<void> {
   process.stderr.write('    structuredConversationFilter...\n');
   const filterData = await callTool('structuredConversationFilter', {
     customerIds: [Number(customerId)],
+    status: 'closed',
+    tag: GOLDEN.tag,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
     limit: 5,
   });
   const filterResults = filterData?.results ?? filterData?.conversations ?? [];

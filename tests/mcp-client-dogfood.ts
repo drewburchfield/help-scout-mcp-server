@@ -268,6 +268,11 @@ function requireArray(data: unknown, keys: string[], label: string): unknown[] {
   return arr;
 }
 
+function requirePositiveMetric(data: Record<string, unknown>, keys: string[], label: string): void {
+  const found = keys.some((key) => typeof data[key] === 'number' && data[key] > 0);
+  requireCondition(found, `${label} did not include a positive metric in ${keys.join(', ')}`);
+}
+
 function isRedactedBody(body: unknown): boolean {
   return typeof body === 'string' && body.includes('[Content hidden');
 }
@@ -626,7 +631,9 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing conversations report');
-        requireCondition(getObject(report, 'current'), 'Missing current conversations report data');
+        const current = getObject(report, 'current');
+        requireCondition(current, 'Missing current conversations report data');
+        requirePositiveMetric(current, ['totalConversations', 'conversationsCreated', 'newConversations'], 'Seeded conversation report activity');
       },
     },
     {
@@ -659,7 +666,9 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing productivity report');
-        requireCondition(getObject(report, 'current'), 'Missing current productivity report data');
+        const current = getObject(report, 'current');
+        requireCondition(current, 'Missing current productivity report data');
+        requirePositiveMetric(current, ['closed', 'newConversations'], 'Seeded productivity report activity');
       },
     },
     {
@@ -736,7 +745,8 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const report = getObject(data, 'report');
         requireCondition(report, 'Missing user conversation history report');
-        requireArray(report, ['results'], 'user conversation history rows');
+        const rows = requireArray(report, ['results'], 'user conversation history rows');
+        requireCondition(rows.length > 0, 'Expected seeded user conversation history rows');
       },
     },
     {
@@ -759,7 +769,8 @@ function buildScenarios(): Scenario[] {
         const report = getObject(data, 'report');
         const conversations = getObject(report, 'conversations');
         requireCondition(conversations, 'Missing user drilldown conversations');
-        requireArray(conversations, ['results'], 'user drilldown rows');
+        const rows = requireArray(conversations, ['results'], 'user drilldown rows');
+        requireCondition(rows.length > 0, 'Expected seeded user drilldown rows');
       },
     },
     {
