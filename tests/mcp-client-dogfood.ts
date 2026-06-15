@@ -46,6 +46,7 @@ const GOLDEN = {
   attachmentConversationId: process.env.MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID,
   attachmentId: process.env.MCP_DOGFOOD_ATTACHMENT_ID,
   satisfactionRatingId: process.env.MCP_DOGFOOD_SATISFACTION_RATING_ID,
+  teamId: process.env.MCP_DOGFOOD_TEAM_ID,
   docsSiteId: process.env.MCP_DOGFOOD_DOCS_SITE_ID,
   docsCollectionId: process.env.MCP_DOGFOOD_DOCS_COLLECTION_ID,
   docsCategoryId: process.env.MCP_DOGFOOD_DOCS_CATEGORY_ID,
@@ -149,6 +150,7 @@ interface DogfoodContext {
   conversationNumber?: number;
   originalSourceConversationId?: string;
   originalSourceThreadId?: string;
+  originalSourceProbeSkipped?: string;
   attachmentConversationId?: string;
   attachmentId?: string;
   assigneeId?: number;
@@ -182,7 +184,7 @@ interface Scenario {
   expectError?: boolean;
   skipIf?: (ctx: DogfoodContext) => string | undefined;
   validate: (data: unknown, result: CallToolResult, ctx: DogfoodContext) => void;
-  after?: (data: unknown, result: CallToolResult, ctx: DogfoodContext) => void;
+  after?: (data: unknown, result: CallToolResult, ctx: DogfoodContext, session: McpDogfoodSession) => void | Promise<void>;
 }
 
 interface ScenarioResult {
@@ -238,6 +240,7 @@ class McpDogfoodSession {
       attachmentConversationId: GOLDEN.attachmentConversationId,
       attachmentId: GOLDEN.attachmentId,
       satisfactionRatingId: GOLDEN.satisfactionRatingId,
+      teamId: GOLDEN.teamId,
       docsSiteId: GOLDEN.docsSiteId,
       docsCollectionId: GOLDEN.docsCollectionId,
       docsCategoryId: GOLDEN.docsCategoryId,
@@ -311,6 +314,12 @@ function getThreadAttachments(thread: JsonObject): JsonObject[] {
   return [];
 }
 
+function getThreadId(thread: JsonObject): string | undefined {
+  const id = thread.id;
+  if (typeof id === 'string' || typeof id === 'number') return String(id);
+  return undefined;
+}
+
 function requireCondition(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
@@ -324,6 +333,35 @@ function requireArray(data: unknown, keys: string[], label: string): unknown[] {
 function requirePositiveMetric(data: Record<string, unknown>, keys: string[], label: string): void {
   const found = keys.some((key) => typeof data[key] === 'number' && data[key] > 0);
   requireCondition(found, `${label} did not include a positive metric in ${keys.join(', ')}`);
+}
+
+async function probeOriginalSourceFixture(
+  session: McpDogfoodSession,
+  ctx: DogfoodContext,
+  conversationId: string | undefined,
+  threads: JsonObject[]
+): Promise<void> {
+  if (ctx.originalSourceConversationId && ctx.originalSourceThreadId) return;
+  if (!conversationId) return;
+
+  for (const thread of threads) {
+    const threadId = getThreadId(thread);
+    if (!threadId) continue;
+
+    try {
+      const result = await session.callTool('getOriginalSource', { conversationId, threadId });
+      const data = parseToolData(result);
+      const originalSource = getObject(data, 'originalSource');
+      if (!result.isError && originalSource && 'original' in originalSource) {
+        ctx.originalSourceConversationId = conversationId;
+        ctx.originalSourceThreadId = threadId;
+        ctx.originalSourceProbeSkipped = undefined;
+        return;
+      }
+    } catch (err) {
+      ctx.originalSourceProbeSkipped = err instanceof Error ? err.message : String(err);
+    }
+  }
 }
 
 function isRedactedBody(body: unknown): boolean {
@@ -383,7 +421,7 @@ async function runScenario(session: McpDogfoodSession, ctx: DogfoodContext, scen
       throw new Error(`Unexpected tool error: ${textFromResult(result).slice(0, 300)}`);
     }
     scenario.validate(data, result, ctx);
-    scenario.after?.(data, result, ctx);
+    await scenario.after?.(data, result, ctx, session);
     const durationMs = Date.now() - start;
     results.push({ name: scenario.name, tool: scenario.tool, status: 'PASS', durationMs });
     process.stderr.write(` PASS (${durationMs}ms)\n`);
@@ -1173,18 +1211,20 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         requireArray(data, ['threads'], 'threads');
       },
-      after: (data, _result, ctx) => {
+      after: async (data, _result, ctx, session) => {
         const threads = getArray(data, ['threads']) as JsonObject[];
-        if (ctx.attachmentId) return;
-        for (const thread of threads) {
-          const attachments = getThreadAttachments(thread);
-          const attachment = attachments.find((item) => item.id);
-          if (attachment?.id) {
-            ctx.attachmentConversationId = ctx.conversationId;
-            ctx.attachmentId = String(attachment.id);
-            break;
+        if (!ctx.attachmentId) {
+          for (const thread of threads) {
+            const attachments = getThreadAttachments(thread);
+            const attachment = attachments.find((item) => item.id);
+            if (attachment?.id) {
+              ctx.attachmentConversationId = ctx.conversationId;
+              ctx.attachmentId = String(attachment.id);
+              break;
+            }
           }
         }
+        await probeOriginalSourceFixture(session, ctx, ctx.conversationId, threads);
       },
     },
     {
@@ -1215,16 +1255,18 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         requireArray(data, ['threads'], 'threads');
       },
-      after: (data, _result, ctx) => {
-        if (ctx.attachmentId) return;
+      after: async (data, _result, ctx, session) => {
         const threads = getArray(data, ['threads']) as JsonObject[];
-        for (const thread of threads) {
-          const attachment = getThreadAttachments(thread).find((item) => item.id);
-          if (attachment?.id) {
-            ctx.attachmentId = String(attachment.id);
-            break;
+        if (!ctx.attachmentId) {
+          for (const thread of threads) {
+            const attachment = getThreadAttachments(thread).find((item) => item.id);
+            if (attachment?.id) {
+              ctx.attachmentId = String(attachment.id);
+              break;
+            }
           }
         }
+        await probeOriginalSourceFixture(session, ctx, ctx.attachmentConversationId, threads);
       },
     },
     {
@@ -1723,7 +1765,49 @@ async function runRedactionMatrix(baseCtx: DogfoodContext): Promise<void> {
   }
 }
 
-function printSummary(): void {
+function printFixtureHints(ctx: DogfoodContext): void {
+  const hints: string[] = [];
+
+  if (ctx.attachmentConversationId && ctx.attachmentId) {
+    hints.push(`MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID=${ctx.attachmentConversationId}`);
+    hints.push(`MCP_DOGFOOD_ATTACHMENT_ID=${ctx.attachmentId}`);
+  }
+
+  if (ctx.originalSourceConversationId && ctx.originalSourceThreadId) {
+    hints.push(`MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID=${ctx.originalSourceConversationId}`);
+    hints.push(`MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID=${ctx.originalSourceThreadId}`);
+  }
+
+  if (ctx.satisfactionRatingId) {
+    hints.push(`MCP_DOGFOOD_SATISFACTION_RATING_ID=${ctx.satisfactionRatingId}`);
+  }
+
+  if (ctx.teamId) {
+    hints.push(`MCP_DOGFOOD_TEAM_ID=${ctx.teamId}`);
+  }
+
+  process.stderr.write('\nFixture hints:\n');
+  if (hints.length > 0) {
+    for (const hint of hints) process.stderr.write(`  ${hint}\n`);
+  } else {
+    process.stderr.write('  No optional live fixture IDs were discovered.\n');
+  }
+
+  if (!ctx.teamId) {
+    process.stderr.write('  Missing team fixture: create a Help Scout team with at least one member.\n');
+  }
+  if (!ctx.satisfactionRatingId) {
+    process.stderr.write('  Missing satisfaction rating fixture: submit a rating and rerun dogfood to discover its ID.\n');
+  }
+  if (!ctx.originalSourceConversationId || !ctx.originalSourceThreadId) {
+    process.stderr.write('  Missing original-source fixture: send/import a real inbound email thread and rerun dogfood.\n');
+  }
+  if (!process.env.HELPSCOUT_DOCS_API_KEY) {
+    process.stderr.write('  Missing Docs fixture: set HELPSCOUT_DOCS_API_KEY and stable Docs records for non-skipping Docs dogfood.\n');
+  }
+}
+
+function printSummary(ctx: DogfoodContext): void {
   process.stderr.write('\n=== MCP Dogfood Summary ===\n\n');
   const byStatus = {
     pass: results.filter((result) => result.status === 'PASS'),
@@ -1752,6 +1836,7 @@ function printSummary(): void {
   const totalMs = results.reduce((sum, result) => sum + result.durationMs, 0);
   process.stderr.write(`\n${byStatus.pass.length} passed, ${byStatus.fail.length} failed, ${results.length} total`);
   process.stderr.write(` (${(totalMs / 1000).toFixed(1)}s summed tool time)\n\n`);
+  printFixtureHints(ctx);
 
   if (byStatus.fail.length > 0) process.exitCode = 1;
 }
@@ -1768,7 +1853,7 @@ async function main(): Promise<void> {
 
   const ctx = await runMainMatrix();
   await runRedactionMatrix(ctx);
-  printSummary();
+  printSummary(ctx);
 }
 
 main().catch((err) => {
