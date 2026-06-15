@@ -12,6 +12,7 @@
 
 import 'dotenv/config';
 import axios, { AxiosInstance } from 'axios';
+import { INTEGRATION_ACCOUNT_FIXTURES, INTEGRATION_CONSTANTS } from './dogfood-fixtures.js';
 
 // ---------------------------------------------------------------------------
 // Config (mirrors src/utils/config.ts without importing the full module tree)
@@ -409,11 +410,146 @@ async function populateProperties(customerId: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Account-level dogfood fixtures
+// ---------------------------------------------------------------------------
+
+async function populateOrganizationProperty(orgId: number): Promise<void> {
+  const client = await api();
+  const fixture = INTEGRATION_ACCOUNT_FIXTURES.organizationProperty;
+
+  const defsRes = await client.get('/organizations/properties');
+  const definitions = defsRes.status === 200
+    ? (defsRes.data?._embedded?.['organization-properties'] || [])
+    : [];
+  const existingDef = definitions.find((definition: any) => definition.slug === fixture.slug);
+
+  if (!existingDef) {
+    const createRes = await client.post('/organizations/properties', {
+      name: fixture.name,
+      type: fixture.type,
+      slug: fixture.slug,
+      options: fixture.options.map((label) => ({ label })),
+    });
+    log(`Organization property definition: ${createRes.status === 201 ? 'created' : `status ${createRes.status} ${JSON.stringify(createRes.data)}`}`);
+  } else {
+    log(`Organization property definition "${fixture.slug}" already exists`);
+  }
+
+  const valueRes = await client.put(`/organizations/${orgId}/properties/${fixture.slug}`, {
+    value: fixture.value,
+  });
+  log(`Organization property value: ${valueRes.status === 204 || valueRes.status === 200 ? 'set' : `status ${valueRes.status} ${JSON.stringify(valueRes.data)}`}`);
+}
+
+async function populateSavedReply(): Promise<void> {
+  const client = await api();
+  const fixture = INTEGRATION_ACCOUNT_FIXTURES.savedReply;
+  const res = await client.get(`/mailboxes/${INTEGRATION_CONSTANTS.inboxId}/saved-replies`, {
+    params: { includeChatReplies: true },
+  });
+  const replies = Array.isArray(res.data)
+    ? res.data
+    : res.data?._embedded?.['saved-replies'] || res.data?._embedded?.savedReplies || res.data?._embedded?.replies || [];
+  const existing = replies.find((reply: any) => reply.name === fixture.name);
+
+  if (existing?.id) {
+    log(`Saved reply "${fixture.name}" already exists (${existing.id})`);
+    return;
+  }
+
+  const createRes = await client.post(`/mailboxes/${INTEGRATION_CONSTANTS.inboxId}/saved-replies`, fixture);
+  log(`Saved reply: ${createRes.status === 201 ? 'created' : `status ${createRes.status} ${JSON.stringify(createRes.data)}`}`);
+}
+
+async function populateWebhook(): Promise<void> {
+  const client = await api();
+  const fixture = INTEGRATION_ACCOUNT_FIXTURES.webhook;
+  const res = await client.get('/webhooks', { params: { page: 1 } });
+  const webhooks = res.status === 200 ? (res.data?._embedded?.webhooks || []) : [];
+  const existing = webhooks.find((webhook: any) => webhook.label === fixture.label);
+
+  if (existing?.id) {
+    log(`Webhook "${fixture.label}" already exists (${existing.id})`);
+    return;
+  }
+
+  const createRes = await client.post('/webhooks', fixture);
+  log(`Webhook: ${createRes.status === 201 ? 'created' : `status ${createRes.status} ${JSON.stringify(createRes.data)}`}`);
+}
+
+async function populateAccountFixtures(orgId: number): Promise<void> {
+  await populateOrganizationProperty(orgId);
+  await populateSavedReply();
+  await populateWebhook();
+}
+
+async function deleteOrganizationPropertyFixture(): Promise<void> {
+  const client = await api();
+  const slug = INTEGRATION_ACCOUNT_FIXTURES.organizationProperty.slug;
+  const res = await client.delete(`/organizations/properties/${slug}`);
+  if (res.status === 204 || res.status === 200) {
+    log(`Deleted organization property definition "${slug}"`);
+  } else if (res.status === 404) {
+    log(`No organization property definition "${slug}" found`);
+  } else {
+    log(`Organization property definition delete: status ${res.status} ${JSON.stringify(res.data)}`);
+  }
+}
+
+async function deleteSavedReplyFixture(): Promise<void> {
+  const client = await api();
+  const fixture = INTEGRATION_ACCOUNT_FIXTURES.savedReply;
+  const res = await client.get(`/mailboxes/${INTEGRATION_CONSTANTS.inboxId}/saved-replies`, {
+    params: { includeChatReplies: true },
+  });
+  const replies = Array.isArray(res.data)
+    ? res.data
+    : res.data?._embedded?.['saved-replies'] || res.data?._embedded?.savedReplies || res.data?._embedded?.replies || [];
+  const existing = replies.find((reply: any) => reply.name === fixture.name);
+
+  if (!existing?.id) {
+    log(`No saved reply "${fixture.name}" found`);
+    return;
+  }
+
+  const deleteRes = await client.delete(`/mailboxes/${INTEGRATION_CONSTANTS.inboxId}/saved-replies/${existing.id}`);
+  if (deleteRes.status === 204 || deleteRes.status === 200) {
+    log(`Deleted saved reply "${fixture.name}" (${existing.id})`);
+  } else {
+    log(`Saved reply delete: status ${deleteRes.status} ${JSON.stringify(deleteRes.data)}`);
+  }
+}
+
+async function deleteWebhookFixture(): Promise<void> {
+  const client = await api();
+  const fixture = INTEGRATION_ACCOUNT_FIXTURES.webhook;
+  const res = await client.get('/webhooks', { params: { page: 1 } });
+  const webhooks = res.status === 200 ? (res.data?._embedded?.webhooks || []) : [];
+  const existing = webhooks.find((webhook: any) => webhook.label === fixture.label);
+
+  if (!existing?.id) {
+    log(`No webhook "${fixture.label}" found`);
+    return;
+  }
+
+  const deleteRes = await client.delete(`/webhooks/${existing.id}`);
+  if (deleteRes.status === 204 || deleteRes.status === 200) {
+    log(`Deleted webhook "${fixture.label}" (${existing.id})`);
+  } else {
+    log(`Webhook delete: status ${deleteRes.status} ${JSON.stringify(deleteRes.data)}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
 async function cleanup(): Promise<void> {
   heading('Cleanup: Removing Golden Test Data');
+
+  await deleteSavedReplyFixture();
+  await deleteWebhookFixture();
+  await deleteOrganizationPropertyFixture();
 
   const customerId = await findCustomerByEmail();
   if (customerId) {
@@ -472,6 +608,10 @@ async function main(): Promise<void> {
   // 4. Properties
   log('\n--- Properties ---');
   await populateProperties(customerId);
+
+  // 5. Account-level fixtures used by live dogfood scenarios
+  log('\n--- Account Fixtures ---');
+  await populateAccountFixtures(orgId);
 
   // Summary
   heading('Seed Complete');

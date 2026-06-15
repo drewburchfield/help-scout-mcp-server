@@ -14,6 +14,11 @@ export interface ConversationDef {
   reportFixture?: boolean;
   createdAtDaysAgo?: number;
   closedAtDaysAgo?: number;
+  attachment?: {
+    fileName: string;
+    mimeType: string;
+    data: string;
+  };
 }
 
 export const INTEGRATION_CONSTANTS = {
@@ -23,6 +28,29 @@ export const INTEGRATION_CONSTANTS = {
   userId: 887476,
   searchPrefix: 'MCP-TEST:',
   tag: 'mcp-test',
+};
+
+export const INTEGRATION_ACCOUNT_FIXTURES = {
+  organizationProperty: {
+    slug: 'mcp-test-tier',
+    name: 'MCP Test Tier',
+    type: 'dropdown',
+    options: ['Dogfood', 'Regression'],
+    value: 'Dogfood',
+  },
+  savedReply: {
+    name: 'MCP-TEST: Dogfood Saved Reply',
+    text: 'Hi there,<br /><br />This saved reply exists so the MCP dogfood suite can exercise listSavedReplies and getSavedReply against the live Help Scout API.',
+    chatText: 'Hi there,\n\nThis saved reply exists so the MCP dogfood suite can exercise saved reply reads against the live Help Scout API.',
+  },
+  webhook: {
+    label: 'MCP-TEST: Dogfood Webhook',
+    url: 'https://helpscout-mcp-dogfood.invalid/webhook',
+    events: ['convo.created'],
+    secret: 'mcp-test-dogfood-secret',
+    payloadVersion: 'V3',
+    mailboxIds: [Number(INTEGRATION_CONSTANTS.inboxId)],
+  },
 };
 
 export const INTEGRATION_SEED_CONVERSATIONS: ConversationDef[] = [
@@ -107,6 +135,11 @@ export const INTEGRATION_SEED_CONVERSATIONS: ConversationDef[] = [
     tags: ['mcp-test'],
     status: 'active',
     createdAtDaysAgo: 2,
+    attachment: {
+      fileName: 'mcp-test-export-diagnostics.txt',
+      mimeType: 'text/plain',
+      data: Buffer.from('MCP dogfood attachment fixture for getAttachment coverage.\n', 'utf8').toString('base64'),
+    },
     threads: [
       {
         type: 'customer',
