@@ -17,7 +17,10 @@ import {
   PropertyDefinition,
   Tag,
   User,
+  SystemUser,
+  UserStatus,
   Team,
+  InboxRouting,
   InboxCustomField,
   InboxFolder,
   SavedReply,
@@ -31,6 +34,7 @@ import {
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
+  GetConversationInputSchema,
   GetConversationSummaryInputSchema,
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
@@ -51,10 +55,15 @@ import {
   GetTagInputSchema,
   ListUsersInputSchema,
   GetUserInputSchema,
+  ListSystemUsersInputSchema,
+  GetSystemUserInputSchema,
+  ListUserStatusesInputSchema,
+  GetUserStatusInputSchema,
   ListTeamsInputSchema,
   GetTeamMembersInputSchema,
   ListInboxCustomFieldsInputSchema,
   ListInboxFoldersInputSchema,
+  GetInboxRoutingInputSchema,
   ListSavedRepliesInputSchema,
   GetSavedReplyInputSchema,
   GetOriginalSourceInputSchema,
@@ -328,6 +337,18 @@ export class ToolHandler {
     return typeof userQuery === 'string' && userQuery.trim() ? userQuery : undefined;
   }
 
+  private buildV3ApiUrl(path: string): string {
+    const normalizedPath = path.replace(/^\/+/, '');
+    const v3BaseUrl = config.helpscout.baseUrl.replace(/\/v2\/?$/, '/v3/');
+    if (v3BaseUrl === config.helpscout.baseUrl) {
+      logger.warn('v3 URL construction: baseUrl did not match /v2/ pattern, URL may be incorrect', {
+        baseUrl: config.helpscout.baseUrl,
+        path,
+      });
+    }
+    return new URL(normalizedPath, v3BaseUrl).toString();
+  }
+
   async listTools(): Promise<Tool[]> {
     return [
       {
@@ -421,6 +442,25 @@ export class ToolHandler {
               description: 'Specific fields to return (for partial responses)',
             },
           },
+        },
+      },
+      {
+        name: 'getConversation',
+        description: 'Get the raw Help Scout conversation object by ID. Optionally embeds threads for direct API parity; use getThreads when full thread pagination is needed.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID to retrieve',
+            },
+            embed: {
+              type: 'string',
+              enum: ['threads'],
+              description: 'Optional sub-entity to embed. Help Scout currently supports "threads".',
+            },
+          },
+          required: ['conversationId'],
         },
       },
       {
@@ -830,6 +870,48 @@ export class ToolHandler {
         },
       },
       {
+        name: 'listSystemUsers',
+        description: 'List Help Scout system users such as AI agents and integration users. Uses the v3 API and page-based pagination.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getSystemUser',
+        description: 'Get one Help Scout system user by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            systemUserId: { type: 'string', description: 'System user ID from listSystemUsers' },
+          },
+          required: ['systemUserId'],
+        },
+      },
+      {
+        name: 'listUserStatuses',
+        description: 'List Help Scout user email and chat availability statuses.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getUserStatus',
+        description: 'Get one Help Scout user email and chat availability status by numeric user ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            userId: { type: 'string', description: 'Numeric user ID from listUsers or getUser' },
+          },
+          required: ['userId'],
+        },
+      },
+      {
         name: 'listTeams',
         description: 'List Help Scout teams. Use to discover team IDs before team-member lookup or team-scoped reporting.',
         inputSchema: {
@@ -865,6 +947,17 @@ export class ToolHandler {
       {
         name: 'listInboxFolders',
         description: 'List Help Scout folders for an inbox. Use to discover folder IDs and counts before folder-scoped lookups.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
+          },
+          required: ['inboxId'],
+        },
+      },
+      {
+        name: 'getInboxRouting',
+        description: 'Get Help Scout routing configuration for an inbox, including rotation users and eligibility state when routing is enabled.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1835,6 +1928,9 @@ export class ToolHandler {
         case 'searchConversations':
           result = await this.searchConversations(request.params.arguments || {});
           break;
+        case 'getConversation':
+          result = await this.getConversation(request.params.arguments || {});
+          break;
         case 'getConversationSummary':
           result = await this.getConversationSummary(request.params.arguments || {});
           break;
@@ -1901,6 +1997,18 @@ export class ToolHandler {
         case 'getUser':
           result = await this.getUser(request.params.arguments || {});
           break;
+        case 'listSystemUsers':
+          result = await this.listSystemUsers(request.params.arguments || {});
+          break;
+        case 'getSystemUser':
+          result = await this.getSystemUser(request.params.arguments || {});
+          break;
+        case 'listUserStatuses':
+          result = await this.listUserStatuses(request.params.arguments || {});
+          break;
+        case 'getUserStatus':
+          result = await this.getUserStatus(request.params.arguments || {});
+          break;
         case 'listTeams':
           result = await this.listTeams(request.params.arguments || {});
           break;
@@ -1912,6 +2020,9 @@ export class ToolHandler {
           break;
         case 'listInboxFolders':
           result = await this.listInboxFolders(request.params.arguments || {});
+          break;
+        case 'getInboxRouting':
+          result = await this.getInboxRouting(request.params.arguments || {});
           break;
         case 'listSavedReplies':
           result = await this.listSavedReplies(request.params.arguments || {});
@@ -2328,6 +2439,55 @@ export class ToolHandler {
     };
   }
 
+  private async getConversation(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationInputSchema.parse(args);
+    const params = input.embed ? { embed: input.embed } : undefined;
+    const conversation = await helpScoutClient.get<Record<string, unknown>>(
+      `/conversations/${input.conversationId}`,
+      params
+    );
+
+    const processedConversation: Record<string, unknown> = { ...conversation };
+    if (config.security.redactMessageContent) {
+      if (typeof processedConversation.preview === 'string') {
+        processedConversation.preview = REDACTED_MESSAGE_BODY;
+      }
+
+      const embedded = processedConversation._embedded;
+      if (embedded && typeof embedded === 'object' && !Array.isArray(embedded)) {
+        const embeddedRecord = embedded as Record<string, unknown>;
+        const threads = embeddedRecord.threads;
+        if (Array.isArray(threads)) {
+          processedConversation._embedded = {
+            ...embeddedRecord,
+            threads: threads.map((thread) => {
+              if (!thread || typeof thread !== 'object' || Array.isArray(thread)) return thread;
+              const threadRecord = thread as Record<string, unknown>;
+              return {
+                ...threadRecord,
+                ['body']: REDACTED_MESSAGE_BODY,
+              };
+            }),
+          };
+        }
+      }
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          embedded: input.embed,
+          conversation: processedConversation,
+          usage: input.embed === 'threads'
+            ? 'Embedded threads are included for API parity; use getThreads for pagination or full chat thread retrieval.'
+            : 'Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.',
+        }, null, 2),
+      }],
+    };
+  }
+
   private async getConversationSummary(args: unknown): Promise<CallToolResult> {
     const input = GetConversationSummaryInputSchema.parse(args);
     
@@ -2623,6 +2783,86 @@ export class ToolHandler {
     };
   }
 
+  private async listSystemUsers(args: unknown): Promise<CallToolResult> {
+    const input = ListSystemUsersInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<SystemUser>>(
+      this.buildV3ApiUrl('/system-users'),
+      { page: input.page }
+    );
+    const systemUsers = response._embedded?.system_users || response._embedded?.systemUsers || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          systemUsers,
+          totalSystemUsers: systemUsers.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: systemUsers.length > 0
+            ? 'Use systemUser.id with getSystemUser when you need the full system-user record.'
+            : 'No system users returned for this Help Scout account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getSystemUser(args: unknown): Promise<CallToolResult> {
+    const input = GetSystemUserInputSchema.parse(args);
+    const systemUser = await helpScoutClient.get<SystemUser>(
+      this.buildV3ApiUrl(`/system-users/${input.systemUserId}`)
+    );
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          systemUser,
+          usage: 'System users identify non-human or integration actors in Help Scout account data.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listUserStatuses(args: unknown): Promise<CallToolResult> {
+    const input = ListUserStatusesInputSchema.parse(args);
+    const response = await helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', {
+      page: input.page,
+    });
+    const userStatuses = response._embedded?.userStatuses || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          userStatuses,
+          totalUserStatuses: userStatuses.length,
+          pagination: response.page,
+          nextPage: getNextPage(response.page),
+          usage: userStatuses.length > 0
+            ? 'Use userStatus.userId with getUserStatus or user-scoped report filters.'
+            : 'No user statuses returned for this Help Scout account.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getUserStatus(args: unknown): Promise<CallToolResult> {
+    const input = GetUserStatusInputSchema.parse(args);
+    const userStatus = await helpScoutClient.get<UserStatus>(`/users/${input.userId}/status`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          userId: input.userId,
+          userStatus,
+          usage: 'Use user status to interpret availability and routing context; this tool does not change status.',
+        }, null, 2),
+      }],
+    };
+  }
+
   private async listTeams(args: unknown): Promise<CallToolResult> {
     const input = ListTeamsInputSchema.parse(args);
     const response = await helpScoutClient.get<PaginatedResponse<Team>>('/teams', {
@@ -2707,6 +2947,24 @@ export class ToolHandler {
           usage: folders.length > 0
             ? 'Use folder.id with structuredConversationFilter for folder-scoped lookups.'
             : 'No folders returned for this inbox.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getInboxRouting(args: unknown): Promise<CallToolResult> {
+    const input = GetInboxRoutingInputSchema.parse(args);
+    const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${input.inboxId}/routing`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          inboxId: input.inboxId,
+          routing,
+          usage: routing.state === 'enabled'
+            ? 'Use routing.userIds and routing.rotation to understand current assignment rotation state.'
+            : 'Routing is disabled for this inbox; userIds may be empty.',
         }, null, 2),
       }],
     };
@@ -4271,11 +4529,7 @@ export class ToolHandler {
       cursor: input.cursor,
     };
 
-    // v3 endpoint: construct absolute URL from configured base URL
-    const v3Url = config.helpscout.baseUrl.replace(/\/v2\/?$/, '/v3/customers');
-    if (v3Url === config.helpscout.baseUrl) {
-      logger.warn('v3 URL construction: baseUrl did not match /v2/ pattern, URL may be incorrect', { baseUrl: config.helpscout.baseUrl, v3Url });
-    }
+    const v3Url = this.buildV3ApiUrl('/customers');
     const v3Response = await helpScoutClient.get<{
       _embedded: { customers: Customer[] };
       _links?: { next?: { href: string } };

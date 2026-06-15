@@ -11,10 +11,11 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 - **Search conversations** by keyword, date range, status, tag, email domain, or ticket number
 - **Look up customers** by name, advanced query syntax, or exact email address
 - **Explore organizations** with direct customer and conversation traversal
+- **Inspect conversation detail** with raw ticket metadata, summaries, full threads, attachments, and original source
 - **Pull full thread history** into context before drafting a reply
 - **Get conversation summaries** with the original customer message and latest staff response
 - **Search and retrieve Docs articles** from the separate Help Scout Docs API
-- **Pull Help Scout reports** for company, conversations, Docs, channel, productivity, happiness, and user/team metrics
+- **Pull Help Scout reports and metadata** for company, conversations, Docs, channels, productivity, happiness, users, teams, system users, statuses, routing, and webhooks
 - **Monitor inbox activity** across multiple inboxes with a single query
 - **Reduce message payloads** with optional message content redaction and scoped inbox access
 
@@ -116,8 +117,10 @@ For the MCP compatibility contract and roadmap, see:
 | Inspect an organization | `getOrganization` | "Open organization 456" |
 | List customers in an organization | `getOrganizationMembers` | "Who belongs to organization 456?" |
 | List organization conversations | `getOrganizationConversations` | "Show support history for organization 456" |
+| Raw conversation detail | `getConversation` | "Open conversation 12345 with full metadata" |
 | Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
 | Full message history | `getThreads` | "Show me the complete thread" |
+| Inspect routing state | `getInboxRouting` | "Show routing for inbox 359402" |
 | Search Docs articles | `searchDocsArticles` | "Find knowledge base articles about refunds" |
 | Retrieve a Docs article | `getDocsArticle` | "Open Docs article 123" |
 | Current MCP host time | `getServerTime` | Used for time-relative searches |

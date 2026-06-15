@@ -27,6 +27,7 @@ Current:
 - `advancedConversationSearch`
 - `comprehensiveConversationSearch`
 - `structuredConversationFilter`
+- `getConversation`
 - `getConversationSummary`
 - `getThreads`
 - `getOriginalSource`
@@ -78,10 +79,15 @@ Current:
 - `getTag`
 - `listUsers`
 - `getUser`
+- `listSystemUsers`
+- `getSystemUser`
+- `listUserStatuses`
+- `getUserStatus`
 - `listTeams`
 - `getTeamMembers`
 - `listInboxCustomFields`
 - `listInboxFolders`
+- `getInboxRouting`
 - `listSavedReplies`
 - `getSavedReply`
 - `listWorkflows`

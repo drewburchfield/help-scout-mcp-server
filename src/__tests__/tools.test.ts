@@ -45,10 +45,11 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(83);
+      expect(tools).toHaveLength(89);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
+        'getConversation',
         'getConversationSummary',
         'getThreads',
         'getServerTime',
@@ -71,10 +72,15 @@ describe('ToolHandler', () => {
         'getTag',
         'listUsers',
         'getUser',
+        'listSystemUsers',
+        'getSystemUser',
+        'listUserStatuses',
+        'getUserStatus',
         'listTeams',
         'getTeamMembers',
         'listInboxCustomFields',
         'listInboxFolders',
+        'getInboxRouting',
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
@@ -156,6 +162,8 @@ describe('ToolHandler', () => {
         'structuredConversationFilter',
         'listTags',
         'listUsers',
+        'listSystemUsers',
+        'listUserStatuses',
         'listTeams',
         'getTeamMembers',
         'listWorkflows',
@@ -2425,6 +2433,68 @@ describe('ToolHandler', () => {
     });
   });
 
+  describe('getConversation', () => {
+    it('should get raw conversation detail with optional embedded threads', async () => {
+      nock(baseURL)
+        .get('/conversations/123')
+        .query({ embed: 'threads' })
+        .reply(200, {
+          id: 123,
+          number: 456,
+          subject: 'Raw conversation',
+          status: 'active',
+          preview: 'Latest customer preview',
+          _embedded: {
+            threads: [
+              {
+                id: 10,
+                type: 'customer',
+                body: 'Customer body',
+              },
+            ],
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getConversation',
+          arguments: { conversationId: '123', embed: 'threads' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.conversationId).toBe('123');
+      expect(response.embedded).toBe('threads');
+      expect(response.conversation).toEqual(expect.objectContaining({
+        id: 123,
+        subject: 'Raw conversation',
+      }));
+      expect(response.conversation._embedded.threads[0].body).toBe('Customer body');
+    });
+
+    it('should validate conversation IDs before raw conversation lookup', async () => {
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getConversation',
+          arguments: { conversationId: 'abc' },
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error).toEqual(expect.objectContaining({
+        code: 'INVALID_INPUT',
+        type: 'validation_error',
+      }));
+      expect(response.error.validationIssues[0]).toEqual(expect.objectContaining({
+        field: 'conversationId',
+      }));
+    });
+  });
+
   describe('getConversationSummary', () => {
     it('should handle conversations with no customer threads', async () => {
       const mockConversation = {
@@ -2641,6 +2711,143 @@ describe('ToolHandler', () => {
         expect(response.conversationId).toBe(conversationId);
         expect(response.threads).toHaveLength(2);
       }
+    });
+  });
+
+  describe('metadata parity tools', () => {
+    const apiRoot = baseURL.replace('/v2', '');
+
+    it('should list and get system users through the v3 API', async () => {
+      nock(apiRoot)
+        .get('/v3/system-users')
+        .query({ page: 2 })
+        .reply(200, {
+          _embedded: {
+            system_users: [
+              {
+                id: 155250,
+                type: 'system_user',
+                firstName: 'AI Agent',
+                role: 'user',
+              },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 2, number: 2 },
+        })
+        .get('/v3/system-users/155250')
+        .reply(200, {
+          id: 155250,
+          type: 'system_user',
+          firstName: 'AI Agent',
+          role: 'user',
+        });
+
+      const listResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listSystemUsers',
+          arguments: { page: 2 },
+        },
+      });
+
+      expect(listResult.isError).toBeUndefined();
+      const listResponse = JSON.parse((listResult.content[0] as { type: 'text'; text: string }).text);
+      expect(listResponse.systemUsers).toHaveLength(1);
+      expect(listResponse.systemUsers[0].id).toBe(155250);
+
+      const getResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getSystemUser',
+          arguments: { systemUserId: '155250' },
+        },
+      });
+
+      expect(getResult.isError).toBeUndefined();
+      const getResponse = JSON.parse((getResult.content[0] as { type: 'text'; text: string }).text);
+      expect(getResponse.systemUser).toEqual(expect.objectContaining({
+        id: 155250,
+        type: 'system_user',
+      }));
+    });
+
+    it('should list and get user statuses', async () => {
+      nock(baseURL)
+        .get('/users/status')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            userStatuses: [
+              {
+                userId: 4,
+                email: { status: 'active', source: 'ui' },
+                chat: { status: 'available', mailboxStatuses: {} },
+              },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        })
+        .get('/users/4/status')
+        .reply(200, {
+          userId: 4,
+          email: { status: 'active', source: 'ui' },
+          chat: { status: 'available', mailboxStatuses: {} },
+        });
+
+      const listResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listUserStatuses',
+          arguments: { page: 1 },
+        },
+      });
+
+      expect(listResult.isError).toBeUndefined();
+      const listResponse = JSON.parse((listResult.content[0] as { type: 'text'; text: string }).text);
+      expect(listResponse.userStatuses[0].userId).toBe(4);
+
+      const getResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getUserStatus',
+          arguments: { userId: '4' },
+        },
+      });
+
+      expect(getResult.isError).toBeUndefined();
+      const getResponse = JSON.parse((getResult.content[0] as { type: 'text'; text: string }).text);
+      expect(getResponse.userStatus.email.status).toBe('active');
+    });
+
+    it('should get inbox routing configuration', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402/routing')
+        .reply(200, {
+          state: 'enabled',
+          assignmentLimit: 10,
+          assignmentMethod: 'round_robin',
+          userIds: [1, 2],
+          rotation: [
+            { userId: 1, conversationsCount: 2, eligible: true },
+            { userId: 2, conversationsCount: 5, eligible: false, reason: 'away' },
+          ],
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getInboxRouting',
+          arguments: { inboxId: '359402' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.routing).toEqual(expect.objectContaining({
+        state: 'enabled',
+        assignmentMethod: 'round_robin',
+      }));
+      expect(response.routing.rotation).toHaveLength(2);
     });
   });
 

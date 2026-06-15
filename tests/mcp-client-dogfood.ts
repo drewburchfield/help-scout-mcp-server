@@ -63,6 +63,7 @@ const GOLDEN = {
 const EXPECTED_TOOLS = [
   'searchInboxes',
   'searchConversations',
+  'getConversation',
   'getConversationSummary',
   'getThreads',
   'getServerTime',
@@ -85,10 +86,15 @@ const EXPECTED_TOOLS = [
   'getTag',
   'listUsers',
   'getUser',
+  'listSystemUsers',
+  'getSystemUser',
+  'listUserStatuses',
+  'getUserStatus',
   'listTeams',
   'getTeamMembers',
   'listInboxCustomFields',
   'listInboxFolders',
+  'getInboxRouting',
   'listSavedReplies',
   'getSavedReply',
   'getOriginalSource',
@@ -169,6 +175,7 @@ interface DogfoodContext {
   assigneeId?: number;
   tagId?: string;
   userId?: string;
+  systemUserId?: string;
   teamId?: string;
   savedReplyId?: string;
   webhookId?: string;
@@ -635,6 +642,46 @@ function buildScenarios(): Scenario[] {
       },
     },
     {
+      tool: 'listSystemUsers',
+      name: 'system user discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        requireArray(data, ['systemUsers', 'results'], 'system users');
+      },
+      after: (data, _result, ctx) => {
+        const systemUsers = getArray(data, ['systemUsers', 'results']) as JsonObject[];
+        if (systemUsers[0]?.id) ctx.systemUserId = String(systemUsers[0].id);
+      },
+    },
+    {
+      tool: 'getSystemUser',
+      name: 'discovered system user details',
+      skipIf: (ctx) => ctx.systemUserId ? undefined : 'No system user available from listSystemUsers',
+      args: (ctx) => ({ systemUserId: ctx.systemUserId ?? '0' }),
+      validate: (data) => {
+        const systemUser = getObject(data, 'systemUser');
+        requireCondition(systemUser?.id, 'Missing system user');
+      },
+    },
+    {
+      tool: 'listUserStatuses',
+      name: 'user status discovery',
+      args: { page: 1 },
+      validate: (data) => {
+        requireArray(data, ['userStatuses', 'results'], 'user statuses');
+      },
+    },
+    {
+      tool: 'getUserStatus',
+      name: 'discovered user status',
+      skipIf: (ctx) => ctx.userId ? undefined : 'No numeric user available from listUsers/getUser',
+      args: (ctx) => ({ userId: ctx.userId ?? '0' }),
+      validate: (data) => {
+        const userStatus = getObject(data, 'userStatus');
+        requireCondition(userStatus?.userId, 'Missing user status');
+      },
+    },
+    {
       tool: 'listTeams',
       name: 'team discovery',
       args: { page: 1 },
@@ -669,6 +716,15 @@ function buildScenarios(): Scenario[] {
       args: (ctx) => ({ inboxId: ctx.inboxId }),
       validate: (data) => {
         requireArray(data, ['folders', 'results'], 'folders');
+      },
+    },
+    {
+      tool: 'getInboxRouting',
+      name: 'inbox routing configuration',
+      args: (ctx) => ({ inboxId: ctx.inboxId }),
+      validate: (data) => {
+        const routing = getObject(data, 'routing');
+        requireCondition(routing?.state, 'Missing routing state');
       },
     },
     {
@@ -1360,6 +1416,36 @@ function buildScenarios(): Scenario[] {
       tool: 'structuredConversationFilter',
       name: 'missing unique field validation',
       args: { status: 'all', limit: 1 },
+      expectError: true,
+      validate: (data) => {
+        requireCondition(data !== undefined, 'Expected validation response');
+      },
+    },
+    {
+      tool: 'getConversation',
+      name: 'raw conversation detail',
+      args: (ctx) => ({ conversationId: ctx.conversationId ?? '1' }),
+      validate: (data) => {
+        const conversation = getObject(data, 'conversation');
+        requireCondition(conversation?.id, 'Missing raw conversation');
+        requireCondition(conversation?.subject, 'Missing raw conversation subject');
+      },
+    },
+    {
+      tool: 'getConversation',
+      name: 'raw conversation with embedded threads',
+      args: (ctx) => ({ conversationId: ctx.conversationId ?? '1', embed: 'threads' }),
+      validate: (data) => {
+        const conversation = getObject(data, 'conversation');
+        requireCondition(conversation?.id, 'Missing raw conversation');
+        const embedded = getObject(conversation, '_embedded');
+        requireArray(embedded, ['threads'], 'embedded threads');
+      },
+    },
+    {
+      tool: 'getConversation',
+      name: 'invalid raw conversation ID validation',
+      args: { conversationId: 'not-a-number' },
       expectError: true,
       validate: (data) => {
         requireCondition(data !== undefined, 'Expected validation response');

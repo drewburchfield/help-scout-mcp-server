@@ -121,6 +121,10 @@
       "description": "Search Help Scout conversations with various filters including full-text content search"
     },
     {
+      "name": "getConversation",
+      "description": "Get the raw Help Scout conversation object by ID with optional embedded threads"
+    },
+    {
       "name": "getConversationSummary",
       "description": "Get conversation summary with first customer message and latest staff reply"
     },
@@ -209,6 +213,22 @@
       "description": "Get a Help Scout user by ID or the authenticated resource owner"
     },
     {
+      "name": "listSystemUsers",
+      "description": "List Help Scout system users using the v3 API"
+    },
+    {
+      "name": "getSystemUser",
+      "description": "Get one Help Scout system user by ID"
+    },
+    {
+      "name": "listUserStatuses",
+      "description": "List Help Scout user email and chat availability statuses"
+    },
+    {
+      "name": "getUserStatus",
+      "description": "Get one Help Scout user email and chat availability status"
+    },
+    {
       "name": "listTeams",
       "description": "List Help Scout teams with IDs for member lookup and reporting"
     },
@@ -223,6 +243,10 @@
     {
       "name": "listInboxFolders",
       "description": "List folders and counts for a Help Scout inbox"
+    },
+    {
+      "name": "getInboxRouting",
+      "description": "Get Help Scout routing configuration for an inbox"
     },
     {
       "name": "listSavedReplies",
