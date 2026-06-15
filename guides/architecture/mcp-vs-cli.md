@@ -80,6 +80,8 @@ Use `npm run dogfood:seed` to load the shared customer, organization,
 conversation, and organization-member fixtures before authenticated dogfood
 runs. New API families should add their own idempotent seed data and wire it
 into that script when existing fixtures cannot produce non-empty coverage.
+Track per-tool fixture expectations and known gaps in
+[`guides/testing/dogfood-fixture-matrix.md`](../testing/dogfood-fixture-matrix.md).
 
 Test scripts may require known fixture IDs through environment variables after
 seeding. MCP tools should not assume those fixture IDs in production behavior.

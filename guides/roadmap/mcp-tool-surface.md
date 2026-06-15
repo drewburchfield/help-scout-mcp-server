@@ -13,7 +13,8 @@ fixture setup instead of weakening coverage.
 
 Use `npm run dogfood:seed` before authenticated dogfood runs. When a new API
 family needs data that the shared seed set cannot create, add the family-specific
-seed step and wire it into that command.
+seed step and wire it into that command. Keep the detailed per-tool fixture map
+current in [`guides/testing/dogfood-fixture-matrix.md`](../testing/dogfood-fixture-matrix.md).
 
 ## 1. Core Support Loop
 
