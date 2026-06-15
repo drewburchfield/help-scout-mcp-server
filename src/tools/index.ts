@@ -2829,7 +2829,7 @@ export class ToolHandler {
     const response = await helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', {
       page: input.page,
     });
-    const userStatuses = response._embedded?.userStatuses || [];
+    const userStatuses = response._embedded?.userStatuses || response._embedded?.user_statuses || [];
 
     return {
       content: [{
@@ -2954,7 +2954,7 @@ export class ToolHandler {
 
   private async getInboxRouting(args: unknown): Promise<CallToolResult> {
     const input = GetInboxRoutingInputSchema.parse(args);
-    const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${input.inboxId}/routing`);
+    const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${input.inboxId}/routing`, undefined, { ttl: 300 });
 
     return {
       content: [{

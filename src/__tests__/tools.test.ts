@@ -2819,7 +2819,38 @@ describe('ToolHandler', () => {
       expect(getResponse.userStatus.email.status).toBe('active');
     });
 
+    it('should tolerate snake_case user status embedding', async () => {
+      nock(baseURL)
+        .get('/users/status')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            user_statuses: [
+              {
+                userId: 7,
+                email: { status: 'away', source: 'api' },
+                chat: { status: 'offline', mailboxStatuses: {} },
+              },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listUserStatuses',
+          arguments: { page: 1 },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.userStatuses[0].userId).toBe(7);
+    });
+
     it('should get inbox routing configuration', async () => {
+      const cacheSetSpy = jest.spyOn(cache, 'set');
       nock(baseURL)
         .get('/mailboxes/359402/routing')
         .reply(200, {
@@ -2848,6 +2879,12 @@ describe('ToolHandler', () => {
         assignmentMethod: 'round_robin',
       }));
       expect(response.routing.rotation).toHaveLength(2);
+      expect(cacheSetSpy).toHaveBeenCalledWith(
+        'GET:/mailboxes/359402/routing',
+        undefined,
+        expect.objectContaining({ state: 'enabled' }),
+        { ttl: 300 }
+      );
     });
   });
 
