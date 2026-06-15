@@ -278,6 +278,42 @@
     {
       "name": "getProductivityResponseTimeReport",
       "description": "Get Help Scout productivity response time series"
+    },
+    {
+      "name": "getUserReport",
+      "description": "Get the Help Scout user or team overall report"
+    },
+    {
+      "name": "getUserConversationHistoryReport",
+      "description": "Get Help Scout user conversation history rows"
+    },
+    {
+      "name": "getUserCustomersHelpedReport",
+      "description": "Get Help Scout user customers helped time series"
+    },
+    {
+      "name": "getUserDrilldownReport",
+      "description": "Get Help Scout user report drilldown conversations"
+    },
+    {
+      "name": "getUserHappinessReport",
+      "description": "Get Help Scout user happiness report"
+    },
+    {
+      "name": "getUserRatingsReport",
+      "description": "Get Help Scout user happiness rating rows"
+    },
+    {
+      "name": "getUserRepliesReport",
+      "description": "Get Help Scout user replies time series"
+    },
+    {
+      "name": "getUserResolutionsReport",
+      "description": "Get Help Scout user resolutions time series"
+    },
+    {
+      "name": "getUserChatReport",
+      "description": "Get Help Scout user or team chat report"
     }
   ],
   "prompts": [
