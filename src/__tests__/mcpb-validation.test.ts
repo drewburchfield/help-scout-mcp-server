@@ -58,14 +58,17 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.app_secret.sensitive).toBe(true);
       expect(userConfig.app_id.required).toBe(true);
       expect(userConfig.app_secret.required).toBe(true);
+      expect(userConfig.docs_api_key).toBeDefined();
+      expect(userConfig.docs_api_key.sensitive).toBe(true);
+      expect(userConfig.docs_api_key.required).toBe(false);
 
       // Should NOT have personal access token fields
       expect(userConfig.api_key).toBeUndefined();
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 55 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(55);
+    it('should have all 70 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(70);
 
       const expectedTools = [
         'searchInboxes',
@@ -122,7 +125,22 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getUserRatingsReport',
         'getUserRepliesReport',
         'getUserResolutionsReport',
-        'getUserChatReport'
+        'getUserChatReport',
+        'listDocsSites',
+        'getDocsSite',
+        'listDocsCollections',
+        'getDocsCollection',
+        'listDocsCategories',
+        'getDocsCategory',
+        'listDocsArticles',
+        'searchDocsArticles',
+        'getDocsArticle',
+        'listDocsRelatedArticles',
+        'listDocsArticleRevisions',
+        'getDocsArticleRevision',
+        'listDocsRedirects',
+        'getDocsRedirect',
+        'findDocsRedirect'
       ];
 
       const toolNames = manifest.tools.map((tool: any) => tool.name);
@@ -158,6 +176,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(env.HELPSCOUT_APP_ID).toBe('${user_config.app_id}');
       expect(env.HELPSCOUT_APP_SECRET).toBe('${user_config.app_secret}');
       expect(env.HELPSCOUT_BASE_URL).toBe('${user_config.base_url}');
+      expect(env.HELPSCOUT_DOCS_API_KEY).toBe('${user_config.docs_api_key}');
+      expect(env.HELPSCOUT_DOCS_BASE_URL).toBe('${user_config.docs_base_url}');
       expect(env.REDACT_MESSAGE_CONTENT).toBe('${user_config.redact_message_content}');
       expect(env.LOG_LEVEL).toBe('${user_config.log_level}');
       expect(env.CACHE_TTL_SECONDS).toBe('${user_config.cache_ttl}');
@@ -234,6 +254,7 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'schema/types.js',
         'utils/config.js',
         'utils/helpscout-client.js',
+        'utils/helpscout-docs-client.js',
         'utils/logger.js',
         'utils/cache.js',
         'utils/mcp-errors.js'
@@ -262,6 +283,14 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       
       expect(content).toContain('axios');
       expect(content).toContain('cache'); // Uses cache module instead of direct LRUCache import
+    });
+
+    it('should have docs client that imports axios', () => {
+      const clientPath = path.join(buildDir, 'server/utils/helpscout-docs-client.js');
+      const content = fs.readFileSync(clientPath, 'utf8');
+
+      expect(content).toContain('axios');
+      expect(content).toContain('HELPSCOUT_DOCS_API_KEY');
     });
 
     it('should have tools that export all expected functions', () => {

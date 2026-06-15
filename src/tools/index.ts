@@ -1,5 +1,6 @@
 import { Tool, CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { PaginatedResponse, helpScoutClient } from '../utils/helpscout-client.js';
+import { DocsCollectionEnvelope, helpScoutDocsClient } from '../utils/helpscout-docs-client.js';
 import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
@@ -81,6 +82,21 @@ import {
   GetUserRepliesReportInputSchema,
   GetUserResolutionsReportInputSchema,
   GetUserChatReportInputSchema,
+  ListDocsSitesInputSchema,
+  GetDocsSiteInputSchema,
+  ListDocsCollectionsInputSchema,
+  GetDocsCollectionInputSchema,
+  ListDocsCategoriesInputSchema,
+  GetDocsCategoryInputSchema,
+  ListDocsArticlesInputSchema,
+  SearchDocsArticlesInputSchema,
+  GetDocsArticleInputSchema,
+  ListDocsRelatedArticlesInputSchema,
+  ListDocsArticleRevisionsInputSchema,
+  GetDocsArticleRevisionInputSchema,
+  ListDocsRedirectsInputSchema,
+  GetDocsRedirectInputSchema,
+  FindDocsRedirectInputSchema,
 } from '../schema/types.js';
 
 type ConversationStatus = 'active' | 'pending' | 'closed' | 'spam';
@@ -127,6 +143,11 @@ const TOOL_CONSTANTS = {
 function getNextPage(page?: { number?: number; totalPages?: number }): number | null {
   if (!page || page.number === undefined || page.totalPages === undefined) return null;
   return page.number < page.totalPages ? page.number + 1 : null;
+}
+
+function getDocsNextPage(page?: number, pages?: number): number | null {
+  if (page === undefined || pages === undefined) return null;
+  return page < pages ? page + 1 : null;
 }
 
 export class ToolHandler {
@@ -1262,6 +1283,194 @@ export class ToolHandler {
           required: ['user', 'start', 'end'],
         },
       },
+      {
+        name: 'listDocsSites',
+        description: 'List Help Scout Docs sites using the Docs API v1.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getDocsSite',
+        description: 'Get one Help Scout Docs site by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            siteId: { type: 'string', description: 'Docs site ID' },
+          },
+          required: ['siteId'],
+        },
+      },
+      {
+        name: 'listDocsCollections',
+        description: 'List Help Scout Docs collections, optionally scoped to a site.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            siteId: { type: 'string', description: 'Optional Docs site ID' },
+            visibility: { type: 'string', enum: ['all', 'public', 'private'], default: 'all' },
+            sort: { type: 'string', enum: ['number', 'visibility', 'order', 'name', 'createdAt', 'updatedAt'], default: 'order' },
+            order: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'getDocsCollection',
+        description: 'Get one Help Scout Docs collection by ID or number.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionId: { type: 'string', description: 'Docs collection ID or number' },
+          },
+          required: ['collectionId'],
+        },
+      },
+      {
+        name: 'listDocsCategories',
+        description: 'List Help Scout Docs categories for a collection.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionId: { type: 'string', description: 'Docs collection ID' },
+            sort: { type: 'string', enum: ['number', 'order', 'name', 'articleCount', 'createdAt', 'updatedAt'], default: 'order' },
+            order: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+          required: ['collectionId'],
+        },
+      },
+      {
+        name: 'getDocsCategory',
+        description: 'Get one Help Scout Docs category by ID or number.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            categoryId: { type: 'string', description: 'Docs category ID or number' },
+          },
+          required: ['categoryId'],
+        },
+      },
+      {
+        name: 'listDocsArticles',
+        description: 'List Help Scout Docs articles for a collection or category.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            collectionId: { type: 'string', description: 'Docs collection ID. Provide this or categoryId.' },
+            categoryId: { type: 'string', description: 'Docs category ID. Provide this or collectionId.' },
+            status: { type: 'string', enum: ['all', 'published', 'notpublished'], default: 'all' },
+            sort: { type: 'string', enum: ['order', 'number', 'status', 'name', 'popularity', 'createdAt', 'updatedAt'], default: 'order' },
+            order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            pageSize: { type: 'number', minimum: 1, maximum: 100, default: 50 },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+        },
+      },
+      {
+        name: 'searchDocsArticles',
+        description: 'Search Help Scout Docs articles by query, site, collection, status, or visibility.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Search query' },
+            collectionId: { type: 'string', description: 'Optional Docs collection ID' },
+            siteId: { type: 'string', description: 'Optional Docs site ID' },
+            status: { type: 'string', enum: ['all', 'published', 'notpublished'], default: 'all' },
+            visibility: { type: 'string', enum: ['all', 'public', 'private'], default: 'all' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'getDocsArticle',
+        description: 'Get one Help Scout Docs article by ID or number.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            articleId: { type: 'string', description: 'Docs article ID or number' },
+            draft: { type: 'boolean', default: false, description: 'Return draft content when unpublished changes exist' },
+          },
+          required: ['articleId'],
+        },
+      },
+      {
+        name: 'listDocsRelatedArticles',
+        description: 'List Help Scout Docs articles related to an article.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            articleId: { type: 'string', description: 'Docs article ID' },
+            status: { type: 'string', enum: ['all', 'published', 'notpublished'], default: 'all' },
+            sort: { type: 'string', enum: ['order', 'number', 'status', 'name', 'popularity', 'createdAt', 'updatedAt'], default: 'order' },
+            order: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+          required: ['articleId'],
+        },
+      },
+      {
+        name: 'listDocsArticleRevisions',
+        description: 'List Help Scout Docs article revisions.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            articleId: { type: 'string', description: 'Docs article ID' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+          required: ['articleId'],
+        },
+      },
+      {
+        name: 'getDocsArticleRevision',
+        description: 'Get one Help Scout Docs article revision by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            revisionId: { type: 'string', description: 'Docs article revision ID' },
+          },
+          required: ['revisionId'],
+        },
+      },
+      {
+        name: 'listDocsRedirects',
+        description: 'List Help Scout Docs redirects for a site.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            siteId: { type: 'string', description: 'Docs site ID' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+          },
+          required: ['siteId'],
+        },
+      },
+      {
+        name: 'getDocsRedirect',
+        description: 'Get one Help Scout Docs redirect by ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            redirectId: { type: 'string', description: 'Docs redirect ID' },
+          },
+          required: ['redirectId'],
+        },
+      },
+      {
+        name: 'findDocsRedirect',
+        description: 'Resolve a Help Scout Docs redirect target from a site ID and URL path.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            siteId: { type: 'string', description: 'Docs site ID' },
+            url: { type: 'string', description: 'URL path to redirect from, e.g. /old/path' },
+          },
+          required: ['siteId', 'url'],
+        },
+      },
     ];
   }
 
@@ -1487,6 +1696,51 @@ export class ToolHandler {
           break;
         case 'getUserChatReport':
           result = await this.getUserChatReport(request.params.arguments || {});
+          break;
+        case 'listDocsSites':
+          result = await this.listDocsSites(request.params.arguments || {});
+          break;
+        case 'getDocsSite':
+          result = await this.getDocsSite(request.params.arguments || {});
+          break;
+        case 'listDocsCollections':
+          result = await this.listDocsCollections(request.params.arguments || {});
+          break;
+        case 'getDocsCollection':
+          result = await this.getDocsCollection(request.params.arguments || {});
+          break;
+        case 'listDocsCategories':
+          result = await this.listDocsCategories(request.params.arguments || {});
+          break;
+        case 'getDocsCategory':
+          result = await this.getDocsCategory(request.params.arguments || {});
+          break;
+        case 'listDocsArticles':
+          result = await this.listDocsArticles(request.params.arguments || {});
+          break;
+        case 'searchDocsArticles':
+          result = await this.searchDocsArticles(request.params.arguments || {});
+          break;
+        case 'getDocsArticle':
+          result = await this.getDocsArticle(request.params.arguments || {});
+          break;
+        case 'listDocsRelatedArticles':
+          result = await this.listDocsRelatedArticles(request.params.arguments || {});
+          break;
+        case 'listDocsArticleRevisions':
+          result = await this.listDocsArticleRevisions(request.params.arguments || {});
+          break;
+        case 'getDocsArticleRevision':
+          result = await this.getDocsArticleRevision(request.params.arguments || {});
+          break;
+        case 'listDocsRedirects':
+          result = await this.listDocsRedirects(request.params.arguments || {});
+          break;
+        case 'getDocsRedirect':
+          result = await this.getDocsRedirect(request.params.arguments || {});
+          break;
+        case 'findDocsRedirect':
+          result = await this.findDocsRedirect(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -2476,6 +2730,232 @@ export class ToolHandler {
         }, null, 2),
       }],
     };
+  }
+
+  private formatDocsCollection<T>(
+    response: DocsCollectionEnvelope<T> | Record<string, DocsCollectionEnvelope<T>>,
+    envelopeKey: string,
+  ): { results: T[]; pagination: { page?: number; pages?: number; count?: number }; nextPage: number | null } {
+    const responseRecord = response as Record<string, DocsCollectionEnvelope<T>>;
+    const envelope = responseRecord[envelopeKey] || response as DocsCollectionEnvelope<T>;
+    const page = envelope.page;
+    const pages = envelope.pages;
+    return {
+      results: envelope.items || [],
+      pagination: {
+        page,
+        pages,
+        count: envelope.count,
+      },
+      nextPage: getDocsNextPage(page, pages),
+    };
+  }
+
+  private docsTextResponse(data: Record<string, unknown>): CallToolResult {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(data, null, 2),
+      }],
+    };
+  }
+
+  private async listDocsSites(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsSitesInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<DocsCollectionEnvelope<Record<string, unknown>>>('/sites', {
+      page: input.page,
+    });
+    return this.docsTextResponse({
+      ...this.formatDocsCollection(response, 'sites'),
+      usage: 'Use site.id with listDocsCollections or getDocsSite.',
+    });
+  }
+
+  private async getDocsSite(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsSiteInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ site: Record<string, unknown> }>(`/sites/${input.siteId}`);
+    return this.docsTextResponse({
+      site: response.site,
+      usage: 'Use site.id with listDocsCollections and listDocsRedirects.',
+    });
+  }
+
+  private async listDocsCollections(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsCollectionsInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>('/collections', {
+      page: input.page,
+      siteId: input.siteId,
+      visibility: input.visibility,
+      sort: input.sort,
+      order: input.order,
+    });
+    return this.docsTextResponse({
+      ...this.formatDocsCollection(response, 'collections'),
+      usage: 'Use collection.id with listDocsCategories, listDocsArticles, or getDocsCollection.',
+    });
+  }
+
+  private async getDocsCollection(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsCollectionInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ collection: Record<string, unknown> }>(`/collections/${input.collectionId}`);
+    return this.docsTextResponse({
+      collection: response.collection,
+      usage: 'Use collection.id with listDocsCategories or listDocsArticles.',
+    });
+  }
+
+  private async listDocsCategories(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsCategoriesInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>(
+      `/collections/${input.collectionId}/categories`,
+      {
+        page: input.page,
+        sort: input.sort,
+        order: input.order,
+      }
+    );
+    return this.docsTextResponse({
+      collectionId: input.collectionId,
+      ...this.formatDocsCollection(response, 'categories'),
+      usage: 'Use category.id with listDocsArticles or getDocsCategory.',
+    });
+  }
+
+  private async getDocsCategory(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsCategoryInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ category: Record<string, unknown> }>(`/categories/${input.categoryId}`);
+    return this.docsTextResponse({
+      category: response.category,
+      usage: 'Use category.id with listDocsArticles.',
+    });
+  }
+
+  private async listDocsArticles(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsArticlesInputSchema.parse(args);
+    const parentType = input.collectionId ? 'collection' : 'category';
+    const parentId = input.collectionId || input.categoryId;
+    const endpoint = input.collectionId
+      ? `/collections/${input.collectionId}/articles`
+      : `/categories/${input.categoryId}/articles`;
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>(endpoint, {
+      page: input.page,
+      status: input.status,
+      sort: input.sort,
+      order: input.order,
+      pageSize: input.pageSize,
+    });
+    return this.docsTextResponse({
+      parentType,
+      parentId,
+      ...this.formatDocsCollection(response, 'articles'),
+      usage: 'Use article.id with getDocsArticle, listDocsRelatedArticles, or listDocsArticleRevisions.',
+    });
+  }
+
+  private async searchDocsArticles(args: unknown): Promise<CallToolResult> {
+    const input = SearchDocsArticlesInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>('/search/articles', {
+      page: input.page,
+      query: input.query,
+      collectionId: input.collectionId,
+      siteId: input.siteId,
+      status: input.status,
+      visibility: input.visibility,
+    });
+    return this.docsTextResponse({
+      query: input.query,
+      ...this.formatDocsCollection(response, 'articles'),
+      usage: 'Use article.id with getDocsArticle for full article text and freshness metadata.',
+    });
+  }
+
+  private async getDocsArticle(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsArticleInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ article: Record<string, unknown> }>(`/articles/${input.articleId}`, {
+      draft: input.draft,
+    });
+    return this.docsTextResponse({
+      article: response.article,
+      usage: 'Use listDocsRelatedArticles for related public references or listDocsArticleRevisions for freshness checks.',
+    });
+  }
+
+  private async listDocsRelatedArticles(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsRelatedArticlesInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>(
+      `/articles/${input.articleId}/related`,
+      {
+        page: input.page,
+        status: input.status,
+        sort: input.sort,
+        order: input.order,
+      }
+    );
+    return this.docsTextResponse({
+      articleId: input.articleId,
+      ...this.formatDocsCollection(response, 'articles'),
+      usage: 'Use related article ids with getDocsArticle for full text.',
+    });
+  }
+
+  private async listDocsArticleRevisions(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsArticleRevisionsInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>(
+      `/articles/${input.articleId}/revisions`,
+      { page: input.page }
+    );
+    return this.docsTextResponse({
+      articleId: input.articleId,
+      ...this.formatDocsCollection(response, 'revisions'),
+      usage: 'Use revision.id with getDocsArticleRevision to inspect revision text.',
+    });
+  }
+
+  private async getDocsArticleRevision(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsArticleRevisionInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ revision: Record<string, unknown> }>(`/revisions/${input.revisionId}`);
+    return this.docsTextResponse({
+      revision: response.revision,
+      usage: 'Use revision.createdAt and createdBy for article freshness checks.',
+    });
+  }
+
+  private async listDocsRedirects(args: unknown): Promise<CallToolResult> {
+    const input = ListDocsRedirectsInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, DocsCollectionEnvelope<Record<string, unknown>>>>(
+      `/redirects/site/${input.siteId}`,
+      { page: input.page }
+    );
+    return this.docsTextResponse({
+      siteId: input.siteId,
+      ...this.formatDocsCollection(response, 'redirects'),
+      usage: 'Use redirect.id with getDocsRedirect, or findDocsRedirect to resolve a URL path.',
+    });
+  }
+
+  private async getDocsRedirect(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsRedirectInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ redirect: Record<string, unknown> }>(`/redirects/${input.redirectId}`);
+    return this.docsTextResponse({
+      redirect: response.redirect,
+      usage: 'Use findDocsRedirect to resolve a source URL path through redirect chains.',
+    });
+  }
+
+  private async findDocsRedirect(args: unknown): Promise<CallToolResult> {
+    const input = FindDocsRedirectInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<{ redirectedUrl: Record<string, unknown> | null }>('/redirects', {
+      siteId: input.siteId,
+      url: input.url,
+    });
+    return this.docsTextResponse({
+      siteId: input.siteId,
+      url: input.url,
+      redirectedUrl: response.redirectedUrl,
+      usage: response.redirectedUrl
+        ? 'Use redirectedUrl to follow the resolved Docs target.'
+        : 'No redirect was found for this site and URL path.',
+    });
   }
 
   private async advancedConversationSearch(args: unknown): Promise<CallToolResult> {

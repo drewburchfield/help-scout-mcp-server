@@ -46,6 +46,14 @@ const GOLDEN = {
   attachmentConversationId: process.env.MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID,
   attachmentId: process.env.MCP_DOGFOOD_ATTACHMENT_ID,
   satisfactionRatingId: process.env.MCP_DOGFOOD_SATISFACTION_RATING_ID,
+  docsSiteId: process.env.MCP_DOGFOOD_DOCS_SITE_ID,
+  docsCollectionId: process.env.MCP_DOGFOOD_DOCS_COLLECTION_ID,
+  docsCategoryId: process.env.MCP_DOGFOOD_DOCS_CATEGORY_ID,
+  docsArticleId: process.env.MCP_DOGFOOD_DOCS_ARTICLE_ID,
+  docsRevisionId: process.env.MCP_DOGFOOD_DOCS_REVISION_ID,
+  docsRedirectId: process.env.MCP_DOGFOOD_DOCS_REDIRECT_ID,
+  docsRedirectUrl: process.env.MCP_DOGFOOD_DOCS_REDIRECT_URL,
+  docsSearchQuery: process.env.MCP_DOGFOOD_DOCS_SEARCH_QUERY ?? 'test',
   reportStart: process.env.MCP_DOGFOOD_REPORT_START ?? daysAgoIso(30),
   reportEnd: process.env.MCP_DOGFOOD_REPORT_END ?? daysAgoIso(0),
   skipReports: process.env.MCP_DOGFOOD_SKIP_REPORTS === 'true',
@@ -107,6 +115,21 @@ const EXPECTED_TOOLS = [
   'getUserRepliesReport',
   'getUserResolutionsReport',
   'getUserChatReport',
+  'listDocsSites',
+  'getDocsSite',
+  'listDocsCollections',
+  'getDocsCollection',
+  'listDocsCategories',
+  'getDocsCategory',
+  'listDocsArticles',
+  'searchDocsArticles',
+  'getDocsArticle',
+  'listDocsRelatedArticles',
+  'listDocsArticleRevisions',
+  'getDocsArticleRevision',
+  'listDocsRedirects',
+  'getDocsRedirect',
+  'findDocsRedirect',
 ] as const;
 
 type ToolName = typeof EXPECTED_TOOLS[number];
@@ -135,6 +158,14 @@ interface DogfoodContext {
   savedReplyId?: string;
   webhookId?: string;
   satisfactionRatingId?: string;
+  docsSiteId?: string;
+  docsCollectionId?: string;
+  docsCategoryId?: string;
+  docsArticleId?: string;
+  docsRevisionId?: string;
+  docsRedirectId?: string;
+  docsRedirectUrl?: string;
+  docsSearchQuery: string;
   reportStart: string;
   reportEnd: string;
   skipReports: boolean;
@@ -207,6 +238,14 @@ class McpDogfoodSession {
       attachmentConversationId: GOLDEN.attachmentConversationId,
       attachmentId: GOLDEN.attachmentId,
       satisfactionRatingId: GOLDEN.satisfactionRatingId,
+      docsSiteId: GOLDEN.docsSiteId,
+      docsCollectionId: GOLDEN.docsCollectionId,
+      docsCategoryId: GOLDEN.docsCategoryId,
+      docsArticleId: GOLDEN.docsArticleId,
+      docsRevisionId: GOLDEN.docsRevisionId,
+      docsRedirectId: GOLDEN.docsRedirectId,
+      docsRedirectUrl: GOLDEN.docsRedirectUrl,
+      docsSearchQuery: GOLDEN.docsSearchQuery,
       reportStart: GOLDEN.reportStart,
       reportEnd: GOLDEN.reportEnd,
       skipReports: GOLDEN.skipReports,
@@ -297,6 +336,21 @@ function textFromResult(result: CallToolResult): string {
 
 function getString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function firstItemId(data: unknown, keys: string[]): string | undefined {
+  const [first] = getArray(data, keys);
+  if (first && typeof first === 'object' && !Array.isArray(first)) {
+    const id = (first as JsonObject).id;
+    if (typeof id === 'string' || typeof id === 'number') return String(id);
+  }
+  return undefined;
+}
+
+function missingDocsCredentials(): string | undefined {
+  return process.env.HELPSCOUT_DOCS_API_KEY
+    ? undefined
+    : 'missing HELPSCOUT_DOCS_API_KEY for Docs API dogfood';
 }
 
 function dateDaysAgo(days: number): string {
@@ -1412,6 +1466,171 @@ function buildScenarios(): Scenario[] {
       args: (ctx) => ({ organizationId: ctx.organizationId, page: 2 }),
       validate: (data) => {
         requireArray(data, ['conversations', 'results'], 'conversations');
+      },
+    },
+    {
+      tool: 'listDocsSites',
+      name: 'Docs sites discovery',
+      args: { page: 1 },
+      skipIf: () => missingDocsCredentials(),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs sites');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsSiteId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'getDocsSite',
+      name: 'Docs site retrieval',
+      args: (ctx) => ({ siteId: ctx.docsSiteId ?? 'missing-site' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsSiteId ? 'no Docs site fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const site = getObject(data, 'site');
+        requireCondition(site?.id, 'Missing Docs site');
+      },
+    },
+    {
+      tool: 'listDocsCollections',
+      name: 'Docs collections discovery',
+      args: (ctx) => ({ siteId: ctx.docsSiteId, page: 1, visibility: 'all', sort: 'order', order: 'asc' }),
+      skipIf: () => missingDocsCredentials(),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs collections');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsCollectionId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'getDocsCollection',
+      name: 'Docs collection retrieval',
+      args: (ctx) => ({ collectionId: ctx.docsCollectionId ?? 'missing-collection' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsCollectionId ? 'no Docs collection fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const collection = getObject(data, 'collection');
+        requireCondition(collection?.id, 'Missing Docs collection');
+      },
+    },
+    {
+      tool: 'listDocsCategories',
+      name: 'Docs categories discovery',
+      args: (ctx) => ({ collectionId: ctx.docsCollectionId ?? 'missing-collection', page: 1, sort: 'order', order: 'asc' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsCollectionId ? 'no Docs collection fixture for category discovery' : undefined),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs categories');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsCategoryId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'getDocsCategory',
+      name: 'Docs category retrieval',
+      args: (ctx) => ({ categoryId: ctx.docsCategoryId ?? 'missing-category' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsCategoryId ? 'no Docs category fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const category = getObject(data, 'category');
+        requireCondition(category?.id, 'Missing Docs category');
+      },
+    },
+    {
+      tool: 'listDocsArticles',
+      name: 'Docs articles by collection',
+      args: (ctx) => ({ collectionId: ctx.docsCollectionId ?? 'missing-collection', page: 1, status: 'all', sort: 'order', order: 'desc', pageSize: 50 }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsCollectionId ? 'no Docs collection fixture for article listing' : undefined),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs articles');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsArticleId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'searchDocsArticles',
+      name: 'Docs article search',
+      args: (ctx) => ({ query: ctx.docsSearchQuery, siteId: ctx.docsSiteId, status: 'all', visibility: 'all', page: 1 }),
+      skipIf: () => missingDocsCredentials(),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs article search results');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsArticleId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'getDocsArticle',
+      name: 'Docs article retrieval',
+      args: (ctx) => ({ articleId: ctx.docsArticleId ?? 'missing-article', draft: false }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsArticleId ? 'no Docs article fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const article = getObject(data, 'article');
+        requireCondition(article?.id, 'Missing Docs article');
+      },
+    },
+    {
+      tool: 'listDocsRelatedArticles',
+      name: 'Docs related articles',
+      args: (ctx) => ({ articleId: ctx.docsArticleId ?? 'missing-article', page: 1, status: 'all', sort: 'order', order: 'desc' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsArticleId ? 'no Docs article fixture for related articles' : undefined),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs related articles');
+      },
+    },
+    {
+      tool: 'listDocsArticleRevisions',
+      name: 'Docs article revisions',
+      args: (ctx) => ({ articleId: ctx.docsArticleId ?? 'missing-article', page: 1 }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsArticleId ? 'no Docs article fixture for revisions' : undefined),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs article revisions');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsRevisionId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'getDocsArticleRevision',
+      name: 'Docs article revision retrieval',
+      args: (ctx) => ({ revisionId: ctx.docsRevisionId ?? 'missing-revision' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsRevisionId ? 'no Docs revision fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const revision = getObject(data, 'revision');
+        requireCondition(revision?.id, 'Missing Docs revision');
+      },
+    },
+    {
+      tool: 'listDocsRedirects',
+      name: 'Docs redirects by site',
+      args: (ctx) => ({ siteId: ctx.docsSiteId ?? 'missing-site', page: 1 }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsSiteId ? 'no Docs site fixture for redirects' : undefined),
+      validate: (data) => {
+        requireArray(data, ['results'], 'Docs redirects');
+      },
+      after: (data, _result, ctx) => {
+        ctx.docsRedirectId ||= firstItemId(data, ['results']);
+      },
+    },
+    {
+      tool: 'getDocsRedirect',
+      name: 'Docs redirect retrieval',
+      args: (ctx) => ({ redirectId: ctx.docsRedirectId ?? 'missing-redirect' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsRedirectId ? 'no Docs redirect fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const redirect = getObject(data, 'redirect');
+        requireCondition(redirect?.id, 'Missing Docs redirect');
+      },
+    },
+    {
+      tool: 'findDocsRedirect',
+      name: 'Docs redirect resolver',
+      args: (ctx) => ({ siteId: ctx.docsSiteId ?? 'missing-site', url: ctx.docsRedirectUrl ?? '/missing-docs-redirect' }),
+      skipIf: (ctx) =>
+        missingDocsCredentials() ||
+        (!ctx.docsSiteId ? 'no Docs site fixture for redirect resolver' : undefined) ||
+        (!ctx.docsRedirectUrl ? 'no MCP_DOGFOOD_DOCS_REDIRECT_URL configured for redirect resolver' : undefined),
+      validate: (data) => {
+        requireCondition(data !== undefined, 'Expected Docs redirect resolver response');
       },
     },
   ];

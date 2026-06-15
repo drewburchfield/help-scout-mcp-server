@@ -2,7 +2,7 @@
 
 [![npm version](https://badge.fury.io/js/help-scout-mcp-server.svg)](https://badge.fury.io/js/help-scout-mcp-server) [![Docker](https://img.shields.io/docker/v/drewburchfield/help-scout-mcp-server?logo=docker&label=docker)](https://hub.docker.com/r/drewburchfield/help-scout-mcp-server) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/drewburchfield/help-scout-mcp-server) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An [MCP server](https://modelcontextprotocol.io) that gives AI assistants direct access to your Help Scout inboxes, conversations, customers, organizations, and threads. Search tickets, pull customer and account context, spot patterns, and get answers without leaving your editor or chat window.
+An [MCP server](https://modelcontextprotocol.io) that gives AI assistants direct access to your Help Scout inboxes, conversations, customers, organizations, threads, and Docs knowledge base. Search tickets, pull customer and account context, inspect articles, spot patterns, and get answers without leaving your editor or chat window.
 
 Built by a Help Scout customer who wanted to give his support team superpowers. If you handle customer conversations in Help Scout and want AI to help you work faster, this is for you.
 
@@ -13,6 +13,7 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 - **Explore organizations** with direct customer and conversation traversal
 - **Pull full thread history** into context before drafting a reply
 - **Get conversation summaries** with the original customer message and latest staff response
+- **Search and retrieve Docs articles** from the separate Help Scout Docs API
 - **Monitor inbox activity** across multiple inboxes with a single query
 - **Reduce message payloads** with optional message content redaction and scoped inbox access
 
@@ -88,6 +89,8 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
 
 Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `HELPSCOUT_API_KEY` are also supported.
 
+Docs knowledge base tools use Help Scout Docs API v1, which is separate from the Mailbox API. Set `HELPSCOUT_DOCS_API_KEY` only if you want to use `listDocs*`, `searchDocsArticles`, `getDocsArticle`, or redirect tools.
+
 ## Tools
 
 For the MCP compatibility contract and roadmap, see:
@@ -114,6 +117,8 @@ For the MCP compatibility contract and roadmap, see:
 | List organization conversations | `getOrganizationConversations` | "Show support history for organization 456" |
 | Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
 | Full message history | `getThreads` | "Show me the complete thread" |
+| Search Docs articles | `searchDocsArticles` | "Find knowledge base articles about refunds" |
+| Retrieve a Docs article | `getDocsArticle` | "Open Docs article 123" |
 | Current MCP host time | `getServerTime` | Used for time-relative searches |
 
 Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in their instructions automatically, so no lookup step is needed.
@@ -126,6 +131,8 @@ Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in
 | `HELPSCOUT_APP_SECRET` | App Secret from Help Scout My Apps | Required |
 | `HELPSCOUT_DEFAULT_INBOX_ID` | Scope searches to a specific inbox | None (all inboxes) |
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
+| `HELPSCOUT_DOCS_API_KEY` | Optional Docs API key for knowledge base tools | None |
+| `HELPSCOUT_DOCS_BASE_URL` | Help Scout Docs API endpoint | `https://docsapi.helpscout.net/v1/` |
 | `REDACT_MESSAGE_CONTENT` | Replace message bodies with placeholders | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |

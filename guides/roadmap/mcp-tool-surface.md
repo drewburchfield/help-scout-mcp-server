@@ -137,11 +137,30 @@ Docs API support should be its own namespace or clearly named tool family. It
 may require different Help Scout permissions and different user expectations
 than mailbox tools.
 
+Current:
+
+- `listDocsSites`
+- `getDocsSite`
+- `listDocsCollections`
+- `getDocsCollection`
+- `listDocsCategories`
+- `getDocsCategory`
+- `listDocsArticles`
+- `searchDocsArticles`
+- `getDocsArticle`
+- `listDocsRelatedArticles`
+- `listDocsArticleRevisions`
+- `getDocsArticleRevision`
+- `listDocsRedirects`
+- `getDocsRedirect`
+- `findDocsRedirect`
+
 Next:
 
-- Docs collection and article search.
-- Article retrieval.
-- Lightweight article metadata for citation and freshness checks.
+- Add structured output schemas for Docs article, collection, category, and
+  redirect envelopes after the repository-wide MCP response-envelope work lands.
+- Add Docs fixture setup notes for accounts where the API key cannot create
+  read-only knowledge base fixtures.
 
 ## 6. Admin And Integration Metadata
 
