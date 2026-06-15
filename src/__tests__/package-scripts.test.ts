@@ -4,6 +4,13 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 
 describe('package scripts', () => {
+  it('exposes a dogfood account audit command', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+
+    expect(packageJson.scripts['dogfood:audit']).toBe('node --loader ts-node/esm tests/audit-dogfood-account.ts');
+    expect(fs.existsSync(path.join(process.cwd(), 'tests/audit-dogfood-account.ts'))).toBe(true);
+  });
+
   it('keeps operational scripts aligned with documented Help Scout credential names', () => {
     const credentialScripts = [
       'scripts/check-conversations.ts',

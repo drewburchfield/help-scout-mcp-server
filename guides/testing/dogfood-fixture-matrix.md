@@ -11,6 +11,12 @@ Run shared fixture setup before authenticated dogfood:
 npm run dogfood:seed
 ```
 
+Audit live account-only fixtures that cannot be created by the seed scripts:
+
+```bash
+npm run dogfood:audit
+```
+
 ## Fixture Rules
 
 - Every new API-surface PR must add or reuse deterministic seed data for the
@@ -43,7 +49,8 @@ npm run dogfood:seed
 | --- | --- | --- |
 | `tests/seed-test-data.ts` | Golden customer, organization, customer contacts, address, customer property value, deterministic organization property definition/value, saved reply, and webhook. | customer profile, organization profile, contact retrieval, customer and organization property visibility, saved reply retrieval, webhook retrieval |
 | `tests/seed-org-customers.ts` | Fifteen organization members under Meridian Testing Corp. | organization member pagination |
-| `tests/seed-integration-data.ts` | `MCP-TEST:` conversations in active, pending, and closed states with customer and staff threads plus tags; report-rich closed fixtures are assigned to the test user; one fixture attempts attachment upload for accounts where Help Scout exposes the uploaded attachment in thread responses. | conversation search, status filters, tag filters, thread retrieval, workflow-style integration dogfood, user report row assertions, attachment retrieval when an uploaded attachment ID is discoverable |
+| `tests/seed-integration-data.ts` | `MCP-TEST:` conversations in active, pending, and closed states with customer and staff threads plus tags; report-rich closed fixtures are assigned to the test user; one fixture includes an attachment-bearing thread. | conversation search, status filters, tag filters, thread retrieval, workflow-style integration dogfood, user report row assertions, attachment retrieval |
+| `tests/audit-dogfood-account.ts` | Read-only audit of team membership, satisfaction rating, original-source, and attachment fixture readiness. | names account-only fixture gaps before dogfood runs |
 
 ## Capability Coverage
 
@@ -51,8 +58,8 @@ npm run dogfood:seed
 | --- | --- | --- | --- | --- |
 | Inbox discovery | `searchInboxes`, `listAllInboxes` | Uses configured Client Support inbox and live account inbox list. | Discovery, narrowing, invalid limit validation. | None known. |
 | Conversation search | `searchConversations`, `advancedConversationSearch`, `comprehensiveConversationSearch`, `structuredConversationFilter` | `MCP-TEST:` conversations cover active, pending, closed, tags, customers, dates, and subjects. | Discovery, narrowing, pagination, permutation, validation. | Add a deterministic spam conversation only if Help Scout supports safe seed/cleanup for spam state. |
-| Conversation retrieval | `getConversationSummary`, `getThreads` | Seeded conversations include customer and staff threads, and one conversation fixture requests attachment upload. | Retrieval, pagination, redaction, invalid ID validation, attachment discovery when Help Scout exposes uploaded attachments under thread `_embedded.attachments`. | Add a known original-source thread. |
-| Thread original source and attachments | `getOriginalSource`, `getAttachment` | Harness can use `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID`, `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`, `MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID`, and `MCP_DOGFOOD_ATTACHMENT_ID`; attachment IDs are also discovered from `getThreads` when present. | Retrieval when fixture IDs are provided or attachment IDs are discoverable. | Original source still requires known email-source fixture IDs. Attachment upload returns no ID, so accounts that do not expose uploaded attachments in thread responses still need explicit attachment fixture IDs. |
+| Conversation retrieval | `getConversationSummary`, `getThreads` | Seeded conversations include customer and staff threads, and one conversation fixture includes an attachment-bearing thread. | Retrieval, pagination, redaction, invalid ID validation, attachment discovery under thread `_embedded.attachments`. | Add a known original-source thread. |
+| Thread original source and attachments | `getOriginalSource`, `getAttachment` | Harness can use `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID`, `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`, `MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID`, and `MCP_DOGFOOD_ATTACHMENT_ID`; attachment IDs are discovered from the seeded attachment fixture conversation. | Retrieval when fixture IDs are provided; attachment retrieval through seeded live fixture discovery. | Original source still requires known email-source fixture IDs. |
 | Customer context | `getCustomer`, `listCustomers`, `searchCustomersByEmail`, `getCustomerContacts` | Golden customer and Meridian org members cover profile, email, name, mailbox, modified date, pagination, contacts, and invalid IDs. | Discovery, retrieval, narrowing, pagination, permutation, validation. | Add a customer with multiple values per contact type if future tools expose contact editing or richer contact filtering. |
 | Organization context | `getOrganization`, `listOrganizations`, `getOrganizationMembers`, `getOrganizationConversations` | Golden organization, fifteen org members, and seeded conversations cover include flags, sort fields, pagination, members, and conversations. | Retrieval, narrowing, pagination, permutation, validation. | Add organization property-heavy fixtures if property output schemas become stricter. |
 | Property metadata | `listCustomerProperties`, `listOrganizationProperties`, `getOrganizationProperty` | Customer property and deterministic organization property are seeded. | Discovery and retrieval. | None known. |
@@ -72,7 +79,6 @@ npm run dogfood:seed
 | Skip source | Current reason | Preferred fix |
 | --- | --- | --- |
 | `getOriginalSource` | No known original-source fixture IDs. | Add original-source conversation/thread discovery to seed output or environment setup. |
-| `getAttachment` | Attachment upload succeeds but may not expose an attachment ID in thread responses. | Keep seeded upload coverage and set `MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID` / `MCP_DOGFOOD_ATTACHMENT_ID` when the account has a discoverable attachment fixture. |
 | `getSatisfactionRating` | No known satisfaction rating fixture ID. | Seed or configure a known rating and expose `MCP_DOGFOOD_SATISFACTION_RATING_ID`. |
 | `getTeamMembers` | No team may exist in the test account. | Configure or seed a team with at least one member. |
 

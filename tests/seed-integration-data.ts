@@ -197,14 +197,20 @@ async function createConversation(def: ConversationDef): Promise<number> {
   );
 }
 
-async function addReplyThread(conversationId: number, text: string, finalStatus: string, customerEmail: string): Promise<boolean> {
+async function addReplyThread(
+  conversationId: number,
+  thread: { text: string; attachments?: ConversationDef['threads'][number]['attachments'] },
+  finalStatus: string,
+  customerEmail: string
+): Promise<boolean> {
   const client = await api();
   const res = await client.post(`/conversations/${conversationId}/reply`, {
-    text,
+    text: thread.text,
     user: INTEGRATION_CONSTANTS.userId,
     customer: { email: customerEmail },
     status: finalStatus,
     imported: true,
+    ...(thread.attachments?.length ? { attachments: thread.attachments } : {}),
   });
 
   if (res.status !== 201 && res.status !== 200) {
@@ -250,7 +256,7 @@ async function seedConversation(def: ConversationDef): Promise<number> {
       // Use the conversation's final status for the last reply; keep active for intermediate ones
       const isLast = i === def.threads.length - 1;
       const threadStatus = isLast ? def.status : 'active';
-      if (await addReplyThread(convId, thread.text, threadStatus, def.customerEmail)) {
+      if (await addReplyThread(convId, thread, threadStatus, def.customerEmail)) {
         log(`  Added staff reply (thread ${i + 1})`);
       }
     } else if (thread.type === 'customer-follow-up') {
@@ -259,8 +265,6 @@ async function seedConversation(def: ConversationDef): Promise<number> {
       }
     }
   }
-
-  await ensureAttachment({ id: convId, subject: def.subject, status: def.status, assigneeId: def.assigneeId }, def);
 
   return convId;
 }
@@ -309,7 +313,7 @@ async function backfillMissingThreads(existing: ExistingConversation, def: Conve
     if (thread.type === 'reply') {
       const isLast = i === def.threads.length - 1;
       const threadStatus = isLast ? def.status : 'active';
-      if (await addReplyThread(existing.id, thread.text, threadStatus, def.customerEmail)) {
+      if (await addReplyThread(existing.id, thread, threadStatus, def.customerEmail)) {
         log(`  Backfilled staff reply on conversation ${existing.id}`);
       }
     } else if (thread.type === 'customer-follow-up') {
@@ -320,6 +324,10 @@ async function backfillMissingThreads(existing: ExistingConversation, def: Conve
   }
 }
 
+function threadAttachmentFixtures(def: ConversationDef): NonNullable<ConversationDef['threads'][number]['attachments']> {
+  return def.threads.flatMap((thread) => thread.attachments || []);
+}
+
 function attachmentExists(threads: ExistingThread[], fileName: string): boolean {
   return threads.some((thread) =>
     [...(thread.attachments || []), ...(thread._embedded?.attachments || [])].some((attachment) =>
@@ -328,32 +336,25 @@ function attachmentExists(threads: ExistingThread[], fileName: string): boolean 
   );
 }
 
-async function uploadAttachment(conversationId: number, threadId: number, def: ConversationDef): Promise<void> {
-  if (!def.attachment) return;
-  const client = await api();
-  const res = await client.post(`/conversations/${conversationId}/threads/${threadId}/attachments`, def.attachment);
-
-  if (res.status === 201 || res.status === 200) {
-    log(`  Uploaded attachment "${def.attachment.fileName}" on conversation ${conversationId}`);
-    return;
-  }
-
-  log(`  Warning: attachment upload on conversation ${conversationId} returned ${res.status}: ${JSON.stringify(res.data)}`);
-}
-
 async function ensureAttachment(existing: ExistingConversation, def: ConversationDef): Promise<void> {
-  if (!def.attachment) return;
+  const attachmentFixtures = threadAttachmentFixtures(def);
+  if (attachmentFixtures.length === 0) return;
 
   const threads = await getThreads(existing.id);
-  if (attachmentExists(threads, def.attachment.fileName)) return;
+  const missingAttachment = attachmentFixtures.find((attachment) => !attachmentExists(threads, attachment.fileName));
+  if (!missingAttachment) return;
 
-  const targetThread = threads.find((thread) => thread.id);
-  if (!targetThread?.id) {
-    log(`  Warning: no thread ID available for attachment upload on conversation ${existing.id}`);
+  const attachmentThread = def.threads.find((thread) =>
+    (thread.attachments || []).some((attachment) => attachment.fileName === missingAttachment.fileName)
+  );
+  if (!attachmentThread || attachmentThread.type !== 'reply') {
+    log(`  Warning: no reply thread fixture available for attachment "${missingAttachment.fileName}"`);
     return;
   }
 
-  await uploadAttachment(existing.id, targetThread.id, def);
+  if (await addReplyThread(existing.id, attachmentThread, def.status, def.customerEmail)) {
+    log(`  Backfilled attachment thread "${missingAttachment.fileName}" on conversation ${existing.id}`);
+  }
 }
 
 async function ensureExistingConversationFixtures(existing: ExistingConversation[]): Promise<void> {
