@@ -624,17 +624,6 @@ function buildScenarios(): Scenario[] {
       },
     },
     {
-      tool: 'getSatisfactionRating',
-      name: 'fixture satisfaction rating details',
-      skipIf: (ctx) => ctx.satisfactionRatingId ? undefined : 'No satisfaction rating fixture available',
-      args: (ctx) => ({ ratingId: ctx.satisfactionRatingId ?? '0' }),
-      validate: (data) => {
-        const rating = getObject(data, 'rating');
-        requireCondition(rating?.id, 'Missing satisfaction rating');
-        requireCondition(typeof rating.rating === 'string', 'Missing rating value');
-      },
-    },
-    {
       tool: 'getCompanyReport',
       name: 'company overall report',
       skipIf: (ctx) => ctx.skipReports ? 'Reporting scenarios disabled by MCP_DOGFOOD_SKIP_REPORTS' : undefined,
@@ -684,6 +673,17 @@ function buildScenarios(): Scenario[] {
         const ratings = getArray(report, ['results']) as JsonObject[];
         const rating = ratings.find((row) => row.id);
         if (rating?.id) ctx.satisfactionRatingId = String(rating.id);
+      },
+    },
+    {
+      tool: 'getSatisfactionRating',
+      name: 'fixture satisfaction rating details',
+      skipIf: (ctx) => ctx.satisfactionRatingId ? undefined : 'No satisfaction rating fixture available',
+      args: (ctx) => ({ ratingId: ctx.satisfactionRatingId ?? '0' }),
+      validate: (data) => {
+        const rating = getObject(data, 'rating');
+        requireCondition(rating?.id, 'Missing satisfaction rating');
+        requireCondition(typeof rating.rating === 'string', 'Missing rating value');
       },
     },
     {
