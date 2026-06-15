@@ -67,8 +67,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 70 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(70);
+    it('should have all 83 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(83);
 
       const expectedTools = [
         'searchInboxes',
@@ -108,7 +108,17 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getWebhook',
         'getSatisfactionRating',
         'getCompanyReport',
+        'getCompanyCustomersHelpedReport',
+        'getCompanyDrilldownReport',
         'getConversationsReport',
+        'getConversationVolumeByChannelReport',
+        'getConversationBusyTimesReport',
+        'getConversationDrilldownReport',
+        'getConversationFieldDrilldownReport',
+        'getConversationNewReport',
+        'getConversationNewDrilldownReport',
+        'getConversationReceivedMessagesReport',
+        'getDocsReport',
         'getHappinessReport',
         'getHappinessRatingsReport',
         'getProductivityReport',
@@ -126,6 +136,9 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getUserRepliesReport',
         'getUserResolutionsReport',
         'getUserChatReport',
+        'getChatReport',
+        'getEmailReport',
+        'getPhoneReport',
         'listDocsSites',
         'getDocsSite',
         'listDocsCollections',

@@ -100,7 +100,17 @@ Current:
 
 - `getSatisfactionRating`
 - `getCompanyReport`
+- `getCompanyCustomersHelpedReport`
+- `getCompanyDrilldownReport`
 - `getConversationsReport`
+- `getConversationVolumeByChannelReport`
+- `getConversationBusyTimesReport`
+- `getConversationDrilldownReport`
+- `getConversationFieldDrilldownReport`
+- `getConversationNewReport`
+- `getConversationNewDrilldownReport`
+- `getConversationReceivedMessagesReport`
+- `getDocsReport`
 - `getHappinessReport`
 - `getHappinessRatingsReport`
 - `getProductivityReport`
@@ -118,6 +128,9 @@ Current:
 - `getUserRepliesReport`
 - `getUserResolutionsReport`
 - `getUserChatReport`
+- `getChatReport`
+- `getEmailReport`
+- `getPhoneReport`
 
 Next:
 
@@ -126,9 +139,6 @@ Next:
   resolution history, and satisfaction ratings so report dogfood can assert
   non-empty rows across company, conversation, productivity, happiness, and user
   report families.
-- Remaining company and conversations drilldown coverage with strict pagination
-  and bounded filters.
-- Time-windowed trend queries that return compact, chartable data.
 - Guardrails to avoid large, slow account-wide report pulls by default.
 
 ## 5. Docs API

@@ -425,6 +425,82 @@ export const GetCompanyReportInputSchema = ReportBaseInputSchema;
 export const GetConversationsReportInputSchema = ReportBaseInputSchema;
 export const GetHappinessReportInputSchema = ReportBaseInputSchema;
 
+export const CompanyTimelineReportInputSchema = ReportBaseInputObjectSchema.extend({
+  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+const ReportDrilldownRangeSchema = z.enum([
+  'replies',
+  'firstReplyResolved',
+  'resolved',
+  'responseTime',
+  'firstResponseTime',
+  'handleTime',
+]);
+
+export const ReportDrilldownInputSchema = ReportCurrentInputObjectSchema.extend({
+  page: z.number().int().min(1).default(1),
+  rows: z.number().int().min(1).max(50).default(25),
+  range: ReportDrilldownRangeSchema,
+  rangeId: z.number().int().min(1).max(10).optional(),
+});
+
+export const ReportCurrentDrilldownInputSchema = ReportCurrentInputObjectSchema.extend({
+  page: z.number().int().min(1).default(1),
+  rows: z.number().int().min(1).max(50).default(25),
+});
+
+export const ConversationTimelineReportInputSchema = ReportBaseInputObjectSchema.extend({
+  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const ConversationFieldDrilldownFieldSchema = z.enum(['tagid', 'replyid', 'workflowid', 'customerid']);
+
+export const ConversationFieldDrilldownReportInputSchema = ReportCurrentInputObjectSchema.extend({
+  field: ConversationFieldDrilldownFieldSchema.describe('Conversation field to drill into'),
+  fieldid: ReportIdSchema.describe('Identifier for the selected field value'),
+  page: z.number().int().min(1).default(1),
+  rows: z.number().int().min(1).max(50).default(25),
+});
+
+export const DocsReportInputSchema = z.object({
+  start: ReportDateSchema.describe('Start of the reporting interval, ISO 8601'),
+  end: ReportDateSchema.describe('End of the reporting interval, ISO 8601'),
+  previousStart: ReportDateSchema.optional().describe('Optional start of the comparison interval'),
+  previousEnd: ReportDateSchema.optional().describe('Optional end of the comparison interval'),
+  sites: z.array(z.string().min(1)).min(1).max(50).optional().describe('Docs site IDs to filter by'),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const ChannelReportInputSchema = ReportBaseInputObjectSchema.omit({ types: true }).extend({
+  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
+}).refine(
+  (data) => (!!data.previousStart) === (!!data.previousEnd),
+  { message: 'previousStart and previousEnd must be provided together' }
+);
+
+export const GetCompanyCustomersHelpedReportInputSchema = CompanyTimelineReportInputSchema;
+export const GetCompanyDrilldownReportInputSchema = ReportDrilldownInputSchema;
+export const GetConversationVolumeByChannelReportInputSchema = ConversationTimelineReportInputSchema;
+export const GetConversationBusyTimesReportInputSchema = ReportBaseInputSchema;
+export const GetConversationDrilldownReportInputSchema = ReportCurrentDrilldownInputSchema;
+export const GetConversationFieldDrilldownReportInputSchema = ConversationFieldDrilldownReportInputSchema;
+export const GetConversationNewReportInputSchema = ConversationTimelineReportInputSchema;
+export const GetConversationNewDrilldownReportInputSchema = ReportCurrentDrilldownInputSchema;
+export const GetConversationReceivedMessagesReportInputSchema = ConversationTimelineReportInputSchema;
+export const GetDocsReportInputSchema = DocsReportInputSchema;
+export const GetChatReportInputSchema = ChannelReportInputSchema;
+export const GetEmailReportInputSchema = ChannelReportInputSchema;
+export const GetPhoneReportInputSchema = ChannelReportInputSchema;
+
 const ProductivityReportBaseInputObjectSchema = ReportBaseInputObjectSchema.extend({
   officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
 });

@@ -261,8 +261,48 @@
       "description": "Get the Help Scout company overall report"
     },
     {
+      "name": "getCompanyCustomersHelpedReport",
+      "description": "Get Help Scout company customers helped time series"
+    },
+    {
+      "name": "getCompanyDrilldownReport",
+      "description": "Get Help Scout company drilldown conversation rows"
+    },
+    {
       "name": "getConversationsReport",
       "description": "Get the Help Scout conversations overall report"
+    },
+    {
+      "name": "getConversationVolumeByChannelReport",
+      "description": "Get Help Scout conversation volume by channel time series"
+    },
+    {
+      "name": "getConversationBusyTimesReport",
+      "description": "Get Help Scout busiest time of day conversation report"
+    },
+    {
+      "name": "getConversationDrilldownReport",
+      "description": "Get Help Scout conversation drilldown rows"
+    },
+    {
+      "name": "getConversationFieldDrilldownReport",
+      "description": "Get Help Scout conversation drilldown rows for a field value"
+    },
+    {
+      "name": "getConversationNewReport",
+      "description": "Get Help Scout new conversations time series"
+    },
+    {
+      "name": "getConversationNewDrilldownReport",
+      "description": "Get Help Scout new conversation drilldown rows"
+    },
+    {
+      "name": "getConversationReceivedMessagesReport",
+      "description": "Get Help Scout received customer messages time series"
+    },
+    {
+      "name": "getDocsReport",
+      "description": "Get the Help Scout Docs overall report"
     },
     {
       "name": "getHappinessReport",
@@ -331,6 +371,18 @@
     {
       "name": "getUserChatReport",
       "description": "Get Help Scout user or team chat report"
+    },
+    {
+      "name": "getChatReport",
+      "description": "Get the Help Scout chat report"
+    },
+    {
+      "name": "getEmailReport",
+      "description": "Get the Help Scout email report"
+    },
+    {
+      "name": "getPhoneReport",
+      "description": "Get the Help Scout phone report"
     },
     {
       "name": "listDocsSites",
