@@ -2935,14 +2935,16 @@ export class ToolHandler {
     sortOrder: string,
   ): number {
     const direction = sortOrder.toLowerCase() === 'asc' ? 1 : -1;
-    const aValue = (a as unknown as Record<string, unknown>)[sortField];
-    const bValue = (b as unknown as Record<string, unknown>)[sortField];
+    const aValue = this.getConversationSortValue(a, sortField);
+    const bValue = this.getConversationSortValue(b, sortField);
     let comparison: number;
 
-    if (sortField === 'number') {
+    if (sortField === 'number' || sortField === 'mailboxId') {
       comparison = Number(aValue ?? 0) - Number(bValue ?? 0);
+    } else if (this.isConversationDateSortField(sortField)) {
+      comparison = Date.parse(String(aValue ?? '')) - Date.parse(String(bValue ?? ''));
     } else {
-      comparison = new Date(String(aValue ?? '')).getTime() - new Date(String(bValue ?? '')).getTime();
+      comparison = String(aValue ?? '').localeCompare(String(bValue ?? ''), undefined, { numeric: true });
     }
 
     if (Number.isNaN(comparison) || comparison === 0) {
@@ -2950,6 +2952,42 @@ export class ToolHandler {
     }
 
     return comparison * direction;
+  }
+
+  private getConversationSortValue(conversation: Conversation, sortField: string): unknown {
+    const record = conversation as unknown as Record<string, unknown>;
+    const customer = this.toRecord(record.customer);
+    const mailbox = this.toRecord(record.mailbox);
+
+    switch (sortField) {
+      case 'customerName': {
+        const explicitName = this.asString(customer?.name ?? record.customerName);
+        if (explicitName) return explicitName;
+        return [this.asString(customer?.firstName), this.asString(customer?.lastName)]
+          .filter(Boolean)
+          .join(' ');
+      }
+      case 'customerEmail':
+        return customer?.email ?? record.customerEmail;
+      case 'mailboxId':
+        return mailbox?.id ?? record.mailboxId;
+      case 'modifiedAt':
+        return record.modifiedAt ?? record.updatedAt;
+      default:
+        return record[sortField];
+    }
+  }
+
+  private isConversationDateSortField(sortField: string): boolean {
+    return ['createdAt', 'modifiedAt', 'updatedAt', 'waitingSince', 'closedAt'].includes(sortField);
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    return value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+  }
+
+  private asString(value: unknown): string {
+    return typeof value === 'string' ? value : '';
   }
 
   /**

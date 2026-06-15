@@ -3281,6 +3281,99 @@ describe('ToolHandler', () => {
         expect(response.pagination.totalByStatus).toEqual({ active: 1, pending: 1, closed: 1 });
       });
 
+      it('should sort merged status-all results by nested customer email', async () => {
+        nock(baseURL)
+          .get('/conversations')
+          .query(params =>
+            params.status === 'active' &&
+            Number(params.assigned_to) === 123 &&
+            params.sortField === 'customerEmail' &&
+            params.sortOrder === 'asc'
+          )
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                {
+                  id: 30,
+                  status: 'active',
+                  subject: 'Alpha customer',
+                  createdAt: '2023-01-01T00:00:00Z',
+                  customer: { id: 301, firstName: 'Alpha', lastName: 'One', email: 'alpha@example.com' },
+                },
+              ],
+            },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params =>
+            params.status === 'pending' &&
+            Number(params.assigned_to) === 123 &&
+            params.sortField === 'customerEmail' &&
+            params.sortOrder === 'asc'
+          )
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                {
+                  id: 10,
+                  status: 'pending',
+                  subject: 'Zeta customer',
+                  createdAt: '2023-01-02T00:00:00Z',
+                  customer: { id: 101, firstName: 'Zeta', lastName: 'Three', email: 'zeta@example.com' },
+                },
+              ],
+            },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        nock(baseURL)
+          .get('/conversations')
+          .query(params =>
+            params.status === 'closed' &&
+            Number(params.assigned_to) === 123 &&
+            params.sortField === 'customerEmail' &&
+            params.sortOrder === 'asc'
+          )
+          .reply(200, {
+            _embedded: {
+              conversations: [
+                {
+                  id: 20,
+                  status: 'closed',
+                  subject: 'Beta customer',
+                  createdAt: '2023-01-03T00:00:00Z',
+                  customer: { id: 201, firstName: 'Beta', lastName: 'Two', email: 'beta@example.com' },
+                },
+              ],
+            },
+            page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
+          });
+
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: 'structuredConversationFilter',
+            arguments: {
+              assignedTo: 123,
+              status: 'all',
+              sortBy: 'customerEmail',
+              sortOrder: 'asc',
+            },
+          },
+        });
+
+        const textContent = result.content[0] as { type: 'text'; text: string };
+        const response = JSON.parse(textContent.text);
+
+        expect(response.results.map((conversation: { customer: { email: string } }) => conversation.customer.email)).toEqual([
+          'alpha@example.com',
+          'beta@example.com',
+          'zeta@example.com',
+        ]);
+      });
+
       it('should distinguish filtered count from API total', async () => {
         const mockResponse = {
           _embedded: {
