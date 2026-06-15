@@ -113,11 +113,13 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 | Get an organization profile | getOrganization |
 | See everyone in an organization | getOrganizationMembers |
 | See all conversations for an organization | getOrganizationConversations |
+| Get raw conversation metadata | getConversation |
 | Get full conversation thread | getThreads |
 | Quick conversation preview | getConversationSummary |
+| Inspect inbox routing state | getInboxRouting |
 
 ## Workflow Patterns
-- **Ticket investigation**: searchConversations → getConversationSummary → getThreads
+- **Ticket investigation**: searchConversations → getConversation/getConversationSummary → getThreads
 - **Keyword research**: comprehensiveConversationSearch → getThreads for details
 - **Customer history**: searchCustomersByEmail → getCustomer → structuredConversationFilter/getThreads
 - **Account review**: listOrganizations/getOrganization → getOrganizationMembers → getOrganizationConversations

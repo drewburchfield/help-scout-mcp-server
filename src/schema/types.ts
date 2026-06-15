@@ -106,6 +106,11 @@ export const GetThreadsInputSchema = z.object({
   page: z.number().int().min(1).default(1),
 });
 
+export const GetConversationInputSchema = z.object({
+  conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
+  embed: z.enum(['threads']).optional(),
+});
+
 export const GetConversationSummaryInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
 });
@@ -260,6 +265,29 @@ export const UserSchema = z.object({
   companyId: z.number().optional(),
 });
 
+export const SystemUserSchema = UserSchema.extend({
+  type: z.literal('system_user').optional(),
+});
+
+export const UserStatusSchema = z.object({
+  userId: z.number(),
+  email: z.object({
+    status: z.enum(['active', 'away']),
+    updatedAt: z.string().optional(),
+    performedBy: z.number().optional(),
+    source: z.enum(['ui', 'api', 'presence_detection']).optional(),
+    customStatus: z.object({
+      text: z.string().optional(),
+      emoji: z.string().optional(),
+      emojiName: z.string().optional(),
+    }).optional(),
+  }).optional(),
+  chat: z.object({
+    status: z.enum(['unavailable', 'available', 'assign', 'custom']),
+    mailboxStatuses: z.record(z.string()).optional(),
+  }).optional(),
+}).passthrough();
+
 export const TeamSchema = z.object({
   id: z.number(),
   name: z.string(),
@@ -270,6 +298,19 @@ export const TeamSchema = z.object({
   mention: z.string().nullable().optional(),
   initials: z.string().nullable().optional(),
 });
+
+export const InboxRoutingSchema = z.object({
+  state: z.enum(['enabled', 'disabled']),
+  assignmentLimit: z.number().optional(),
+  assignmentMethod: z.enum(['round_robin', 'balanced']).optional(),
+  userIds: z.array(z.number()).optional(),
+  rotation: z.array(z.object({
+    userId: z.number(),
+    conversationsCount: z.number().optional(),
+    eligible: z.boolean().optional(),
+    reason: z.string().optional(),
+  }).passthrough()).optional(),
+}).passthrough();
 
 export const InboxCustomFieldSchema = z.object({
   id: z.number(),
@@ -688,6 +729,22 @@ export const GetUserInputSchema = z.object({
   ]).describe('User ID or "me" for the authenticated resource owner'),
 });
 
+export const ListSystemUsersInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+});
+
+export const GetSystemUserInputSchema = z.object({
+  systemUserId: z.string().regex(/^\d+$/, 'System user ID must be numeric'),
+});
+
+export const ListUserStatusesInputSchema = z.object({
+  page: z.number().int().min(1).default(1),
+});
+
+export const GetUserStatusInputSchema = z.object({
+  userId: z.string().regex(/^\d+$/, 'User ID must be numeric'),
+});
+
 export const ListTeamsInputSchema = z.object({
   page: z.number().int().min(1).default(1),
 });
@@ -703,6 +760,10 @@ export const ListInboxCustomFieldsInputSchema = z.object({
 
 export const ListInboxFoldersInputSchema = z.object({
   inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
+});
+
+export const GetInboxRoutingInputSchema = z.object({
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric'),
 });
 
 export const ListSavedRepliesInputSchema = z.object({
@@ -859,7 +920,10 @@ export type Organization = z.infer<typeof OrganizationSchema>;
 export type PropertyDefinition = z.infer<typeof PropertyDefinitionSchema>;
 export type Tag = z.infer<typeof TagSchema>;
 export type User = z.infer<typeof UserSchema>;
+export type SystemUser = z.infer<typeof SystemUserSchema>;
+export type UserStatus = z.infer<typeof UserStatusSchema>;
 export type Team = z.infer<typeof TeamSchema>;
+export type InboxRouting = z.infer<typeof InboxRoutingSchema>;
 export type InboxCustomField = z.infer<typeof InboxCustomFieldSchema>;
 export type InboxFolder = z.infer<typeof InboxFolderSchema>;
 export type SavedReply = z.infer<typeof SavedReplySchema>;
@@ -871,6 +935,7 @@ export type HappinessRatingsReport = z.infer<typeof HappinessRatingsReportSchema
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
+export type GetConversationInput = z.infer<typeof GetConversationInputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
 export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
 export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
@@ -890,10 +955,15 @@ export type ListTagsInput = z.infer<typeof ListTagsInputSchema>;
 export type GetTagInput = z.infer<typeof GetTagInputSchema>;
 export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
 export type GetUserInput = z.infer<typeof GetUserInputSchema>;
+export type ListSystemUsersInput = z.infer<typeof ListSystemUsersInputSchema>;
+export type GetSystemUserInput = z.infer<typeof GetSystemUserInputSchema>;
+export type ListUserStatusesInput = z.infer<typeof ListUserStatusesInputSchema>;
+export type GetUserStatusInput = z.infer<typeof GetUserStatusInputSchema>;
 export type ListTeamsInput = z.infer<typeof ListTeamsInputSchema>;
 export type GetTeamMembersInput = z.infer<typeof GetTeamMembersInputSchema>;
 export type ListInboxCustomFieldsInput = z.infer<typeof ListInboxCustomFieldsInputSchema>;
 export type ListInboxFoldersInput = z.infer<typeof ListInboxFoldersInputSchema>;
+export type GetInboxRoutingInput = z.infer<typeof GetInboxRoutingInputSchema>;
 export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
 export type GetSavedReplyInput = z.infer<typeof GetSavedReplyInputSchema>;
 export type GetOriginalSourceInput = z.infer<typeof GetOriginalSourceInputSchema>;

@@ -67,12 +67,13 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 83 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(83);
+    it('should have all 89 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(89);
 
       const expectedTools = [
         'searchInboxes',
         'searchConversations',
+        'getConversation',
         'getConversationSummary',
         'getThreads',
         'getServerTime',
@@ -95,10 +96,15 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getTag',
         'listUsers',
         'getUser',
+        'listSystemUsers',
+        'getSystemUser',
+        'listUserStatuses',
+        'getUserStatus',
         'listTeams',
         'getTeamMembers',
         'listInboxCustomFields',
         'listInboxFolders',
+        'getInboxRouting',
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
@@ -313,6 +319,7 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       const expectedExports = [
         'searchInboxes',
         'searchConversations',
+        'getConversation',
         'getConversationSummary', 
         'getThreads',
         'getServerTime',
@@ -325,7 +332,12 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',
-        'getOrganizationConversations'
+        'getOrganizationConversations',
+        'listSystemUsers',
+        'getSystemUser',
+        'listUserStatuses',
+        'getUserStatus',
+        'getInboxRouting'
       ];
 
       expectedExports.forEach(exportName => {
