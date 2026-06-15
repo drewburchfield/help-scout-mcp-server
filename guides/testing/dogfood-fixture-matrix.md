@@ -18,6 +18,10 @@ coverage:
 HELPSCOUT_DOCS_API_KEY=... npm run dogfood:seed:docs
 ```
 
+The Docs seeder is optional only when `HELPSCOUT_DOCS_API_KEY` is missing. If a
+Docs key is supplied, seed failures are fatal so stale or partial Docs fixtures do
+not masquerade as complete dogfood coverage.
+
 Audit live account-only fixtures that cannot be created by the seed scripts.
 When it verifies a fixture, the audit prints the matching `MCP_DOGFOOD_*`
 environment value so CI or local dogfood can pin the same record:
