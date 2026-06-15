@@ -11,6 +11,17 @@ Run shared fixture setup before authenticated dogfood:
 npm run dogfood:seed
 ```
 
+Docs API fixtures can also be loaded directly when iterating on knowledge-base
+coverage:
+
+```bash
+HELPSCOUT_DOCS_API_KEY=... npm run dogfood:seed:docs
+```
+
+The Docs seeder is optional only when `HELPSCOUT_DOCS_API_KEY` is missing. If a
+Docs key is supplied, seed failures are fatal so stale or partial Docs fixtures do
+not masquerade as complete dogfood coverage.
+
 Audit live account-only fixtures that cannot be created by the seed scripts.
 When it verifies a fixture, the audit prints the matching `MCP_DOGFOOD_*`
 environment value so CI or local dogfood can pin the same record:
@@ -52,6 +63,7 @@ npm run dogfood:audit
 | `tests/seed-test-data.ts` | Golden customer, organization, customer contacts, address, customer property value, deterministic organization property definition/value, saved reply, and webhook. | customer profile, organization profile, contact retrieval, customer and organization property visibility, saved reply retrieval, webhook retrieval |
 | `tests/seed-org-customers.ts` | Fifteen organization members under Meridian Testing Corp. | organization member pagination |
 | `tests/seed-integration-data.ts` | `MCP-TEST:` conversations in active, pending, and closed states with customer and staff threads plus tags; report-rich closed fixtures are assigned to the test user; one fixture includes an attachment-bearing thread. | conversation search, status filters, tag filters, thread retrieval, workflow-style integration dogfood, user report row assertions, attachment retrieval |
+| `tests/seed-docs-data.ts` | Optional Docs API knowledge-base fixtures. Uses a configured Docs site, then creates or updates a private collection, category, rich HTML articles derived from local source notes, a related article relationship, a revision, and a redirect. | Docs API list/get/search, related articles, article revision detail, redirect detail, and redirect resolution |
 | `tests/audit-dogfood-account.ts` | Read-only audit of team membership, satisfaction rating, original-source, and attachment fixture readiness. It verifies pinned env IDs, discovers fixture IDs when possible, and scans recent live conversations for original-source coverage when seeded records cannot provide it. | names account-only fixture gaps before dogfood runs and prints env values for verified fixtures |
 
 ## Capability Coverage
@@ -75,7 +87,7 @@ npm run dogfood:audit
 | Productivity reports | `getProductivityReport`, `getProductivityFirstResponseTimeReport`, `getProductivityRepliesSentReport`, `getProductivityResolutionTimeReport`, `getProductivityResolvedReport`, `getProductivityResponseTimeReport` | Bounded productivity calls run against report-rich seeded conversations with `officeHours=false` and `viewBy=day`; overall productivity asserts seeded closed/new activity. | Report shape, series shape, date bounds, mailbox filter, office-hours flag, non-empty activity. | Need non-imported or API-supported reply/rating activity before reply and response-time counters can be asserted non-zero. |
 | User and team reports | `getUserReport`, `getUserConversationHistoryReport`, `getUserCustomersHelpedReport`, `getUserDrilldownReport`, `getUserHappinessReport`, `getUserRatingsReport`, `getUserRepliesReport`, `getUserResolutionsReport`, `getUserChatReport` | Uses discovered authenticated user and report-rich seeded inbox data over the reporting window; history and drilldown assert non-empty seeded rows. | Report shape, user/team ID serialization, pagination, rows, ratings, office-hours flag, view granularity, non-empty assigned rows. | Need satisfaction-rating fixture data before user happiness rating rows can be asserted non-empty. |
 | Docs and channel reports | `getDocsReport`, `getChatReport`, `getEmailReport`, `getPhoneReport` | Bounded account-level report calls run against the reporting window; Docs report can optionally use `MCP_DOGFOOD_DOCS_SITE_ID`. | Report shape, date bounds, mailbox/site filters, office-hours flag. | Need Docs, Beacon chat, email, and phone activity in the test account before non-empty channel metrics can be asserted. |
-| Docs API | `listDocsSites`, `getDocsSite`, `listDocsCollections`, `getDocsCollection`, `listDocsCategories`, `getDocsCategory`, `listDocsArticles`, `searchDocsArticles`, `getDocsArticle`, `listDocsRelatedArticles`, `listDocsArticleRevisions`, `getDocsArticleRevision`, `listDocsRedirects`, `getDocsRedirect`, `findDocsRedirect` | Uses `HELPSCOUT_DOCS_API_KEY` and discovers live Docs sites, collections, categories, articles, revisions, and redirects. Optional IDs can be pinned with `MCP_DOGFOOD_DOCS_SITE_ID`, `MCP_DOGFOOD_DOCS_COLLECTION_ID`, `MCP_DOGFOOD_DOCS_CATEGORY_ID`, `MCP_DOGFOOD_DOCS_ARTICLE_ID`, `MCP_DOGFOOD_DOCS_REVISION_ID`, `MCP_DOGFOOD_DOCS_REDIRECT_ID`, and `MCP_DOGFOOD_DOCS_REDIRECT_URL`. | Discovery, retrieval, search, pagination, status/visibility filters, revision freshness checks, redirect resolution. | Shared seed command does not create Docs knowledge base data. Configure a Docs API key plus at least one site, collection, category, article, revision, and redirect for non-skipping live coverage. |
+| Docs API | `listDocsSites`, `getDocsSite`, `listDocsCollections`, `getDocsCollection`, `listDocsCategories`, `getDocsCategory`, `listDocsArticles`, `searchDocsArticles`, `getDocsArticle`, `listDocsRelatedArticles`, `listDocsArticleRevisions`, `getDocsArticleRevision`, `listDocsRedirects`, `getDocsRedirect`, `findDocsRedirect` | Uses `HELPSCOUT_DOCS_API_KEY` and `tests/seed-docs-data.ts` to create private Docs records from explicit source-note-to-article-HTML fixtures. Optional IDs can be pinned with `MCP_DOGFOOD_DOCS_SITE_ID`, `MCP_DOGFOOD_DOCS_COLLECTION_ID`, `MCP_DOGFOOD_DOCS_CATEGORY_ID`, `MCP_DOGFOOD_DOCS_ARTICLE_ID`, `MCP_DOGFOOD_DOCS_REVISION_ID`, `MCP_DOGFOOD_DOCS_REDIRECT_ID`, and `MCP_DOGFOOD_DOCS_REDIRECT_URL`. | Discovery, retrieval, search, pagination, status/visibility filters, related articles, revision freshness checks, redirect resolution. | Requires a Docs API key with permission to create/edit Docs content and at least one existing Docs site. Local Markdown/notes are not assumed to render 1:1; fixtures keep Help Scout article HTML explicit. |
 | Server utility | `getServerTime` | No Help Scout fixture required. | Utility shape. | None known. |
 
 ## Current Skips To Eliminate
@@ -85,7 +97,7 @@ npm run dogfood:audit
 | `getOriginalSource` | No known original-source fixture IDs. | Send or import an inbound email fixture, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID` and `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`. |
 | `getSatisfactionRating` | No known satisfaction rating fixture ID. | Submit a known rating, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_SATISFACTION_RATING_ID`. |
 | `getTeamMembers` | No team may exist in the test account. | Configure a team with at least one member, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_TEAM_ID` if discovery should be pinned. |
-| Docs API tools | Docs API requires separate `HELPSCOUT_DOCS_API_KEY`, and the shared seed command cannot create Docs knowledge base fixtures. | Configure a Docs API key and stable Docs records, then set the `MCP_DOGFOOD_DOCS_*` environment IDs when auto-discovery is insufficient. |
+| Docs API tools | Docs API requires separate `HELPSCOUT_DOCS_API_KEY`; seeding requires a key with Docs create/edit permissions and an existing Docs site. | Run `HELPSCOUT_DOCS_API_KEY=... npm run dogfood:seed:docs`, then use the printed `MCP_DOGFOOD_DOCS_*` values when auto-discovery should be pinned. |
 
 ## PR Checklist For New API Surfaces
 

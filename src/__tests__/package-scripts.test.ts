@@ -11,6 +11,26 @@ describe('package scripts', () => {
     expect(fs.existsSync(path.join(process.cwd(), 'tests/audit-dogfood-account.ts'))).toBe(true);
   });
 
+  it('exposes optional Docs dogfood seeding that skips without a Docs key', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+
+    expect(packageJson.scripts['dogfood:seed']).toContain('npm run dogfood:seed:docs');
+    expect(packageJson.scripts['dogfood:seed:docs']).toBe('node --loader ts-node/esm tests/seed-docs-data.ts');
+    expect(fs.existsSync(path.join(process.cwd(), 'tests/seed-docs-data.ts'))).toBe(true);
+
+    const result = spawnSync('node', ['--loader', 'ts-node/esm', 'tests/seed-docs-data.ts'], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        HELPSCOUT_DOCS_API_KEY: '',
+      },
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('skipping optional Docs fixture seed');
+  });
+
   it('keeps operational scripts aligned with documented Help Scout credential names', () => {
     const credentialScripts = [
       'scripts/check-conversations.ts',
