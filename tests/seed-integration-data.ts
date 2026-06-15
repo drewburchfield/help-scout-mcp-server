@@ -13,57 +13,21 @@
 
 import 'dotenv/config';
 import axios, { AxiosInstance } from 'axios';
+import {
+  ConversationDef,
+  INTEGRATION_CONSTANTS,
+  INTEGRATION_CONVERSATIONS,
+  INTEGRATION_SEED_CONVERSATIONS,
+} from './dogfood-fixtures.js';
 
-// ---------------------------------------------------------------------------
-// Exports (importable by integration tests)
-// ---------------------------------------------------------------------------
+export { INTEGRATION_CONSTANTS, INTEGRATION_CONVERSATIONS, INTEGRATION_SEED_CONVERSATIONS };
 
-export const INTEGRATION_CONVERSATIONS = [
-  {
-    customerEmail: 'aria.chen@meridian-testing.com',
-    subject: 'MCP-TEST: Login credentials not working',
-    tags: ['mcp-test'],
-    status: 'closed',
-    hasStaffReply: true,
-  },
-  {
-    customerEmail: 'marcus.j@meridian-testing.com',
-    subject: 'MCP-TEST: Billing question about annual plan',
-    tags: ['mcp-test', 'billing'],
-    status: 'active',
-    hasStaffReply: false,
-  },
-  {
-    customerEmail: 'kenji@meridian-testing.com',
-    subject: 'MCP-TEST: API rate limiting errors',
-    tags: ['mcp-test'],
-    status: 'pending',
-    hasStaffReply: true,
-  },
-  {
-    customerEmail: 'priya@meridian-testing.com',
-    subject: 'MCP-TEST: Feature request dark mode',
-    tags: ['mcp-test', 'feature-request'],
-    status: 'closed',
-    hasStaffReply: false,
-  },
-  {
-    customerEmail: 'tomas.r@meridian-testing.com',
-    subject: 'MCP-TEST: Data export CSV failure',
-    tags: ['mcp-test'],
-    status: 'active',
-    hasStaffReply: true,
-  },
-];
-
-export const INTEGRATION_CONSTANTS = {
-  orgId: '33911683',
-  orgName: 'Meridian Testing Corp',
-  inboxId: '359402',
-  userId: 887476,
-  searchPrefix: 'MCP-TEST:',
-  tag: 'mcp-test',
-};
+interface ExistingConversation {
+  id: number;
+  subject: string;
+  status?: string;
+  assigneeId?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Config (mirrors src/utils/config.ts without importing the full module tree)
@@ -80,12 +44,6 @@ const CLIENT_SECRET =
   '';
 const BASE_URL = process.env.HELPSCOUT_BASE_URL || 'https://api.helpscout.net/v2/';
 
-if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('Missing HELPSCOUT_APP_ID / HELPSCOUT_APP_SECRET in .env');
-  console.error('HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET are also supported.');
-  process.exit(1);
-}
-
 // ---------------------------------------------------------------------------
 // Auth + HTTP client
 // ---------------------------------------------------------------------------
@@ -94,6 +52,11 @@ let accessToken: string | null = null;
 
 async function authenticate(): Promise<string> {
   if (accessToken) return accessToken;
+  if (!CLIENT_ID || !CLIENT_SECRET) {
+    throw new Error(
+      'Missing HELPSCOUT_APP_ID / HELPSCOUT_APP_SECRET in .env; HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET are also supported.'
+    );
+  }
 
   const res = await axios.post('https://api.helpscout.net/v2/oauth2/token', {
     grant_type: 'client_credentials',
@@ -142,114 +105,21 @@ function extractIdFromHeaders(headers: Record<string, string>): number | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Conversation definitions
-// ---------------------------------------------------------------------------
+const CONVERSATIONS = INTEGRATION_SEED_CONVERSATIONS;
 
-interface ThreadDef {
-  type: 'customer' | 'reply' | 'customer-follow-up';
-  text: string;
+function isoDaysAgo(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  date.setUTCHours(15, 0, 0, 0);
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
-
-interface ConversationDef {
-  customerEmail: string;
-  customerId: number;
-  subject: string;
-  status: string;
-  tags: string[];
-  threads: ThreadDef[];
-}
-
-const CONVERSATIONS: ConversationDef[] = [
-  {
-    customerEmail: 'aria.chen@meridian-testing.com',
-    customerId: 860612497,
-    subject: 'MCP-TEST: Login credentials not working',
-    status: 'closed',
-    tags: ['mcp-test'],
-    threads: [
-      {
-        type: 'customer',
-        text: "Hi support, I've been unable to log into the client dashboard since yesterday morning. I've tried resetting my password three times but keep getting an 'invalid credentials' error. My username is aria.chen@meridian-testing.com. Can you help?",
-      },
-      {
-        type: 'reply',
-        text: "Hi Aria, I've reset your credentials and confirmed your account is active. Please try logging in again at dashboard.meridian-testing.com. If you're still having issues, let me know and I'll set up a screen share.",
-      },
-    ],
-  },
-  {
-    customerEmail: 'marcus.j@meridian-testing.com',
-    customerId: 860612501,
-    subject: 'MCP-TEST: Billing question about annual plan',
-    status: 'active',
-    tags: ['mcp-test', 'billing'],
-    threads: [
-      {
-        type: 'customer',
-        text: "Hey there, our team has been on the monthly plan for about six months now. We'd like to switch to annual billing to get the discount. Can you walk me through what that process looks like? Also wondering if we get prorated credit for the current month.",
-      },
-    ],
-  },
-  {
-    customerEmail: 'kenji@meridian-testing.com',
-    customerId: 860612517,
-    subject: 'MCP-TEST: API rate limiting errors',
-    status: 'pending',
-    tags: ['mcp-test'],
-    threads: [
-      {
-        type: 'customer',
-        text: "We're hitting 429 rate limit errors on the search endpoint during peak hours. Our integration makes about 200 requests per minute. Is there a way to increase our rate limit, or should we implement request queuing on our side?",
-      },
-      {
-        type: 'reply',
-        text: "Hi Kenji, I've checked your API usage and you're hitting the 400 req/min limit. I can bump your account to the higher tier which allows 800 req/min. In the meantime, implementing exponential backoff would help smooth out the peaks.",
-      },
-    ],
-  },
-  {
-    customerEmail: 'priya@meridian-testing.com',
-    customerId: 860612506,
-    subject: 'MCP-TEST: Feature request dark mode',
-    status: 'closed',
-    tags: ['mcp-test', 'feature-request'],
-    threads: [
-      {
-        type: 'customer',
-        text: "Our design team has been requesting a dark mode option for the dashboard. Several of our engineers work late hours and the bright interface causes eye strain. Would this be something on your roadmap?",
-      },
-    ],
-  },
-  {
-    customerEmail: 'tomas.r@meridian-testing.com',
-    customerId: 860612508,
-    subject: 'MCP-TEST: Data export CSV failure',
-    status: 'active',
-    tags: ['mcp-test'],
-    threads: [
-      {
-        type: 'customer',
-        text: "The CSV export feature fails when trying to export datasets larger than 10,000 rows. We get a timeout error after about 30 seconds. This is blocking our quarterly reporting workflow.",
-      },
-      {
-        type: 'reply',
-        text: "Hi Tomás, thanks for reporting this. I can reproduce the timeout on large exports. I've filed this as a bug with our engineering team. As a workaround, you can use the API endpoint /v2/export with pagination to pull data in chunks.",
-      },
-      {
-        type: 'customer-follow-up',
-        text: "Thanks for the workaround. Quick follow-up: we're also seeing the same timeout when exporting from the analytics dashboard, even with smaller datasets around 5,000 rows. Might be related?",
-      },
-    ],
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Idempotency check
 // ---------------------------------------------------------------------------
 
 /** Search for existing MCP-TEST conversations in the target inbox. */
-async function findExistingConversations(): Promise<number[]> {
+async function findExistingConversations(): Promise<ExistingConversation[]> {
   const client = await api();
   const res = await client.get('/conversations', {
     params: {
@@ -265,7 +135,12 @@ async function findExistingConversations(): Promise<number[]> {
   }
 
   const conversations = res.data?._embedded?.conversations || [];
-  return conversations.map((c: any) => c.id);
+  return conversations.map((conversation: any) => ({
+    id: conversation.id,
+    subject: conversation.subject,
+    status: conversation.status,
+    assigneeId: conversation.assignee?.id,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +159,9 @@ async function createConversation(def: ConversationDef): Promise<number> {
     type: 'email',
     mailboxId: Number(INTEGRATION_CONSTANTS.inboxId),
     status: def.status,
+    ...(def.assigneeId ? { assignTo: def.assigneeId } : {}),
+    ...(def.createdAtDaysAgo ? { createdAt: isoDaysAgo(def.createdAtDaysAgo) } : {}),
+    ...(def.closedAtDaysAgo ? { closedAt: isoDaysAgo(def.closedAtDaysAgo) } : {}),
     customer: { email: def.customerEmail },
     threads: [
       {
@@ -309,7 +187,7 @@ async function createConversation(def: ConversationDef): Promise<number> {
   );
 }
 
-async function addReplyThread(conversationId: number, text: string, finalStatus: string, customerEmail: string): Promise<void> {
+async function addReplyThread(conversationId: number, text: string, finalStatus: string, customerEmail: string): Promise<boolean> {
   const client = await api();
   const res = await client.post(`/conversations/${conversationId}/reply`, {
     text,
@@ -323,17 +201,18 @@ async function addReplyThread(conversationId: number, text: string, finalStatus:
     log(
       `  Warning: reply thread on conversation ${conversationId} returned ${res.status}: ${JSON.stringify(res.data)}`
     );
+    return false;
   }
+  return true;
 }
 
 async function addCustomerThread(
   conversationId: number,
   customerEmail: string,
   text: string
-): Promise<void> {
+): Promise<boolean> {
   const client = await api();
-  const res = await client.post(`/conversations/${conversationId}/threads`, {
-    type: 'customer',
+  const res = await client.post(`/conversations/${conversationId}/customer`, {
     text,
     customer: { email: customerEmail },
     imported: true,
@@ -343,7 +222,9 @@ async function addCustomerThread(
     log(
       `  Warning: customer-thread on conversation ${conversationId} returned ${res.status}: ${JSON.stringify(res.data)}`
     );
+    return false;
   }
+  return true;
 }
 
 async function seedConversation(def: ConversationDef): Promise<number> {
@@ -359,15 +240,83 @@ async function seedConversation(def: ConversationDef): Promise<number> {
       // Use the conversation's final status for the last reply; keep active for intermediate ones
       const isLast = i === def.threads.length - 1;
       const threadStatus = isLast ? def.status : 'active';
-      await addReplyThread(convId, thread.text, threadStatus, def.customerEmail);
-      log(`  Added staff reply (thread ${i + 1})`);
+      if (await addReplyThread(convId, thread.text, threadStatus, def.customerEmail)) {
+        log(`  Added staff reply (thread ${i + 1})`);
+      }
     } else if (thread.type === 'customer-follow-up') {
-      await addCustomerThread(convId, def.customerEmail, thread.text);
-      log(`  Added customer follow-up (thread ${i + 1})`);
+      if (await addCustomerThread(convId, def.customerEmail, thread.text)) {
+        log(`  Added customer follow-up (thread ${i + 1})`);
+      }
     }
   }
 
   return convId;
+}
+
+async function getThreadTexts(conversationId: number): Promise<string[]> {
+  const client = await api();
+  const res = await client.get(`/conversations/${conversationId}/threads`);
+  if (res.status !== 200) {
+    log(`  Warning: list threads on conversation ${conversationId} returned ${res.status}: ${JSON.stringify(res.data)}`);
+    return [];
+  }
+  const threads = res.data?._embedded?.threads || [];
+  return threads.map((thread: any) => String(thread.body ?? thread.text ?? ''));
+}
+
+async function patchExistingConversation(existing: ExistingConversation, def: ConversationDef): Promise<void> {
+  const client = await api();
+  const patches = [];
+
+  if (def.reportFixture && def.assigneeId && existing.assigneeId !== def.assigneeId) {
+    patches.push({ op: 'replace', path: '/assignTo', value: def.assigneeId });
+  }
+  if (def.reportFixture && existing.status !== def.status) {
+    patches.push({ op: 'replace', path: '/status', value: def.status });
+  }
+
+  for (const patch of patches) {
+    const res = await client.patch(`/conversations/${existing.id}`, patch);
+    if (res.status !== 204 && res.status !== 200) {
+      log(`  Warning: patch ${patch.path} on conversation ${existing.id} returned ${res.status}: ${JSON.stringify(res.data)}`);
+    }
+  }
+}
+
+async function backfillMissingThreads(existing: ExistingConversation, def: ConversationDef): Promise<void> {
+  if (!def.reportFixture) return;
+  const existingTexts = await getThreadTexts(existing.id);
+  for (let i = 1; i < def.threads.length; i++) {
+    const thread = def.threads[i];
+    if (existingTexts.some((text) => text.includes(thread.text.slice(0, 80)))) continue;
+
+    if (thread.type === 'reply') {
+      const isLast = i === def.threads.length - 1;
+      const threadStatus = isLast ? def.status : 'active';
+      if (await addReplyThread(existing.id, thread.text, threadStatus, def.customerEmail)) {
+        log(`  Backfilled staff reply on conversation ${existing.id}`);
+      }
+    } else if (thread.type === 'customer-follow-up') {
+      if (await addCustomerThread(existing.id, def.customerEmail, thread.text)) {
+        log(`  Backfilled customer follow-up on conversation ${existing.id}`);
+      }
+    }
+  }
+}
+
+async function ensureExistingConversationFixtures(existing: ExistingConversation[]): Promise<void> {
+  const bySubject = new Map(existing.map((conversation) => [conversation.subject, conversation]));
+  for (const def of CONVERSATIONS) {
+    const match = bySubject.get(def.subject);
+    if (match) {
+      await patchExistingConversation(match, def);
+      await backfillMissingThreads(match, def);
+      continue;
+    }
+
+    log(`  Missing "${def.subject}", creating...`);
+    await seedConversation(def);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -394,8 +343,8 @@ async function cleanup(): Promise<void> {
   }
 
   log(`Found ${ids.length} conversation(s) to delete...`);
-  for (const id of ids) {
-    await deleteConversation(id);
+  for (const conversation of ids) {
+    await deleteConversation(conversation.id);
   }
 
   log('\nCleanup complete.');
@@ -419,13 +368,14 @@ async function main(): Promise<void> {
   log('Checking for existing MCP-TEST conversations...');
   const existing = await findExistingConversations();
   if (existing.length > 0) {
-    log(`Found ${existing.length} existing conversation(s): ${existing.join(', ')}`);
-    log('Conversations already seeded. Run with --cleanup to remove them first.');
+    log(`Found ${existing.length} existing conversation(s): ${existing.map((conversation) => conversation.id).join(', ')}`);
+    log('Backfilling assignment, status, and missing report-fixture threads where needed...');
+    await ensureExistingConversationFixtures(existing);
 
     heading('Seed Already Complete');
     log(`Org:   ${INTEGRATION_CONSTANTS.orgName} (ID: ${INTEGRATION_CONSTANTS.orgId})`);
     log(`Inbox: Client Support (ID: ${INTEGRATION_CONSTANTS.inboxId})`);
-    log(`Existing conversation IDs: ${existing.join(', ')}`);
+    log(`Existing conversation IDs: ${existing.map((conversation) => conversation.id).join(', ')}`);
     return;
   }
 

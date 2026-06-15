@@ -2908,7 +2908,9 @@ export class ToolHandler {
       ? statuses.filter(status => !failedStatuses.some(failure => failure.status === status))
       : [...statuses];
 
-    conversations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const sortField = typeof baseParams.sortField === 'string' ? baseParams.sortField : TOOL_CONSTANTS.DEFAULT_SORT_FIELD;
+    const sortOrder = typeof baseParams.sortOrder === 'string' ? baseParams.sortOrder : TOOL_CONSTANTS.DEFAULT_SORT_ORDER;
+    conversations.sort((a, b) => this.compareConversationsForSort(a, b, sortField, sortOrder));
     const limitedConversations = conversations.slice(0, limit);
 
     return {
@@ -2924,6 +2926,30 @@ export class ToolHandler {
           : `Merged results from ${Object.keys(totalByStatus).length} statuses. Returned ${limitedConversations.length} of ${totalAvailable} total conversations.`,
       },
     };
+  }
+
+  private compareConversationsForSort(
+    a: Conversation,
+    b: Conversation,
+    sortField: string,
+    sortOrder: string,
+  ): number {
+    const direction = sortOrder.toLowerCase() === 'asc' ? 1 : -1;
+    const aValue = (a as unknown as Record<string, unknown>)[sortField];
+    const bValue = (b as unknown as Record<string, unknown>)[sortField];
+    let comparison: number;
+
+    if (sortField === 'number') {
+      comparison = Number(aValue ?? 0) - Number(bValue ?? 0);
+    } else {
+      comparison = new Date(String(aValue ?? '')).getTime() - new Date(String(bValue ?? '')).getTime();
+    }
+
+    if (Number.isNaN(comparison) || comparison === 0) {
+      comparison = a.id - b.id;
+    }
+
+    return comparison * direction;
   }
 
   /**

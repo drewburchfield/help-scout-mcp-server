@@ -11,6 +11,7 @@ export default {
         target: 'ES2022',
         module: 'ES2022',
         lib: ['ES2022'],
+        rootDir: '.',
         moduleResolution: 'node',
         allowSyntheticDefaultImports: true,
         esModuleInterop: true,
