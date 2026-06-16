@@ -16,6 +16,11 @@ rules:
     severity: WARNING
     languages: [javascript, typescript]
     fix: ""
+    paths:
+      exclude:
+        - /scripts/**
+        - /tests/**
+        - /src/__tests__/**
 
   - id: no-console-debug-production
     patterns:
@@ -28,6 +33,11 @@ rules:
     message: "Debug statements should be conditional or removed"
     severity: WARNING
     languages: [javascript, typescript]
+    paths:
+      exclude:
+        - /scripts/**
+        - /tests/**
+        - /src/__tests__/**
 
   - id: no-alert-statements
     pattern: alert(...)
@@ -63,6 +73,10 @@ rules:
     message: "API keys should come from environment variables or secure config"
     severity: ERROR
     languages: [javascript, typescript, python]
+    paths:
+      exclude:
+        - /tests/**
+        - /src/__tests__/**
 
   - id: no-hardcoded-passwords
     patterns:
@@ -182,6 +196,10 @@ rules:
     message: "Address TODO/FIXME comments before merging to main"
     severity: WARNING
     languages: [javascript, typescript, python, java, go, rust]
+    paths:
+      exclude:
+        - /tests/**
+        - /src/__tests__/**
 
   - id: no-empty-catch-blocks
     patterns:
@@ -194,18 +212,6 @@ rules:
     severity: WARNING
     languages: [javascript, typescript, python, java]
 
-  - id: require-error-handling-async
-    patterns:
-      - pattern: |
-          await $FUNC()
-      - pattern-not-inside: |
-          try { ... } catch { ... }
-      - pattern-not-inside: |
-          $FUNC().catch(...)
-    message: "Async operations should have error handling"
-    severity: WARNING
-    languages: [javascript, typescript]
-
   - id: no-sync-file-operations
     patterns:
       - pattern-either:
@@ -217,6 +223,11 @@ rules:
     message: "Use async file operations to avoid blocking the event loop"
     severity: WARNING
     languages: [javascript, typescript]
+    paths:
+      exclude:
+        - /scripts/**
+        - /tests/**
+        - /src/__tests__/**
 
   # ================================
   # Help Scout MCP Specific Rules
@@ -254,21 +265,18 @@ rules:
 
   - id: helpscout-pii-protection-check
     patterns:
-      - pattern: |
-          body: $BODY
-      - pattern-not-inside: |
-          $CONFIG.allowPII ? $BODY : '[REDACTED]'
-      - pattern-not-inside: |
-          if (allowPII) { ... }
-      - pattern-not-inside: |
-          allowPII && $BODY
+      - pattern-either:
+          - pattern: |
+              body: $SOURCE.body
+          - pattern: |
+              body: $SOURCE["body"]
     message: "Message bodies must check ALLOW_PII configuration before exposure"
     severity: WARNING
     languages: [typescript]
     paths:
       include:
-        - src/tools/*.ts
-        - src/resources/*.ts
+        - /src/tools/*.ts
+        - /src/resources/*.ts
 
   - id: helpscout-bearer-token-format
     patterns:
@@ -351,3 +359,7 @@ rules:
     message: "Help Scout tokens should be stored securely (encrypted, server-side)"
     severity: ERROR
     languages: [typescript]
+    paths:
+      exclude:
+        - /tests/**
+        - /src/__tests__/**

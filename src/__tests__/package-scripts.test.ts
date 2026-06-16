@@ -31,6 +31,14 @@ describe('package scripts', () => {
     expect(result.stderr).toContain('skipping optional Docs fixture seed');
   });
 
+  it('keeps the default security script focused on branch-introduced findings', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+
+    expect(packageJson.scripts.security).toBe('npm run security:changed');
+    expect(packageJson.scripts['security:changed']).toContain('--baseline-commit origin/main');
+    expect(packageJson.scripts['security:full']).toBe('semgrep --config .semgrep.yml .');
+  });
+
   it('keeps operational scripts aligned with documented Help Scout credential names', () => {
     const credentialScripts = [
       'scripts/check-conversations.ts',
