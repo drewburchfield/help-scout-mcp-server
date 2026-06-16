@@ -66,9 +66,9 @@ IDs into production tool code.
 | Intent | What it proves | Example tools |
 | --- | --- | --- |
 | Discovery | The account has enough metadata to navigate later calls. | `listAllInboxes`, `listUsers`, `listTags` |
-| Narrowing | Filters correctly reduce or target data. | `searchConversations`, `listCustomers`, `listUsers` |
+| Narrowing | Filters correctly reduce or target data. | `searchConversations`, `listCustomers`, `listCustomersV3`, `listUsers` |
 | Retrieval | A discovered or seeded ID fetches the expected object. | `getCustomer`, `getThreads`, `getUser` |
-| Pagination | Page, size, cursor, or row controls are honored. | `listOrganizations`, `getUserDrilldownReport` |
+| Pagination | Page, size, cursor, or row controls are honored. | `listCustomersV3`, `listOrganizations`, `getUserDrilldownReport` |
 | Permutation | Sort, status, type, date, and boolean controls serialize correctly. | `searchConversations`, report tools |
 | Redaction | Sensitive message bodies hide when redaction is enabled. | `getConversationSummary`, `getThreads`, `getThreadsV3` |
 | Validation | Bad arguments fail before a Help Scout request or return a model-correctable error. | invalid ID and limit scenarios |
@@ -92,7 +92,7 @@ IDs into production tool code.
 | Conversation search | `searchConversations`, `advancedConversationSearch`, `comprehensiveConversationSearch`, `structuredConversationFilter` | `MCP-TEST:` conversations cover active, pending, closed, tags, customers, dates, and subjects. | Discovery, narrowing, pagination, permutation, validation. | Add a deterministic spam conversation only if Help Scout supports safe seed/cleanup for spam state. |
 | Conversation retrieval | `getConversation`, `getConversationV3`, `getConversationSummary`, `getThreads`, `getThreadsV3` | Seeded conversations include raw conversation metadata, optional embedded threads, customer and staff threads, v3 conversation/thread retrieval, one conversation fixture includes an attachment-bearing thread, and a live inbound email-source fixture covers original-source discovery. | Retrieval, pagination, permutation, redaction, invalid ID validation, attachment discovery under thread `_embedded.attachments`. | None known. |
 | Thread original source and attachments | `getOriginalSource`, `getOriginalSourceRfc822`, `getAttachment`, `downloadAttachmentFile` | Harness can use `MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID`, `MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID`, `MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID`, and `MCP_DOGFOOD_ATTACHMENT_ID`; attachment IDs are discovered from the seeded attachment fixture conversation and verified through data plus file endpoints. A real inbound email-source fixture now exists in the test account and is discoverable through audit/dogfood. | Retrieval when fixture IDs are provided; attachment data/file retrieval through seeded live fixture discovery; original-source JSON and RFC 822 retrieval when a readable source is discovered. | None known while the inbound email-source fixture remains available; pin the discovered conversation/thread IDs outside the repo when dogfood should avoid rediscovery. |
-| Customer context | `getCustomer`, `listCustomers`, `searchCustomersByEmail`, `getCustomerContacts`, `getCustomerAddress`, `listCustomerEmails`, `listCustomerPhones`, `listCustomerChats`, `listCustomerSocialProfiles`, `listCustomerWebsites` | Golden customer and Meridian org members cover profile, email, name, mailbox, modified date, pagination, aggregate contacts, and each direct contact sub-resource. | Discovery, retrieval, narrowing, pagination, permutation, validation. | Add a customer with multiple values per contact type if future tools expose contact editing or richer contact filtering. |
+| Customer context | `getCustomer`, `listCustomers`, `listCustomersV3`, `searchCustomersByEmail`, `getCustomerContacts`, `getCustomerAddress`, `listCustomerEmails`, `listCustomerPhones`, `listCustomerChats`, `listCustomerSocialProfiles`, `listCustomerWebsites` | Golden customer and Meridian org members cover profile, email, name, mailbox, modified date, v2 page pagination, v3 cursor pagination when available, aggregate contacts, and each direct contact sub-resource. | Discovery, retrieval, narrowing, pagination, permutation, validation. | Add a customer with multiple values per contact type if future tools expose contact editing or richer contact filtering. |
 | Organization context | `getOrganization`, `listOrganizations`, `getOrganizationMembers`, `getOrganizationConversations` | Golden organization, fifteen org members, and seeded conversations cover include flags, sort fields, pagination, members, and conversations. | Retrieval, narrowing, pagination, permutation, validation. | Add organization property-heavy fixtures if property output schemas become stricter. |
 | Property metadata | `listCustomerProperties`, `listOrganizationProperties`, `getOrganizationProperty` | Customer property and deterministic organization property are seeded. | Discovery and retrieval. | None known. |
 | Tags | `listTags`, `getTag` | Seeded conversations use `mcp-test`; dogfood prefers that tag when present. | Discovery, narrowing, retrieval. | None known if tag creation remains stable through conversation seeding. |
@@ -127,3 +127,9 @@ Before opening a PR that adds or changes MCP API tools:
 - Update this matrix with the tool-call intents, fixtures, and remaining skips.
 - Keep skips narrow and name the missing fixture explicitly.
 - Run `npm run dogfood:seed` before authenticated dogfood when the surface depends on seeded records.
+
+For write-capable API parity tools, also follow the write-tool contract in
+[`guides/architecture/mcp-tool-contract.md`](../architecture/mcp-tool-contract.md):
+classify the mutation, require confirmation metadata for destructive or
+externally visible operations, verify the mutation through MCP, and confirm
+fixture cleanup.

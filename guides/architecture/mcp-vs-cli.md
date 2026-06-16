@@ -76,6 +76,11 @@ exercises the core path and meaningful permutations for that surface before the
 PR is reviewed. Missing account data should drive fixture work, not weaker
 dogfood assertions.
 
+Write-capable API parity tools must also follow the write-tool contract in
+[`mcp-tool-contract.md`](./mcp-tool-contract.md): classify the mutation, require
+confirmation for destructive or externally visible actions, verify the mutation
+through MCP, and confirm cleanup.
+
 Use `npm run dogfood:seed` to load the shared customer, organization,
 conversation, and organization-member fixtures before authenticated dogfood
 runs. New API families should add their own idempotent seed data and wire it

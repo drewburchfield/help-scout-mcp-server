@@ -43,6 +43,7 @@ import {
   StructuredConversationFilterInputSchema,
   GetCustomerInputSchema,
   ListCustomersInputSchema,
+  ListCustomersV3InputSchema,
   SearchCustomersByEmailInputSchema,
   GetCustomerContactsInputSchema,
   GetCustomerAddressInputSchema,
@@ -846,6 +847,22 @@ export class ToolHandler {
             sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt' },
             sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number (API returns 50 results per page)' },
+          },
+        },
+      },
+      {
+        name: 'listCustomersV3',
+        description: 'List or search customers through the v3 Customers API. Supports first name, last name, email, created/modified dates, query syntax, and cursor-based pagination.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            firstName: { type: 'string', description: 'Filter by first name' },
+            lastName: { type: 'string', description: 'Filter by last name' },
+            email: { type: 'string', description: 'Filter by email address' },
+            createdSince: { type: 'string', description: 'ISO 8601 date - only customers created after this date' },
+            modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
+            query: { type: 'string', description: 'Advanced v3 query syntax, e.g. (email:"john@example.com")' },
+            cursor: { type: 'string', description: 'Cursor for pagination (from nextCursor in previous response)' },
           },
         },
       },
@@ -2201,6 +2218,9 @@ export class ToolHandler {
           break;
         case 'listCustomers':
           result = await this.listCustomers(request.params.arguments || {});
+          break;
+        case 'listCustomersV3':
+          result = await this.listCustomersV3(request.params.arguments || {});
           break;
         case 'searchCustomersByEmail':
           result = await this.searchCustomersByEmail(request.params.arguments || {});
@@ -4956,6 +4976,73 @@ export class ToolHandler {
     };
   }
 
+  private extractV3NextCursor(links?: { next?: { href: string } }): string | undefined {
+    const nextHref = links?.next?.href;
+    if (!nextHref) return undefined;
+    try {
+      const url = new URL(nextHref);
+      return url.searchParams.get('cursor') || nextHref;
+    } catch (parseError) {
+      logger.debug('Could not parse v3 next link as URL, using raw href as cursor', {
+        nextHref,
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+      });
+      return nextHref;
+    }
+  }
+
+  private async fetchCustomersV3(params: Record<string, unknown>): Promise<{
+    customers: Customer[];
+    links?: { self?: { href: string }; first?: { href: string }; next?: { href: string } };
+    nextCursor?: string;
+  }> {
+    const v3Url = this.buildV3ApiUrl('/customers');
+    const v3Response = await helpScoutClient.get<{
+      _embedded: { customers: Customer[] };
+      _links?: { self?: { href: string }; first?: { href: string }; next?: { href: string } };
+    }>(v3Url, params);
+
+    const customers = v3Response._embedded?.customers || [];
+    const nextCursor = this.extractV3NextCursor(v3Response._links);
+
+    return {
+      customers,
+      links: v3Response._links,
+      nextCursor,
+    };
+  }
+
+  private async listCustomersV3(args: unknown): Promise<CallToolResult> {
+    const input = ListCustomersV3InputSchema.parse(args);
+
+    const params: Record<string, unknown> = {
+      firstName: input.firstName,
+      lastName: input.lastName,
+      email: input.email,
+      query: input.query,
+      modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
+      createdSince: this.normalizeApiDateParam(input.createdSince),
+      cursor: input.cursor,
+    };
+
+    const { customers, links, nextCursor } = await this.fetchCustomersV3(params);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: customers.map(c => this.formatCustomer(c)),
+          returnedCount: customers.length,
+          links,
+          nextCursor,
+          pagination: { type: 'cursor', hasNext: Boolean(nextCursor) },
+          note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
+          usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
+        }, null, 2),
+      }],
+    };
+  }
+
   // NAS-728: v3 Customer search with email filter
   private async searchCustomersByEmail(args: unknown): Promise<CallToolResult> {
     const input = SearchCustomersByEmailInputSchema.parse(args);
@@ -4970,29 +5057,7 @@ export class ToolHandler {
       cursor: input.cursor,
     };
 
-    const v3Url = this.buildV3ApiUrl('/customers');
-    const v3Response = await helpScoutClient.get<{
-      _embedded: { customers: Customer[] };
-      _links?: { next?: { href: string } };
-    }>(v3Url, params);
-
-    const customers = v3Response._embedded?.customers || [];
-
-    // Extract cursor token from v3 next link (full URL -> just the cursor param value)
-    let nextCursor: string | undefined;
-    const nextHref = v3Response._links?.next?.href;
-    if (nextHref) {
-      try {
-        const url = new URL(nextHref);
-        nextCursor = url.searchParams.get('cursor') || nextHref;
-      } catch (parseError) {
-        logger.debug('Could not parse v3 next link as URL, using raw href as cursor', {
-          nextHref,
-          error: parseError instanceof Error ? parseError.message : String(parseError),
-        });
-        nextCursor = nextHref;
-      }
-    }
+    const { customers, nextCursor } = await this.fetchCustomersV3(params);
 
     return {
       content: [{

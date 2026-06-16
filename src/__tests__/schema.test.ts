@@ -1,5 +1,6 @@
 import { 
   AdvancedConversationSearchInputSchema,
+  GetCompanyReportInputSchema,
   GetOrganizationConversationsInputSchema,
   GetOrganizationMembersInputSchema,
   GetThreadsInputSchema,
@@ -204,6 +205,46 @@ describe('Schema Validation', () => {
       ];
 
       cases.forEach(parse => expect(parse).toThrow());
+    });
+  });
+
+  describe('report date schemas', () => {
+    it('should accept valid date-only and datetime report inputs', () => {
+      expect(GetCompanyReportInputSchema.parse({
+        start: '2026-01-01',
+        end: '2026-01-31T23:59:59Z',
+      })).toEqual(expect.objectContaining({
+        start: '2026-01-01',
+        end: '2026-01-31T23:59:59Z',
+      }));
+
+      expect(GetCompanyReportInputSchema.parse({
+        start: '2026-02-01T00:00:00.250-06:00',
+        end: '2026-02-28T23:59:59+05:30',
+      })).toEqual(expect.objectContaining({
+        start: '2026-02-01T00:00:00.250-06:00',
+        end: '2026-02-28T23:59:59+05:30',
+      }));
+    });
+
+    it('should reject malformed or impossible report dates', () => {
+      const invalidDateCases = [
+        '2026-99-99',
+        '2026-02-31',
+        '2026-01-01T99:00:00Z',
+        '2026-01-01T23:99:00Z',
+        '2026-01-01T23:59:99Z',
+        '2026-01-01T23:59:59+99:00',
+        '2026-01-01T23:59:59+05:99',
+        '2026-01-01T',
+      ];
+
+      for (const invalidDate of invalidDateCases) {
+        expect(() => GetCompanyReportInputSchema.parse({
+          start: invalidDate,
+          end: '2026-01-31',
+        })).toThrow('Report dates must be valid ISO 8601 strings');
+      }
     });
   });
 });

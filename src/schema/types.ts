@@ -427,9 +427,44 @@ export const HappinessRatingsReportSchema = z.object({
   pages: z.number().optional(),
 }).passthrough();
 
-const ReportDateSchema = z.string().regex(
-  /^\d{4}-\d{2}-\d{2}(T[\d:.]+([+-]\d{2}:\d{2}|Z)?)?$/,
-  'Report dates must be ISO 8601 strings'
+const isValidReportDate = (value: string): boolean => {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|([+-])(\d{2}):(\d{2}))?)?$/
+  );
+
+  if (!match) return false;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, offsetSign, offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const normalizedDate = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    normalizedDate.getUTCFullYear() !== year ||
+    normalizedDate.getUTCMonth() !== month - 1 ||
+    normalizedDate.getUTCDate() !== day
+  ) {
+    return false;
+  }
+
+  if (hourText === undefined) return true;
+
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = secondText === undefined ? 0 : Number(secondText);
+
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  if (offsetSign === undefined) return true;
+
+  const offsetHour = Number(offsetHourText);
+  const offsetMinute = Number(offsetMinuteText);
+  return offsetHour <= 23 && offsetMinute <= 59;
+};
+
+const ReportDateSchema = z.string().refine(
+  isValidReportDate,
+  'Report dates must be valid ISO 8601 strings'
 );
 const ReportIdListSchema = z.array(
   z.string().regex(/^\d+$/, 'Report filter IDs must be numeric')
@@ -662,6 +697,16 @@ export const ListCustomersInputSchema = z.object({
   sortField: z.enum(['createdAt', 'firstName', 'lastName', 'modifiedAt']).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   page: z.number().int().min(1).default(1),
+});
+
+export const ListCustomersV3InputSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  email: z.string().optional().describe('Email address filter'),
+  createdSince: z.string().optional().describe('ISO 8601 date - only customers created after this date'),
+  modifiedSince: z.string().optional().describe('ISO 8601 date - only customers modified after this date'),
+  query: z.string().optional().describe('Advanced v3 query syntax, e.g. (email:"john@example.com")'),
+  cursor: z.string().trim().min(1, 'Cursor cannot be empty').optional().describe('Cursor for v3 pagination (from nextCursor in previous response)'),
 });
 
 export const SearchCustomersByEmailInputSchema = z.object({

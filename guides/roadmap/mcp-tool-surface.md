@@ -18,6 +18,17 @@ as Docs API fixtures, should no-op when their credentials are missing. Keep the
 detailed per-tool fixture map current in
 [`guides/testing/dogfood-fixture-matrix.md`](../testing/dogfood-fixture-matrix.md).
 
+## v1.9 Release Boundary
+
+As of the June 16, 2026 reconciliation against the official Help Scout Mailbox
+and Docs endpoint maps, v1.9 targets current official read endpoint parity plus
+the write-tool foundation. `listCustomersV3` closes the remaining direct
+read-only endpoint gap for `GET /v3/customers`.
+
+Do not add write tools to v1.9. Write-capable API parity work starts after the
+write-tool contract in [`guides/architecture/mcp-tool-contract.md`](../architecture/mcp-tool-contract.md)
+is merged and dogfooded.
+
 ## 1. Core Support Loop
 
 These are the highest-usage tools because they map directly to daily support
@@ -55,6 +66,7 @@ history matters before a reply.
 Current:
 
 - `listCustomers`
+- `listCustomersV3`
 - `getCustomer`
 - `searchCustomersByEmail`
 - `getCustomerContacts`
@@ -236,7 +248,9 @@ Next:
 ## 9. Write And Automation Tools
 
 Write tools are intentionally deferred. They require a stricter permission and
-confirmation model than read tools.
+confirmation model than read tools. Use the write-tool contract in
+[`guides/architecture/mcp-tool-contract.md`](../architecture/mcp-tool-contract.md)
+before implementing any mutation endpoint.
 
 Possible future families:
 

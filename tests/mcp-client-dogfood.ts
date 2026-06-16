@@ -76,6 +76,7 @@ const EXPECTED_TOOLS = [
   'structuredConversationFilter',
   'getCustomer',
   'listCustomers',
+  'listCustomersV3',
   'searchCustomersByEmail',
   'getCustomerContacts',
   'getCustomerAddress',
@@ -1726,6 +1727,36 @@ function buildScenarios(): Scenario[] {
         const customers = getArray(data, ['results', 'customers']) as JsonObject[];
         if (customers[0]?.id) ctx.customerId = String(customers[0].id);
         if (typeof obj.nextCursor === 'string') ctx.nextCustomerCursor = obj.nextCursor;
+      },
+    },
+    {
+      tool: 'listCustomersV3',
+      name: 'v3 first-name listing',
+      args: (ctx) => ({ firstName: GOLDEN.customerFirstName, createdSince: dateDaysAgo(365), modifiedSince: dateDaysAgo(365) }),
+      validate: (data) => {
+        const customers = requireArray(data, ['results', 'customers'], 'customers') as JsonObject[];
+        requireCondition(customers.some((customer) => String(customer.id) === GOLDEN.customerId), 'Golden customer not found in v3 list');
+      },
+      after: (data, _result, ctx) => {
+        const obj = data as JsonObject;
+        if (typeof obj.nextCursor === 'string') ctx.nextCustomerCursor = obj.nextCursor;
+      },
+    },
+    {
+      tool: 'listCustomersV3',
+      name: 'v3 query syntax listing',
+      args: (ctx) => ({ query: `(email:"${ctx.customerEmail}")` }),
+      validate: (data) => {
+        requireArray(data, ['results', 'customers'], 'customers');
+      },
+    },
+    {
+      tool: 'listCustomersV3',
+      name: 'v3 cursor pagination',
+      skipIf: (ctx) => ctx.nextCustomerCursor ? undefined : 'no next customer cursor returned by prior v3 call',
+      args: (ctx) => ({ firstName: GOLDEN.customerFirstName, cursor: ctx.nextCustomerCursor ?? 'not-a-real-cursor' }),
+      validate: (data) => {
+        requireCondition(data !== undefined, 'Expected v3 cursor response');
       },
     },
     {
