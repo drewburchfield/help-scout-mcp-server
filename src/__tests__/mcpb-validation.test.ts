@@ -67,15 +67,17 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 89 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(89);
+    it('should have all 93 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(93);
 
       const expectedTools = [
         'searchInboxes',
         'searchConversations',
         'getConversation',
+        'getConversationV3',
         'getConversationSummary',
         'getThreads',
+        'getThreadsV3',
         'getServerTime',
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
@@ -108,7 +110,9 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
+        'getOriginalSourceRfc822',
         'getAttachment',
+        'downloadAttachmentFile',
         'listWorkflows',
         'listWebhooks',
         'getWebhook',
@@ -320,8 +324,10 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'searchInboxes',
         'searchConversations',
         'getConversation',
+        'getConversationV3',
         'getConversationSummary', 
         'getThreads',
+        'getThreadsV3',
         'getServerTime',
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
@@ -337,7 +343,9 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getSystemUser',
         'listUserStatuses',
         'getUserStatus',
-        'getInboxRouting'
+        'getInboxRouting',
+        'getOriginalSourceRfc822',
+        'downloadAttachmentFile'
       ];
 
       expectedExports.forEach(exportName => {

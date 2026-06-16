@@ -125,12 +125,20 @@
       "description": "Get the raw Help Scout conversation object by ID with optional embedded threads"
     },
     {
+      "name": "getConversationV3",
+      "description": "Get the v3 Help Scout conversation object by ID with preserved person type fields"
+    },
+    {
       "name": "getConversationSummary",
       "description": "Get conversation summary with first customer message and latest staff reply"
     },
     {
       "name": "getThreads",
       "description": "Retrieve all thread messages for a conversation"
+    },
+    {
+      "name": "getThreadsV3",
+      "description": "Retrieve v3 thread messages for a conversation with preserved person type fields"
     },
     {
       "name": "getServerTime",
@@ -261,8 +269,16 @@
       "description": "Get original source JSON for a Help Scout conversation thread"
     },
     {
+      "name": "getOriginalSourceRfc822",
+      "description": "Get original source as message/rfc822 for a Help Scout conversation thread"
+    },
+    {
       "name": "getAttachment",
       "description": "Get base64-encoded Help Scout attachment data"
+    },
+    {
+      "name": "downloadAttachmentFile",
+      "description": "Download a Help Scout attachment file as base64 with response metadata"
     },
     {
       "name": "listWorkflows",

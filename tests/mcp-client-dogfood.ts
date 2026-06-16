@@ -64,8 +64,10 @@ const EXPECTED_TOOLS = [
   'searchInboxes',
   'searchConversations',
   'getConversation',
+  'getConversationV3',
   'getConversationSummary',
   'getThreads',
+  'getThreadsV3',
   'getServerTime',
   'listAllInboxes',
   'advancedConversationSearch',
@@ -98,7 +100,9 @@ const EXPECTED_TOOLS = [
   'listSavedReplies',
   'getSavedReply',
   'getOriginalSource',
+  'getOriginalSourceRfc822',
   'getAttachment',
+  'downloadAttachmentFile',
   'listWorkflows',
   'listWebhooks',
   'getWebhook',
@@ -1443,6 +1447,29 @@ function buildScenarios(): Scenario[] {
       },
     },
     {
+      tool: 'getConversationV3',
+      name: 'v3 raw conversation detail',
+      args: (ctx) => ({ conversationId: ctx.conversationId ?? '1' }),
+      validate: (data) => {
+        const response = data as JsonObject;
+        requireCondition(response.apiVersion === 'v3', 'Missing v3 API marker');
+        const conversation = getObject(data, 'conversation');
+        requireCondition(conversation?.id, 'Missing v3 raw conversation');
+        requireCondition(conversation?.subject, 'Missing v3 raw conversation subject');
+      },
+    },
+    {
+      tool: 'getConversationV3',
+      name: 'v3 raw conversation with embedded threads',
+      args: (ctx) => ({ conversationId: ctx.conversationId ?? '1', embed: 'threads' }),
+      validate: (data) => {
+        const conversation = getObject(data, 'conversation');
+        requireCondition(conversation?.id, 'Missing v3 raw conversation');
+        const embedded = getObject(conversation, '_embedded');
+        requireArray(embedded, ['threads'], 'v3 embedded threads');
+      },
+    },
+    {
       tool: 'getConversation',
       name: 'invalid raw conversation ID validation',
       args: { conversationId: 'not-a-number' },
@@ -1481,6 +1508,25 @@ function buildScenarios(): Scenario[] {
           }
         }
         await probeOriginalSourceFixture(session, ctx, ctx.conversationId, threads);
+      },
+    },
+    {
+      tool: 'getThreadsV3',
+      name: 'v3 threads default limit',
+      args: (ctx) => ({ conversationId: ctx.conversationId ?? '1' }),
+      validate: (data) => {
+        const response = data as JsonObject;
+        requireCondition(response.apiVersion === 'v3', 'Missing v3 API marker');
+        requireArray(data, ['threads'], 'v3 threads');
+      },
+    },
+    {
+      tool: 'getThreadsV3',
+      name: 'v3 threads limit permutation',
+      args: (ctx) => ({ conversationId: ctx.conversationId ?? '1', limit: 1 }),
+      validate: (data) => {
+        const threads = requireArray(data, ['threads'], 'v3 threads');
+        requireCondition(threads.length <= 1, `Expected at most 1 v3 thread, got ${threads.length}`);
       },
     },
     {
@@ -1541,6 +1587,22 @@ function buildScenarios(): Scenario[] {
       },
     },
     {
+      tool: 'getOriginalSourceRfc822',
+      name: 'discovered thread original source RFC 822',
+      skipIf: (ctx) => ctx.originalSourceConversationId && ctx.originalSourceThreadId
+        ? undefined
+        : 'No original-source fixture available',
+      args: (ctx) => ({
+        conversationId: ctx.originalSourceConversationId ?? '1',
+        threadId: ctx.originalSourceThreadId ?? '1',
+      }),
+      validate: (data) => {
+        const response = data as JsonObject;
+        requireCondition(response.sourceFormat === 'message/rfc822', 'Missing RFC 822 source format marker');
+        requireCondition(typeof response.originalSource === 'string' && response.originalSource.length > 0, 'Missing RFC 822 original source text');
+      },
+    },
+    {
       tool: 'getAttachment',
       name: 'discovered attachment data',
       skipIf: (ctx) => ctx.attachmentConversationId && ctx.attachmentId
@@ -1553,6 +1615,24 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const attachment = getObject(data, 'attachment');
         requireCondition(typeof attachment?.data === 'string', 'Missing base64 attachment data');
+      },
+    },
+    {
+      tool: 'downloadAttachmentFile',
+      name: 'discovered attachment file download',
+      skipIf: (ctx) => ctx.attachmentConversationId && ctx.attachmentId
+        ? undefined
+        : 'No attachment fixture available from getThreads',
+      args: (ctx) => ({
+        conversationId: ctx.attachmentConversationId ?? '1',
+        attachmentId: ctx.attachmentId ?? '1',
+      }),
+      validate: (data) => {
+        const response = data as JsonObject;
+        requireCondition(typeof response.data === 'string' && response.data.length > 0, 'Missing base64 attachment file data');
+        requireCondition(typeof response.byteLength === 'number' && response.byteLength > 0, 'Missing attachment file byte length');
+        const contentHandling = getObject(data, 'contentHandling');
+        requireCondition(contentHandling?.encoding === 'base64', 'Missing base64 content handling metadata');
       },
     },
     {
@@ -1996,6 +2076,19 @@ async function runRedactionMatrix(baseCtx: DogfoodContext): Promise<void> {
         for (const thread of threads) {
           if (thread.body) {
             requireCondition(isRedactedBody(thread.body), `Thread body not hidden: ${String(thread.body).slice(0, 80)}`);
+          }
+        }
+      },
+    },
+    {
+      tool: 'getThreadsV3',
+      name: 'v3 thread bodies are hidden',
+      args: (scenarioCtx) => ({ conversationId: scenarioCtx.conversationId ?? '1', limit: 5 }),
+      validate: (data) => {
+        const threads = requireArray(data, ['threads'], 'v3 threads') as JsonObject[];
+        for (const thread of threads) {
+          if (thread.body) {
+            requireCondition(isRedactedBody(thread.body), `V3 thread body not hidden: ${String(thread.body).slice(0, 80)}`);
           }
         }
       },

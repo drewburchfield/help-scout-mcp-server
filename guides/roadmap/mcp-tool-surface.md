@@ -30,19 +30,23 @@ Current:
 - `comprehensiveConversationSearch`
 - `structuredConversationFilter`
 - `getConversation`
+- `getConversationV3`
 - `getConversationSummary`
 - `getThreads`
+- `getThreadsV3`
 - `getOriginalSource`
+- `getOriginalSourceRfc822`
 - `getAttachment`
+- `downloadAttachmentFile`
 - `searchInboxes`
 - `listAllInboxes`
 
 Next:
 
-- Add narrower thread/attachment fixture coverage as the dogfood account gets
-  richer test data.
-- Seed thread original-source and attachment fixtures so core support-loop
+- Seed a stable thread original-source fixture so JSON and RFC 822 source
   dogfood does not depend on optional account history.
+- Keep attachment data and file-download fixtures readable in the shared seed
+  set.
 
 ## 2. Customer And Account Context
 

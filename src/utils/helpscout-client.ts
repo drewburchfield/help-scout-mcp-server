@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosResponse, AxiosError, ResponseType } from 'axios';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 
@@ -12,6 +12,11 @@ interface RetryConfig {
   retryDelay: number;
   maxRetryDelay: number;
   retryCondition?: (error: AxiosError) => boolean;
+}
+
+interface RawGetOptions {
+  responseType?: ResponseType;
+  headers?: Record<string, string>;
 }
 
 declare module 'axios' {
@@ -526,6 +531,16 @@ export class HelpScoutClient {
     }
     
     return response.data;
+  }
+
+  async getRaw<T>(endpoint: string, params?: Record<string, unknown>, options: RawGetOptions = {}): Promise<AxiosResponse<T>> {
+    return this.executeWithRetry<T>(() =>
+      this.client.get<T>(endpoint, {
+        params,
+        responseType: options.responseType,
+        headers: options.headers,
+      })
+    );
   }
 
   private getDefaultCacheTtl(endpoint: string): number {

@@ -272,11 +272,14 @@ async function auditAttachment(client: AxiosInstance, conversations: Array<{ id:
         if (!attachment?.id) continue;
 
         const dataRes = await client.get(`/conversations/${conversation.id}/attachments/${attachment.id}/data`);
-        if (dataRes.status === 200) {
+        const fileRes = await client.get(`/conversations/${conversation.id}/attachments/${attachment.id}/file`, {
+          responseType: 'arraybuffer',
+        });
+        if (dataRes.status === 200 && fileRes.status === 200) {
           return {
             name: 'getAttachment',
             status: 'PASS',
-            detail: `conversationId=${conversation.id} attachmentId=${attachment.id}`,
+            detail: `conversationId=${conversation.id} attachmentId=${attachment.id} data=file=readable`,
             env: {
               MCP_DOGFOOD_ATTACHMENT_CONVERSATION_ID: String(conversation.id),
               MCP_DOGFOOD_ATTACHMENT_ID: String(attachment.id),
@@ -289,7 +292,7 @@ async function auditAttachment(client: AxiosInstance, conversations: Array<{ id:
     return {
       name: 'getAttachment',
       status: 'GAP',
-      detail: 'No seeded MCP-TEST attachment with readable data was found; run npm run dogfood:seed and check the attachment fixture conversation.',
+      detail: 'No seeded MCP-TEST attachment with readable data and file download was found; run npm run dogfood:seed and check the attachment fixture conversation.',
     };
   } catch (err) {
     return { name: 'getAttachment', status: 'GAP', detail: `Attachment audit failed: ${err instanceof Error ? err.message : String(err)}` };
