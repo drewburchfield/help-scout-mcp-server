@@ -41,7 +41,7 @@ This will:
 1. Download the `.mcpb` file from GitHub releases
 2. Double-click to open with Claude Desktop
 3. Click "Install"
-4. Enter your Help Scout OAuth2 Client ID and Client Secret
+4. Enter your Help Scout App ID and App Secret
 5. Done!
 
 ## Development Notes

@@ -1,4 +1,4 @@
-# HelpScout Tool Decision Tree
+# Help Scout Tool Decision Tree
 
 Expanded decision logic for complex search scenarios.
 

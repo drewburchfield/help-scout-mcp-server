@@ -1,8 +1,8 @@
 {
   "name": "help-scout-mcp-server",
-  "version": "1.7.0",
+  "version": "1.9.0",
   "mcpName": "io.github.drewburchfield/help-scout-mcp",
-  "description": "Search Help Scout conversations, customers, organizations, threads, and inboxes with AI assistants",
+  "description": "Read-only MCP server for Help Scout conversations, customers, organizations, reports, metadata, and Docs",
   "main": "dist/index.js",
   "type": "module",
   "bin": {

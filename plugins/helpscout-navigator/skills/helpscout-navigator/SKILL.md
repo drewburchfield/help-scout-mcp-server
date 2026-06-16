@@ -5,7 +5,7 @@ description: Use when searching HelpScout tickets, customers, or organizations. 
 
 # HelpScout Navigation
 
-Guide for correctly using HelpScout MCP tools. Prevents common mistakes and ensures complete search results.
+Guide for correctly using Help Scout MCP tools. Prevents common mistakes and ensures complete search results.
 
 ## First Step: Diagnose Setup
 
@@ -79,7 +79,7 @@ Tell the user:
 > claude
 > ```
 >
-> The HelpScout MCP server will now start with the correct credentials.
+> The Help Scout MCP server will now start with the correct credentials.
 
 **Do not proceed with HelpScout operations until the MCP tools are available.**
 
@@ -87,14 +87,14 @@ Tell the user:
 
 ## Overview
 
-The HelpScout MCP server provides 17 tools for searching and retrieving support conversations. However, using them incorrectly leads to missed tickets and incomplete results. This skill ensures you use the right tool in the right order.
+The Help Scout MCP server provides a 102-tool read-only surface for support conversations, customers, organizations, reports, metadata, and Docs. However, using the wrong search tool still leads to missed tickets and incomplete results. This skill ensures you use the right tool in the right order.
 
 **Core problems this skill solves:**
 1. Users forget to call `searchInboxes` first (required for inbox-scoped searches)
 2. `searchConversations` defaults to "active" status only (misses closed/pending)
 3. Users don't know which search tool to use for their query type
 4. Users don't know the customer/org lookup tools for account investigation
-5. Users try conversation search when they should use customer or org tools
+5. Users try conversation search when they should use customer, org, report, metadata, or Docs tools
 
 ---
 

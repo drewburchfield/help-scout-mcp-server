@@ -4,16 +4,18 @@
     "name": "Drew Burchfield"
   },
   "metadata": {
-    "description": "HelpScout MCP server with navigator plugin for Claude Code and CoWork",
-    "version": "1.1.1"
+    "description": "Help Scout MCP server with navigator plugin for Claude Code and Cowork",
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "helpscout-navigator",
       "source": "./plugins/helpscout-navigator",
-      "description": "HelpScout support ticket, customer, and organization tools with navigation guidance. Bundles HelpScout MCP server (17 tools) - auto-starts when plugin is enabled.",
-      "version": "1.1.1",
-      "author": {"name": "Drew Burchfield"},
+      "description": "Help Scout support, customer, organization, report, metadata, and Docs navigation guidance. Bundles the read-only Help Scout MCP server and pins the 1.9.0 runtime.",
+      "version": "1.2.0",
+      "author": {
+        "name": "Drew Burchfield"
+      },
       "category": "productivity",
       "homepage": "https://github.com/drewburchfield/helpscout-navigator"
     }

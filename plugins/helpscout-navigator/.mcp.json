@@ -2,10 +2,12 @@
   "mcpServers": {
     "helpscout": {
       "command": "npx",
-      "args": ["-y", "help-scout-mcp-server"],
+      "args": ["-y", "help-scout-mcp-server@1.9.0"],
       "env": {
         "HELPSCOUT_APP_ID": "${HELPSCOUT_APP_ID}",
         "HELPSCOUT_APP_SECRET": "${HELPSCOUT_APP_SECRET}",
+        "HELPSCOUT_DEFAULT_INBOX_ID": "${HELPSCOUT_DEFAULT_INBOX_ID:-}",
+        "HELPSCOUT_DOCS_API_KEY": "${HELPSCOUT_DOCS_API_KEY:-}",
         "REDACT_MESSAGE_CONTENT": "${REDACT_MESSAGE_CONTENT:-false}"
       }
     }

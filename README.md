@@ -58,10 +58,11 @@ Add to your MCP client's config file (e.g., `claude_desktop_config.json`, `.curs
   "mcpServers": {
     "helpscout": {
       "command": "npx",
-      "args": ["help-scout-mcp-server"],
+      "args": ["help-scout-mcp-server@1.9.0"],
       "env": {
         "HELPSCOUT_APP_ID": "your-app-id",
-        "HELPSCOUT_APP_SECRET": "your-app-secret"
+        "HELPSCOUT_APP_SECRET": "your-app-secret",
+        "HELPSCOUT_DOCS_API_KEY": "optional-docs-api-key"
       }
     }
   }
@@ -73,7 +74,8 @@ Add to your MCP client's config file (e.g., `claude_desktop_config.json`, `.curs
 ```bash
 docker run -e HELPSCOUT_APP_ID="your-app-id" \
   -e HELPSCOUT_APP_SECRET="your-app-secret" \
-  drewburchfield/help-scout-mcp-server
+  -e HELPSCOUT_DOCS_API_KEY="optional-docs-api-key" \
+  drewburchfield/help-scout-mcp-server:1.9.0
 ```
 
 ## Getting Your API Credentials
@@ -89,7 +91,7 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
 | **App ID** | `HELPSCOUT_APP_ID` |
 | **App Secret** | `HELPSCOUT_APP_SECRET` |
 
-Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` and legacy `HELPSCOUT_API_KEY` are also supported.
+Alternative names `HELPSCOUT_CLIENT_ID` / `HELPSCOUT_CLIENT_SECRET` are also supported.
 
 Docs knowledge base tools use Help Scout Docs API v1, which is separate from the Mailbox API. Set `HELPSCOUT_DOCS_API_KEY` only if you want to use `listDocs*`, `searchDocsArticles`, `getDocsArticle`, or redirect tools.
 
@@ -178,7 +180,7 @@ curl -X POST https://api.helpscout.net/v2/oauth2/token \
 **Need more detail?** Enable debug logging:
 
 ```bash
-LOG_LEVEL=debug npx help-scout-mcp-server
+LOG_LEVEL=debug npx help-scout-mcp-server@1.9.0
 ```
 
 ## Development

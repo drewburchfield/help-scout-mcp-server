@@ -1,7 +1,7 @@
 {
   "name": "helpscout-navigator",
-  "version": "1.1.1",
-  "description": "HelpScout support ticket, customer, and organization tools with navigation guidance. Bundles HelpScout MCP server (17 tools) - auto-starts when plugin is enabled.",
+  "version": "1.2.0",
+  "description": "Help Scout support, customer, organization, report, metadata, and Docs navigation guidance. Bundles the read-only Help Scout MCP server and pins the 1.9.0 runtime.",
   "author": {
     "name": "Drew Burchfield",
     "url": "https://github.com/drewburchfield"

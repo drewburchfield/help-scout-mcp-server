@@ -10,20 +10,21 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin from the 
 
 ## What it does
 
-Guides you to the right HelpScout MCP tool for each search task. Includes a decision tree for tool selection, correct sequencing (always lookup inbox IDs first), prevention of the "active-only" search trap, and a complete parameter reference for all 9 tools. The MCP server auto-starts when the plugin is enabled.
+Guides you to the right Help Scout MCP tool for each support investigation task. Includes a decision tree for tool selection, correct sequencing when inbox names need IDs, prevention of the active-only search trap, and references for the 102-tool read-only API parity surface. The MCP server auto-starts when the plugin is enabled.
 
 ## Features
 
 - Decision tree for choosing the right search tool
-- Correct sequencing (always lookup inbox IDs first)
+- Correct sequencing when inbox names need IDs
 - Prevents the "active-only" search trap
-- Complete parameter reference for all 9 tools
-- Bundled MCP server with auto-start
+- Parameter references for the read-only Help Scout tool surface
+- Bundled MCP server pinned to `help-scout-mcp-server@1.9.0`
 
 ## Requirements
 
 - `HELPSCOUT_APP_ID` environment variable
 - `HELPSCOUT_APP_SECRET` environment variable
+- Optional: `HELPSCOUT_DOCS_API_KEY` for Help Scout Docs tools
 
 ## Install
 
