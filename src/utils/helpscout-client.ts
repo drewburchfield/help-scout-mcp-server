@@ -508,8 +508,10 @@ export class HelpScoutClient {
 
     if (!bypassCache) {
       const cachedResult = cache.get<T>(cacheKey, params);
-      
-      if (cachedResult) {
+
+      // Guard on presence, not truthiness: a cached falsy payload (0, '', false,
+      // null) is a real hit and must not trigger a redundant API call.
+      if (cachedResult !== undefined) {
         return cachedResult;
       }
     }

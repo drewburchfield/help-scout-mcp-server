@@ -154,13 +154,26 @@ describe('ToolHandler', () => {
 
     it('should have proper tool schemas', async () => {
       const tools = await toolHandler.listTools();
-      
+
       tools.forEach(tool => {
         expect(tool).toHaveProperty('name');
         expect(tool).toHaveProperty('description');
         expect(tool).toHaveProperty('inputSchema');
         expect(tool.inputSchema).toHaveProperty('type', 'object');
         expect(tool.inputSchema).toHaveProperty('properties');
+      });
+    });
+
+    it('should advertise read-only annotations on every tool', async () => {
+      const tools = await toolHandler.listTools();
+
+      // This server is entirely read-only GET wrappers; clients (e.g. CoWork)
+      // rely on readOnlyHint to auto-approve reads without confirmation.
+      tools.forEach(tool => {
+        expect(tool.annotations).toMatchObject({
+          readOnlyHint: true,
+          openWorldHint: true,
+        });
       });
     });
 

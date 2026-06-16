@@ -392,6 +392,18 @@ export class ToolHandler {
     return processedConversation;
   }
 
+  // Apply the optional message-content trim to a list of conversations. List and
+  // search endpoints return a `preview` snippet of the latest message body, so
+  // when REDACT_MESSAGE_CONTENT is on these results must be trimmed too,
+  // consistent with the single-conversation detail tools. No-op when off.
+  private redactConversationListContent<T>(conversations: T[]): T[] {
+    if (!config.security.redactMessageContent) return conversations;
+    return conversations.map(
+      (conversation) =>
+        this.redactConversationMessageContent(conversation as Record<string, unknown>) as unknown as T,
+    );
+  }
+
   private getResponseHeader(headers: Record<string, unknown>, name: string): string | undefined {
     const value = headers[name.toLowerCase()] ?? headers[name];
     if (Array.isArray(value)) return value.join(', ');
@@ -425,7 +437,7 @@ export class ToolHandler {
   }
 
   async listTools(): Promise<Tool[]> {
-    return [
+    const tools: Tool[] = [
       {
         name: 'searchInboxes',
         description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
@@ -2114,6 +2126,16 @@ export class ToolHandler {
         },
       },
     ];
+
+    // Every tool in this server is a read-only GET wrapper over the external
+    // Help Scout API. Advertise MCP tool annotations so clients (e.g. Claude
+    // CoWork) can auto-approve reads and skip "may modify data" confirmations.
+    // openWorldHint is true because results depend on an external service.
+    // A tool may still override by declaring its own `annotations`.
+    return tools.map((tool) => ({
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      ...tool,
+    }));
   }
 
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -2700,7 +2722,7 @@ export class ToolHandler {
     }
 
     const results = {
-      results: conversations,
+      results: this.redactConversationListContent(conversations),
       pagination,
       nextPage: input.status ? getNextPage(originalPagination as { number?: number; totalPages?: number } | undefined) : null,
       searchInfo: {
@@ -4234,7 +4256,7 @@ export class ToolHandler {
         {
           type: 'text',
           text: JSON.stringify({
-            results: conversations,
+            results: this.redactConversationListContent(conversations),
             searchQuery: queryString,
             inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
             searchCriteria: {
@@ -4716,7 +4738,10 @@ export class ToolHandler {
       clientSideFilteringApplied: hasClientSideFiltering ?
         `createdBefore filter applied - totalConversationsFound (${totalConversations}) reflects filtered results, totalBeforeClientSideFiltering (${totalBeforeFilter}) shows pre-filter API totals` : undefined,
       failedStatuses: allResults.filter(r => r.error).map(r => `[WARNING] Status "${r.status}" search failed: ${r.error}`),
-      resultsByStatus: allResults,
+      resultsByStatus: allResults.map((result) => ({
+        ...result,
+        conversations: this.redactConversationListContent(result.conversations),
+      })),
       searchTips: totalConversations === 0 ? [
         'Try broader search terms or increase the timeframe',
         'Check if the inbox ID is correct',
@@ -4833,7 +4858,7 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: conversations,
+          results: this.redactConversationListContent(conversations),
           filterApplied: {
             filterType: 'structural',
             assignedTo: input.assignedTo,
