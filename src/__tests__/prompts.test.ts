@@ -427,6 +427,25 @@ describe('PromptHandler', () => {
         expect(searchParams.extra).toBeUndefined();
       });
 
+      it('should keep the activity timestamp example internally consistent', async () => {
+        const request = {
+          method: 'prompts/get',
+          params: {
+            name: 'list-inbox-activity',
+            arguments: {
+              inboxId: 'inbox-123',
+              hours: 12,
+            }
+          }
+        };
+
+        const result = await promptHandler.getPrompt(request);
+        const promptText = result.messages[0].content.text;
+
+        expect(promptText).toContain('If current time is "2025-06-11T15:04:00Z" and hours is 12');
+        expect(promptText).toContain('then 12 hours ago would be "2025-06-11T03:04:00Z"');
+      });
+
       it('should include thread details when includeThreads is true', async () => {
         const request = {
           method: 'prompts/get',

@@ -9,6 +9,13 @@ export class PromptHandler {
       .join('\n');
   }
 
+  private exampleHoursAgo(hours: number): string {
+    const exampleNow = new Date('2025-06-11T15:04:00Z');
+    return new Date(exampleNow.getTime() - hours * 60 * 60 * 1000)
+      .toISOString()
+      .replace(/\.\d{3}Z$/, 'Z');
+  }
+
   private parsePositiveHours(value: unknown): number | null {
     if (typeof value !== 'number' && typeof value !== 'string') {
       return null;
@@ -436,8 +443,8 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 
 2. Calculate the timestamp ${hours} hours ago from the current time.
    - Subtract ${hours} hours from the current timestamp
-   - Example: If current time is "2025-06-11T15:04:00Z" and hours is 24, 
-     then ${hours} hours ago would be "${new Date(new Date().getTime() - hours * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z')}"
+   - Example: If current time is "2025-06-11T15:04:00Z" and hours is ${hours},
+     then ${hours} hours ago would be "${this.exampleHoursAgo(hours)}"
 
 3. Search for conversations in the specified inbox using the "searchConversations" tool:
    \`\`\`json

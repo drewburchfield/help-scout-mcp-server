@@ -11,7 +11,7 @@ const MCP_RESPONSE_TIMEOUT_MS = 30_000;
 function loadEnvFile() {
   const envPath = path.join(__dirname, '..', '.env');
   if (!fs.existsSync(envPath)) {
-    throw new Error('Missing .env file. Copy .env.example to .env and add Help Scout OAuth credentials.');
+    return process.env;
   }
 
   const env = {};
@@ -288,3 +288,4 @@ if (require.main === module) {
 }
 
 module.exports = DockerLiveTester;
+module.exports.loadEnvFile = loadEnvFile;

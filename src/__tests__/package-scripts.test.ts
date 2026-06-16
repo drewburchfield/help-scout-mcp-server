@@ -51,6 +51,25 @@ describe('package scripts', () => {
     }
   });
 
+  it('lets Docker live testing use process environment credentials without a .env file', () => {
+    const result = spawnSync('node', [
+      '-e',
+      [
+        'process.env.HELPSCOUT_APP_ID="env-app";',
+        'process.env.HELPSCOUT_APP_SECRET="env-secret";',
+        'const { loadEnvFile } = require("./tests/test-docker.cjs");',
+        'const env = loadEnvFile();',
+        'process.stdout.write(`${env.HELPSCOUT_APP_ID}:${env.HELPSCOUT_APP_SECRET}`);',
+      ].join(''),
+    ], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('env-app:env-secret');
+  });
+
   it('guards sync:plugin when the target checkout has local files', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'helpscout-sync-plugin-'));
     const pluginDir = path.join(tempRoot, 'helpscout-navigator');
