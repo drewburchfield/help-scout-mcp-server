@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(93);
+      expect(tools).toHaveLength(101);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -56,6 +56,7 @@ describe('ToolHandler', () => {
         'getThreadsV3',
         'getServerTime',
         'listAllInboxes',
+        'getInbox',
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
         'structuredConversationFilter',
@@ -63,6 +64,12 @@ describe('ToolHandler', () => {
         'listCustomers',
         'searchCustomersByEmail',
         'getCustomerContacts',
+        'getCustomerAddress',
+        'listCustomerEmails',
+        'listCustomerPhones',
+        'listCustomerChats',
+        'listCustomerSocialProfiles',
+        'listCustomerWebsites',
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',
@@ -127,6 +134,7 @@ describe('ToolHandler', () => {
         'getPhoneReport',
         'listDocsSites',
         'getDocsSite',
+        'getDocsSiteRestrictions',
         'listDocsCollections',
         'getDocsCollection',
         'listDocsCategories',
@@ -252,6 +260,42 @@ describe('ToolHandler', () => {
         title: 'Acme Help Center',
       }));
       expect(response.pagination).toEqual(expect.objectContaining({ page: 1, pages: 1, count: 1 }));
+    });
+
+    it('should get Docs site restrictions and redact shared secrets', async () => {
+      nock(docsBaseURL, {
+        reqheaders: {
+          authorization: docsAuthHeader,
+        },
+      })
+        .get('/sites/site_123/restricted')
+        .reply(200, {
+          enabled: true,
+          authentication: 'CALLBACK',
+          callbackConfiguration: {
+            signInUrl: 'https://example.com/signin',
+            sharedSecret: 'super-secret-value',
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getDocsSiteRestrictions',
+          arguments: { siteId: 'site_123' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.siteId).toBe('site_123');
+      expect(response.restrictions).toEqual(expect.objectContaining({
+        enabled: true,
+        authentication: 'CALLBACK',
+      }));
+      expect(response.restrictions.callbackConfiguration.sharedSecret).toBe('[redacted]');
+      expect(response.restrictions.callbackConfiguration.hasSharedSecret).toBe(true);
+      expect(JSON.stringify(response)).not.toContain('super-secret-value');
     });
 
     it('should search Docs articles with query filters', async () => {
@@ -438,6 +482,41 @@ describe('ToolHandler', () => {
       expect(response.nextSteps).toBeDefined();
       expect(response.totalInboxes).toBe(2);
     });
+
+    it('should get one inbox by ID', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402')
+        .reply(200, {
+          id: 359402,
+          name: 'Client Support',
+          slug: 'client-support',
+          email: 'support@example.com',
+          createdAt: '2023-01-01T00:00:00Z',
+          updatedAt: '2023-01-02T00:00:00Z',
+          _links: {
+            self: { href: 'https://api.helpscout.net/v2/mailboxes/359402' },
+            folders: { href: 'https://api.helpscout.net/v2/mailboxes/359402/folders' },
+            fields: { href: 'https://api.helpscout.net/v2/mailboxes/359402/fields' },
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getInbox',
+          arguments: { inboxId: '359402' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.inbox).toEqual(expect.objectContaining({
+        id: 359402,
+        name: 'Client Support',
+        email: 'support@example.com',
+      }));
+      expect(response.usage).toContain('listInboxFolders');
+    });
   });
 
   describe('searchInboxes', () => {
@@ -480,6 +559,72 @@ describe('ToolHandler', () => {
       const response = JSON.parse(textContent.text);
       expect(response.results).toHaveLength(1);
       expect(response.results[0].name).toBe('Support Inbox');
+    });
+  });
+
+  describe('customer contact sub-resource tools', () => {
+    it('should expose direct customer contact reads without fetching the aggregate bundle', async () => {
+      nock(baseURL)
+        .get('/customers/123/address')
+        .reply(200, {
+          city: 'Dallas',
+          state: 'TX',
+          postalCode: '74206',
+          country: 'US',
+          lines: ['123 West Main St', 'Suite 123'],
+        });
+      nock(baseURL)
+        .get('/customers/123/emails')
+        .reply(200, { _embedded: { emails: [{ id: 1, value: 'ada@example.com', type: 'work' }] } });
+      nock(baseURL)
+        .get('/customers/123/phones')
+        .reply(200, { _embedded: { phones: [{ id: 2, value: '222-333-4444', type: 'mobile' }] } });
+      nock(baseURL)
+        .get('/customers/123/chats')
+        .reply(200, { _embedded: { chats: [{ id: 3, value: 'ada-chat', type: 'aim' }] } });
+      nock(baseURL)
+        .get('/customers/123/social-profiles')
+        .reply(200, { _embedded: { social_profiles: [{ id: 4, value: 'ada-lovelace', type: 'twitter' }] } });
+      nock(baseURL)
+        .get('/customers/123/websites')
+        .reply(200, { _embedded: { websites: [{ id: 5, value: 'https://example.com' }] } });
+
+      const call = async (name: string) => {
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name,
+            arguments: { customerId: '123' },
+          },
+        });
+        expect(result.isError).toBeUndefined();
+        return JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      };
+
+      await expect(call('getCustomerAddress')).resolves.toEqual(expect.objectContaining({
+        customerId: '123',
+        address: expect.objectContaining({ city: 'Dallas', country: 'US' }),
+      }));
+      await expect(call('listCustomerEmails')).resolves.toEqual(expect.objectContaining({
+        emails: [expect.objectContaining({ id: 1, value: 'ada@example.com', type: 'work' })],
+        total: 1,
+      }));
+      await expect(call('listCustomerPhones')).resolves.toEqual(expect.objectContaining({
+        phones: [expect.objectContaining({ id: 2, value: '222-333-4444', type: 'mobile' })],
+        total: 1,
+      }));
+      await expect(call('listCustomerChats')).resolves.toEqual(expect.objectContaining({
+        chats: [expect.objectContaining({ id: 3, value: 'ada-chat', type: 'aim' })],
+        total: 1,
+      }));
+      await expect(call('listCustomerSocialProfiles')).resolves.toEqual(expect.objectContaining({
+        socialProfiles: [expect.objectContaining({ id: 4, value: 'ada-lovelace', type: 'twitter' })],
+        total: 1,
+      }));
+      await expect(call('listCustomerWebsites')).resolves.toEqual(expect.objectContaining({
+        websites: [expect.objectContaining({ id: 5, value: 'https://example.com' })],
+        total: 1,
+      }));
     });
   });
 

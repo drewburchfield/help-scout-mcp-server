@@ -190,6 +190,7 @@ export const CustomerSchema = z.object({
     phones: z.array(ContactEntrySchema).optional(),
     chats: z.array(ContactEntrySchema).optional(),
     social_profiles: z.array(ContactEntrySchema).optional(),
+    'social-profiles': z.array(ContactEntrySchema).optional(),
     websites: z.array(z.object({ id: z.number(), value: z.string() })).optional(),
     properties: z.array(z.object({
       type: z.string().optional(),
@@ -707,8 +708,19 @@ export const GetCustomerContactsInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, 'Customer ID must be numeric').describe('Customer ID'),
 });
 
+export const GetCustomerAddressInputSchema = GetCustomerContactsInputSchema;
+export const ListCustomerEmailsInputSchema = GetCustomerContactsInputSchema;
+export const ListCustomerPhonesInputSchema = GetCustomerContactsInputSchema;
+export const ListCustomerChatsInputSchema = GetCustomerContactsInputSchema;
+export const ListCustomerSocialProfilesInputSchema = GetCustomerContactsInputSchema;
+export const ListCustomerWebsitesInputSchema = GetCustomerContactsInputSchema;
+
 export const ListAllInboxesInputSchema = z.object({
   limit: z.number().int().min(1).max(100).default(100),
+});
+
+export const GetInboxInputSchema = z.object({
+  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
 });
 
 export const ListTagsInputSchema = z.object({
@@ -828,6 +840,8 @@ export const ListDocsSitesInputSchema = DocsPageInputSchema;
 export const GetDocsSiteInputSchema = z.object({
   siteId: DocsIdSchema.describe('Docs site ID'),
 });
+
+export const GetDocsSiteRestrictionsInputSchema = GetDocsSiteInputSchema;
 
 export const ListDocsCollectionsInputSchema = DocsPageInputSchema.extend({
   siteId: DocsIdSchema.describe('Docs site ID').optional(),
@@ -960,7 +974,14 @@ export type ListCustomerPropertiesInput = z.infer<typeof ListCustomerPropertiesI
 export type ListOrganizationPropertiesInput = z.infer<typeof ListOrganizationPropertiesInputSchema>;
 export type GetOrganizationPropertyInput = z.infer<typeof GetOrganizationPropertyInputSchema>;
 export type GetCustomerContactsInput = z.infer<typeof GetCustomerContactsInputSchema>;
+export type GetCustomerAddressInput = z.infer<typeof GetCustomerAddressInputSchema>;
+export type ListCustomerEmailsInput = z.infer<typeof ListCustomerEmailsInputSchema>;
+export type ListCustomerPhonesInput = z.infer<typeof ListCustomerPhonesInputSchema>;
+export type ListCustomerChatsInput = z.infer<typeof ListCustomerChatsInputSchema>;
+export type ListCustomerSocialProfilesInput = z.infer<typeof ListCustomerSocialProfilesInputSchema>;
+export type ListCustomerWebsitesInput = z.infer<typeof ListCustomerWebsitesInputSchema>;
 export type ListAllInboxesInput = z.infer<typeof ListAllInboxesInputSchema>;
+export type GetInboxInput = z.infer<typeof GetInboxInputSchema>;
 export type ListTagsInput = z.infer<typeof ListTagsInputSchema>;
 export type GetTagInput = z.infer<typeof GetTagInputSchema>;
 export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
@@ -986,6 +1007,7 @@ export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;
 export type GetSatisfactionRatingInput = z.infer<typeof GetSatisfactionRatingInputSchema>;
 export type ListDocsSitesInput = z.infer<typeof ListDocsSitesInputSchema>;
 export type GetDocsSiteInput = z.infer<typeof GetDocsSiteInputSchema>;
+export type GetDocsSiteRestrictionsInput = z.infer<typeof GetDocsSiteRestrictionsInputSchema>;
 export type ListDocsCollectionsInput = z.infer<typeof ListDocsCollectionsInputSchema>;
 export type GetDocsCollectionInput = z.infer<typeof GetDocsCollectionInputSchema>;
 export type ListDocsCategoriesInput = z.infer<typeof ListDocsCategoriesInputSchema>;

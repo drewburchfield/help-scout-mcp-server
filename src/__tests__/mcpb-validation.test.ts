@@ -67,8 +67,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 93 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(93);
+    it('should have all 101 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(101);
 
       const expectedTools = [
         'searchInboxes',
@@ -82,11 +82,18 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
         'listAllInboxes',
+        'getInbox',
         'structuredConversationFilter',
         'getCustomer',
         'listCustomers',
         'searchCustomersByEmail',
         'getCustomerContacts',
+        'getCustomerAddress',
+        'listCustomerEmails',
+        'listCustomerPhones',
+        'listCustomerChats',
+        'listCustomerSocialProfiles',
+        'listCustomerWebsites',
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',
@@ -151,6 +158,7 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getPhoneReport',
         'listDocsSites',
         'getDocsSite',
+        'getDocsSiteRestrictions',
         'listDocsCollections',
         'getDocsCollection',
         'listDocsCategories',
@@ -331,10 +339,17 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getServerTime',
         'advancedConversationSearch',
         'comprehensiveConversationSearch',
+        'getInbox',
         'getCustomer',
         'listCustomers',
         'searchCustomersByEmail',
         'getCustomerContacts',
+        'getCustomerAddress',
+        'listCustomerEmails',
+        'listCustomerPhones',
+        'listCustomerChats',
+        'listCustomerSocialProfiles',
+        'listCustomerWebsites',
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',
@@ -345,7 +360,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getUserStatus',
         'getInboxRouting',
         'getOriginalSourceRfc822',
-        'downloadAttachmentFile'
+        'downloadAttachmentFile',
+        'getDocsSiteRestrictions'
       ];
 
       expectedExports.forEach(exportName => {

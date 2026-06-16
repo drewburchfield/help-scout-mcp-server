@@ -45,7 +45,14 @@ import {
   ListCustomersInputSchema,
   SearchCustomersByEmailInputSchema,
   GetCustomerContactsInputSchema,
+  GetCustomerAddressInputSchema,
+  ListCustomerEmailsInputSchema,
+  ListCustomerPhonesInputSchema,
+  ListCustomerChatsInputSchema,
+  ListCustomerSocialProfilesInputSchema,
+  ListCustomerWebsitesInputSchema,
   ListAllInboxesInputSchema,
+  GetInboxInputSchema,
   GetOrganizationInputSchema,
   ListOrganizationsInputSchema,
   GetOrganizationMembersInputSchema,
@@ -110,6 +117,7 @@ import {
   GetUserChatReportInputSchema,
   ListDocsSitesInputSchema,
   GetDocsSiteInputSchema,
+  GetDocsSiteRestrictionsInputSchema,
   ListDocsCollectionsInputSchema,
   GetDocsCollectionInputSchema,
   ListDocsCategoriesInputSchema,
@@ -641,6 +649,20 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getInbox',
+        description: 'Get one Help Scout inbox by ID, including inbox email and resource links.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            inboxId: {
+              type: 'string',
+              description: 'Inbox ID from listAllInboxes or server instructions',
+            },
+          },
+          required: ['inboxId'],
+        },
+      },
+      {
         name: 'advancedConversationSearch',
         description: 'Filter conversations by email domain, customer email, or multiple tags. Supports boolean logic for complex queries. For simple keyword search, use comprehensiveConversationSearch.',
         inputSchema: {
@@ -855,6 +877,72 @@ export class ToolHandler {
               type: 'string',
               description: 'Customer ID',
             },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'getCustomerAddress',
+        description: 'Get the address sub-resource for a customer by customer ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'listCustomerEmails',
+        description: 'List email contact sub-resources for a customer by customer ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'listCustomerPhones',
+        description: 'List phone contact sub-resources for a customer by customer ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'listCustomerChats',
+        description: 'List chat handle contact sub-resources for a customer by customer ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'listCustomerSocialProfiles',
+        description: 'List social profile contact sub-resources for a customer by customer ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
+          },
+          required: ['customerId'],
+        },
+      },
+      {
+        name: 'listCustomerWebsites',
+        description: 'List website contact sub-resources for a customer by customer ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
           },
           required: ['customerId'],
         },
@@ -1831,6 +1919,17 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getDocsSiteRestrictions',
+        description: 'Get Help Scout Docs restricted-site settings by site ID, with secrets redacted.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            siteId: { type: 'string', description: 'Docs site ID from listDocsSites' },
+          },
+          required: ['siteId'],
+        },
+      },
+      {
         name: 'listDocsCollections',
         description: 'List Help Scout Docs collections, optionally scoped to a site.',
         inputSchema: {
@@ -2085,6 +2184,9 @@ export class ToolHandler {
         case 'listAllInboxes':
           result = await this.listAllInboxes(request.params.arguments || {});
           break;
+        case 'getInbox':
+          result = await this.getInbox(request.params.arguments || {});
+          break;
         case 'advancedConversationSearch':
           result = await this.advancedConversationSearch(request.params.arguments || {});
           break;
@@ -2105,6 +2207,24 @@ export class ToolHandler {
           break;
         case 'getCustomerContacts':
           result = await this.getCustomerContacts(request.params.arguments || {});
+          break;
+        case 'getCustomerAddress':
+          result = await this.getCustomerAddress(request.params.arguments || {});
+          break;
+        case 'listCustomerEmails':
+          result = await this.listCustomerEmails(request.params.arguments || {});
+          break;
+        case 'listCustomerPhones':
+          result = await this.listCustomerPhones(request.params.arguments || {});
+          break;
+        case 'listCustomerChats':
+          result = await this.listCustomerChats(request.params.arguments || {});
+          break;
+        case 'listCustomerSocialProfiles':
+          result = await this.listCustomerSocialProfiles(request.params.arguments || {});
+          break;
+        case 'listCustomerWebsites':
+          result = await this.listCustomerWebsites(request.params.arguments || {});
           break;
         case 'getOrganization':
           result = await this.getOrganization(request.params.arguments || {});
@@ -2297,6 +2417,9 @@ export class ToolHandler {
           break;
         case 'getDocsSite':
           result = await this.getDocsSite(request.params.arguments || {});
+          break;
+        case 'getDocsSiteRestrictions':
+          result = await this.getDocsSiteRestrictions(request.params.arguments || {});
           break;
         case 'listDocsCollections':
           result = await this.listDocsCollections(request.params.arguments || {});
@@ -2815,6 +2938,21 @@ export class ToolHandler {
           }, null, 2),
         },
       ],
+    };
+  }
+
+  private async getInbox(args: unknown): Promise<CallToolResult> {
+    const input = GetInboxInputSchema.parse(args);
+    const inbox = await helpScoutClient.get<Inbox>(`/mailboxes/${input.inboxId}`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          inbox,
+          usage: 'Use inbox.id with conversation searches, listInboxFolders, listInboxCustomFields, getInboxRouting, or saved reply tools.',
+        }, null, 2),
+      }],
     };
   }
 
@@ -3716,6 +3854,19 @@ export class ToolHandler {
     };
   }
 
+  private redactDocsSiteRestrictions(data: Record<string, unknown>): Record<string, unknown> {
+    const clone = structuredClone(data) as Record<string, unknown>;
+    const callbackConfiguration = clone.callbackConfiguration;
+    if (callbackConfiguration && typeof callbackConfiguration === 'object' && !Array.isArray(callbackConfiguration)) {
+      const configRecord = callbackConfiguration as Record<string, unknown>;
+      if (typeof configRecord.sharedSecret === 'string' && configRecord.sharedSecret.length > 0) {
+        configRecord.sharedSecret = '[redacted]';
+        configRecord.hasSharedSecret = true;
+      }
+    }
+    return clone;
+  }
+
   private async listDocsSites(args: unknown): Promise<CallToolResult> {
     const input = ListDocsSitesInputSchema.parse(args);
     const response = await helpScoutDocsClient.get<DocsCollectionEnvelope<Record<string, unknown>>>('/sites', {
@@ -3732,7 +3883,17 @@ export class ToolHandler {
     const response = await helpScoutDocsClient.get<{ site: Record<string, unknown> }>(`/sites/${input.siteId}`);
     return this.docsTextResponse({
       site: response.site,
-      usage: 'Use site.id with listDocsCollections and listDocsRedirects.',
+      usage: 'Use site.id with listDocsCollections, listDocsRedirects, and getDocsSiteRestrictions.',
+    });
+  }
+
+  private async getDocsSiteRestrictions(args: unknown): Promise<CallToolResult> {
+    const input = GetDocsSiteRestrictionsInputSchema.parse(args);
+    const response = await helpScoutDocsClient.get<Record<string, unknown>>(`/sites/${input.siteId}/restricted`);
+    return this.docsTextResponse({
+      siteId: input.siteId,
+      restrictions: this.redactDocsSiteRestrictions(response),
+      usage: 'Use restrictions.enabled and authentication to understand Docs access controls. callbackConfiguration.sharedSecret is always redacted.',
     });
   }
 
@@ -4665,6 +4826,14 @@ export class ToolHandler {
     return address as unknown as Record<string, unknown>;
   }
 
+  private formatContactEntry(entry: { id: number; value: string; type?: string }): Record<string, unknown> {
+    return {
+      id: entry.id,
+      value: entry.value,
+      ...(entry.type ? { type: entry.type } : {}),
+    };
+  }
+
   private formatCustomer(customer: Customer): Record<string, unknown> {
     return customer as unknown as Record<string, unknown>;
   }
@@ -4827,6 +4996,18 @@ export class ToolHandler {
   }
 
   // NAS-727: Customer sub-resource contacts tool
+  private extractContactEntries(
+    data: { _embedded?: Record<string, Array<{ id: number; value: string; type?: string }>> } | null,
+    ...embeddedKeys: string[]
+  ): Array<{ id: number; value: string; type?: string }> {
+    if (!data?._embedded) return [];
+    for (const key of embeddedKeys) {
+      const entries = data._embedded[key];
+      if (entries) return entries;
+    }
+    return [];
+  }
+
   private async getCustomerContacts(args: unknown): Promise<CallToolResult> {
     const input = GetCustomerContactsInputSchema.parse(args);
     const cid = input.customerId;
@@ -4836,7 +5017,7 @@ export class ToolHandler {
       helpScoutClient.get<{ _embedded?: { emails?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/emails`),
       helpScoutClient.get<{ _embedded?: { phones?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/phones`),
       helpScoutClient.get<{ _embedded?: { chats?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/chats`),
-      helpScoutClient.get<{ _embedded?: { social_profiles?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/social-profiles`),
+      helpScoutClient.get<{ _embedded?: Record<string, Array<{ id: number; value: string; type: string }>> }>(`/customers/${cid}/social-profiles`),
       helpScoutClient.get<{ _embedded?: { websites?: Array<{ id: number; value: string }> } }>(`/customers/${cid}/websites`),
       helpScoutClient.get<CustomerAddress>(`/customers/${cid}/address`),
     ]);
@@ -4861,16 +5042,12 @@ export class ToolHandler {
     const websites = extract(websitesRes, 'websites');
     const address = extract(addressRes, 'address');
 
-    const formatEntry = (e: { id: number; value: string; type?: string }) => ({
-      id: e.id, value: e.value, ...(e.type ? { type: e.type } : {}),
-    });
-
     const result: Record<string, unknown> = {
       customerId: cid,
-      emails: emails.data ? (emails.data._embedded?.emails || []).map(formatEntry) : [],
-      phones: phones.data ? (phones.data._embedded?.phones || []).map(formatEntry) : [],
-      chats: chats.data ? (chats.data._embedded?.chats || []).map(formatEntry) : [],
-      socialProfiles: social.data ? (social.data._embedded?.social_profiles || []).map(formatEntry) : [],
+      emails: emails.data ? (emails.data._embedded?.emails || []).map((entry) => this.formatContactEntry(entry)) : [],
+      phones: phones.data ? (phones.data._embedded?.phones || []).map((entry) => this.formatContactEntry(entry)) : [],
+      chats: chats.data ? (chats.data._embedded?.chats || []).map((entry) => this.formatContactEntry(entry)) : [],
+      socialProfiles: this.extractContactEntries(social.data, 'social-profiles', 'social_profiles').map((entry) => this.formatContactEntry(entry)),
       websites: websites.data ? (websites.data._embedded?.websites || []).map(e => ({ id: e.id, value: e.value })) : [],
       address: address.data ? this.formatAddress(address.data as CustomerAddress) : null,
     };
@@ -4902,6 +5079,79 @@ export class ToolHandler {
         }, null, 2),
       }],
     };
+  }
+
+  private async getCustomerAddress(args: unknown): Promise<CallToolResult> {
+    const input = GetCustomerAddressInputSchema.parse(args);
+    const address = await helpScoutClient.get<CustomerAddress>(`/customers/${input.customerId}/address`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          customerId: input.customerId,
+          address: this.formatAddress(address),
+          usage: 'Use this when only the customer address is needed; use getCustomerContacts for the aggregate contact view.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listCustomerContactResource(
+    args: unknown,
+    schema: z.ZodType<{ customerId: string }>,
+    resourcePath: string,
+    embeddedKey: 'emails' | 'phones' | 'chats' | 'social-profiles' | 'social_profiles' | 'websites',
+    outputKey: 'emails' | 'phones' | 'chats' | 'socialProfiles' | 'websites',
+    label: string
+  ): Promise<CallToolResult> {
+    const input = schema.parse(args);
+    const response = await helpScoutClient.get<{
+      _embedded?: Record<string, Array<{ id: number; value: string; type?: string }>>;
+    }>(`/customers/${input.customerId}/${resourcePath}`);
+    const entries = embeddedKey === 'social-profiles'
+      ? this.extractContactEntries(response, 'social-profiles', 'social_profiles')
+      : this.extractContactEntries(response, embeddedKey);
+    const formatted = entries.map((entry) => this.formatContactEntry(entry));
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          customerId: input.customerId,
+          [outputKey]: formatted,
+          total: formatted.length,
+          usage: `Use these ${label} with getCustomer for profile context, or getCustomerContacts when the full contact bundle is needed.`,
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async listCustomerEmails(args: unknown): Promise<CallToolResult> {
+    return this.listCustomerContactResource(args, ListCustomerEmailsInputSchema, 'emails', 'emails', 'emails', 'email contacts');
+  }
+
+  private async listCustomerPhones(args: unknown): Promise<CallToolResult> {
+    return this.listCustomerContactResource(args, ListCustomerPhonesInputSchema, 'phones', 'phones', 'phones', 'phone contacts');
+  }
+
+  private async listCustomerChats(args: unknown): Promise<CallToolResult> {
+    return this.listCustomerContactResource(args, ListCustomerChatsInputSchema, 'chats', 'chats', 'chats', 'chat handles');
+  }
+
+  private async listCustomerSocialProfiles(args: unknown): Promise<CallToolResult> {
+    return this.listCustomerContactResource(
+      args,
+      ListCustomerSocialProfilesInputSchema,
+      'social-profiles',
+      'social-profiles',
+      'socialProfiles',
+      'social profiles'
+    );
+  }
+
+  private async listCustomerWebsites(args: unknown): Promise<CallToolResult> {
+    return this.listCustomerContactResource(args, ListCustomerWebsitesInputSchema, 'websites', 'websites', 'websites', 'websites');
   }
 
   // ── Organization Tools (NAS-684, NAS-712) ──
