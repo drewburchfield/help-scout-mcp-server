@@ -275,6 +275,12 @@ describe('ToolHandler', () => {
           callbackConfiguration: {
             signInUrl: 'https://example.com/signin',
             sharedSecret: 'super-secret-value',
+            nested: {
+              accessToken: 'token-value',
+            },
+          },
+          passwordConfiguration: {
+            password: 'password-value',
           },
         });
 
@@ -295,7 +301,11 @@ describe('ToolHandler', () => {
       }));
       expect(response.restrictions.callbackConfiguration.sharedSecret).toBe('[redacted]');
       expect(response.restrictions.callbackConfiguration.hasSharedSecret).toBe(true);
+      expect(response.restrictions.callbackConfiguration.nested.accessToken).toBe('[redacted]');
+      expect(response.restrictions.passwordConfiguration.password).toBe('[redacted]');
       expect(JSON.stringify(response)).not.toContain('super-secret-value');
+      expect(JSON.stringify(response)).not.toContain('token-value');
+      expect(JSON.stringify(response)).not.toContain('password-value');
     });
 
     it('should search Docs articles with query filters', async () => {
@@ -625,6 +635,25 @@ describe('ToolHandler', () => {
         websites: [expect.objectContaining({ id: 5, value: 'https://example.com' })],
         total: 1,
       }));
+    });
+
+    it('should return null for customer address when no address is on file', async () => {
+      nock(baseURL)
+        .get('/customers/123/address')
+        .reply(404, { message: 'Not found' });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getCustomerAddress',
+          arguments: { customerId: '123' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.address).toBeNull();
+      expect(response.note).toContain('No address on file');
     });
   });
 

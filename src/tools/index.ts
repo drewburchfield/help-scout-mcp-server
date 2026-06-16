@@ -3856,14 +3856,28 @@ export class ToolHandler {
 
   private redactDocsSiteRestrictions(data: Record<string, unknown>): Record<string, unknown> {
     const clone = structuredClone(data) as Record<string, unknown>;
-    const callbackConfiguration = clone.callbackConfiguration;
-    if (callbackConfiguration && typeof callbackConfiguration === 'object' && !Array.isArray(callbackConfiguration)) {
-      const configRecord = callbackConfiguration as Record<string, unknown>;
-      if (typeof configRecord.sharedSecret === 'string' && configRecord.sharedSecret.length > 0) {
-        configRecord.sharedSecret = '[redacted]';
-        configRecord.hasSharedSecret = true;
+
+    const redact = (value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach(redact);
+        return;
       }
-    }
+
+      const record = value as Record<string, unknown>;
+      for (const [key, nestedValue] of Object.entries(record)) {
+        if (/secret|password|token|credential/i.test(key) && typeof nestedValue === 'string' && nestedValue.length > 0) {
+          record[key] = '[redacted]';
+          if (key === 'sharedSecret') {
+            record.hasSharedSecret = true;
+          }
+        } else {
+          redact(nestedValue);
+        }
+      }
+    };
+
+    redact(clone);
     return clone;
   }
 
@@ -5083,14 +5097,26 @@ export class ToolHandler {
 
   private async getCustomerAddress(args: unknown): Promise<CallToolResult> {
     const input = GetCustomerAddressInputSchema.parse(args);
-    const address = await helpScoutClient.get<CustomerAddress>(`/customers/${input.customerId}/address`);
+    let address: CustomerAddress | null = null;
+    let note: string | undefined;
+
+    try {
+      address = await helpScoutClient.get<CustomerAddress>(`/customers/${input.customerId}/address`);
+    } catch (error) {
+      if (isApiError(error) && error.code === 'NOT_FOUND') {
+        note = 'No address on file for this customer.';
+      } else {
+        throw error;
+      }
+    }
 
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
           customerId: input.customerId,
-          address: this.formatAddress(address),
+          address: address ? this.formatAddress(address) : null,
+          ...(note ? { note } : {}),
           usage: 'Use this when only the customer address is needed; use getCustomerContacts for the aggregate contact view.',
         }, null, 2),
       }],
