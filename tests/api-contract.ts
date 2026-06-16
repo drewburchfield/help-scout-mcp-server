@@ -237,6 +237,13 @@ const cases: ContractCase[] = [
     schema: CustomerSchema,
   },
   {
+    name: 'GET /v3/customers',
+    endpoint: 'https://api.helpscout.net/v3/customers',
+    extract: (response) => embedded(response, 'customers'),
+    after: (items) => { ctx.customerId = ctx.customerId ?? firstId(items); },
+    schema: CustomerSchema,
+  },
+  {
     name: 'GET /v2/customers/{id}',
     endpoint: '',
     skipIf: (context) => context.customerId ? undefined : 'No customer available from list/conversation response',

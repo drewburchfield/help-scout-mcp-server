@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(101);
+      expect(tools).toHaveLength(102);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -62,6 +62,7 @@ describe('ToolHandler', () => {
         'structuredConversationFilter',
         'getCustomer',
         'listCustomers',
+        'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
         'getCustomerAddress',

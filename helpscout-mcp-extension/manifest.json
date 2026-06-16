@@ -173,6 +173,10 @@
       "description": "List customers by name or advanced query syntax using the v2 Customers API"
     },
     {
+      "name": "listCustomersV3",
+      "description": "List customers by name, email, query syntax, or cursor using the v3 Customers API"
+    },
+    {
       "name": "searchCustomersByEmail",
       "description": "Search customers by email address using the cursor-based v3 Customers API"
     },

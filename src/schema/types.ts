@@ -664,6 +664,16 @@ export const ListCustomersInputSchema = z.object({
   page: z.number().int().min(1).default(1),
 });
 
+export const ListCustomersV3InputSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  email: z.string().optional().describe('Email address filter'),
+  createdSince: z.string().optional().describe('ISO 8601 date - only customers created after this date'),
+  modifiedSince: z.string().optional().describe('ISO 8601 date - only customers modified after this date'),
+  query: z.string().optional().describe('Advanced v3 query syntax, e.g. (email:"john@example.com")'),
+  cursor: z.string().trim().min(1, 'Cursor cannot be empty').optional().describe('Cursor for v3 pagination (from nextCursor in previous response)'),
+});
+
 export const SearchCustomersByEmailInputSchema = z.object({
   email: z.string().describe('Email address to search for'),
   firstName: z.string().optional(),

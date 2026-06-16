@@ -106,6 +106,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 | Complex filters (email domain, multiple tags) | advancedConversationSearch |
 | Lookup by ticket number (#12345) | structuredConversationFilter |
 | Browse customers by name or query | listCustomers |
+| Browse customers with v3 cursor filters | listCustomersV3 |
 | Find a customer by email | searchCustomersByEmail |
 | Get a full customer profile | getCustomer |
 | Get customer contact channels | getCustomerContacts |
@@ -123,7 +124,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 ## Workflow Patterns
 - **Ticket investigation**: searchConversations → getConversation/getConversationSummary → getThreads
 - **Keyword research**: comprehensiveConversationSearch → getThreads for details
-- **Customer history**: searchCustomersByEmail → getCustomer → structuredConversationFilter/getThreads
+- **Customer history**: listCustomersV3/searchCustomersByEmail → getCustomer → structuredConversationFilter/getThreads
 - **Account review**: listOrganizations/getOrganization → getOrganizationMembers → getOrganizationConversations
 
 ## Notes

@@ -109,10 +109,112 @@ Use names that match support workflows:
 - `getX` for direct ID or slug lookups.
 - `searchX` for user-entered query or filter workflows.
 - `summarizeX` only when the server creates a derived support summary.
+- Write-capable tools must use explicit verbs that name the mutation:
+  `createX`, `updateX`, `deleteX`, `setX`, `removeX`, `uploadX`, `runX`, or
+  another Help Scout-aligned verb when those are more precise.
 
 Avoid exposing raw Help Scout endpoint names when a workflow name is clearer.
-Avoid adding write verbs until write/automation tools have a separate permission
-and consent model.
+Avoid adding write verbs until the write-tool contract below is satisfied.
+
+## Write Tool Contract
+
+Write tools are direct Help Scout API parity tools. They are not operator
+workflow products, MCP Apps views, or hidden multi-step automations. Each write
+tool should map to one Help Scout mutation endpoint or one tightly scoped API
+operation family.
+
+### Mutation Classes
+
+Classify each write tool in its implementation notes, tests, and dogfood plan:
+
+- `nonDestructive`: creates disposable data or updates a reversible test
+  record without external customer visibility.
+- `reversible`: changes Help Scout state but can be restored by a documented
+  API call in the same dogfood lifecycle.
+- `externallyVisible`: can notify customers, publish Docs content, expose a
+  redirect, trigger a webhook, run a workflow, or otherwise affect people
+  outside the test process.
+- `destructive`: deletes records, removes contact paths, disables workflows,
+  removes redirects, deletes Docs content, or makes recovery impossible through
+  the same tool family.
+
+Externally visible and destructive tools require explicit confirmation metadata.
+
+### Confirmation Metadata
+
+For destructive or externally visible operations, the input schema must include
+confirmation fields that are hard to satisfy accidentally:
+
+```json
+{
+  "confirm": true,
+  "confirmOperation": "deleteCustomer",
+  "targetId": "12345"
+}
+```
+
+The exact confirmation string should name the operation and target. The tool
+must reject calls with missing, false, or mismatched confirmation before making a
+Help Scout request. Confirmation requirements belong in the tool description and
+validation tests.
+
+### Dry Run And Preview
+
+Use dry-run behavior only when it can be honest:
+
+- If the Help Scout API supports previewing or validating without mutation, call
+  the supported API path.
+- If no preview API exists, a `dryRun` mode may validate inputs and report the
+  request that would be sent, but it must clearly say that Help Scout state was
+  not checked.
+- Do not fake success by simulating Help Scout side effects locally.
+
+### Result Envelopes
+
+Write results should use a predictable envelope:
+
+```json
+{
+  "operation": "updateConversation",
+  "mutationClass": "reversible",
+  "target": { "type": "conversation", "id": "12345" },
+  "status": "succeeded",
+  "result": {},
+  "cleanup": {
+    "required": false,
+    "performed": false,
+    "instructions": null
+  }
+}
+```
+
+Validation failures should return model-correctable tool errors without sending
+an upstream request. Partial failures should name which sub-operation succeeded,
+which failed, and what cleanup remains. Never hide a cleanup failure.
+
+### Live Dogfood Lifecycle
+
+Every write-tool PR must prove live behavior against disposable fixtures:
+
+1. Create or discover a test-owned target with an `MCP-TEST:` marker or another
+   deterministic test marker.
+2. Perform the mutation through MCP over stdio, not by calling helper code
+   directly.
+3. Read the target back through an existing read tool or direct API contract
+   check to verify the Help Scout state.
+4. Restore or delete the fixture when the operation is reversible or disposable.
+5. Fail loudly if cleanup cannot be confirmed.
+
+Fixture setup belongs in idempotent seed scripts when it is reusable. PRs must
+update the dogfood fixture matrix with the records they create, reuse, skip, or
+cannot safely clean up.
+
+### Deny And Permission Behavior
+
+Permission errors, plan-limit errors, invalid IDs, and Help Scout validation
+errors are expected API outcomes. Return them as tool errors with the upstream
+status/code and model-correctable guidance. Do not retry non-idempotent writes
+unless the endpoint and request body are explicitly safe to repeat.
 
 ## Boundaries
 

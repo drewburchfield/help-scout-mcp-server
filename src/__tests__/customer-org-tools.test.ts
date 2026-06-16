@@ -256,6 +256,78 @@ describe('Customer & Organization Tools', () => {
     });
   });
 
+  describe('listCustomersV3', () => {
+    it('should list customers through the direct v3 endpoint with official filters and cursor links', async () => {
+      nock('https://api.helpscout.net')
+        .get('/v3/customers')
+        .query((query) => (
+          query.firstName === 'Jane' &&
+          query.lastName === 'Doe' &&
+          query.email === 'jane@example.com' &&
+          query.createdSince === '2024-01-01T00:00:00Z' &&
+          query.modifiedSince === '2024-06-01T00:00:00Z' &&
+          query.query === '(email:"jane@example.com")' &&
+          query.cursor === 'cursor-1'
+        ))
+        .reply(200, {
+          _embedded: {
+            customers: [
+              { id: 1, firstName: 'Jane', lastName: 'Doe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-06-01T00:00:00Z',
+                _embedded: { emails: [{ id: 1, value: 'jane@example.com', type: 'work' }] } },
+            ],
+          },
+          _links: {
+            self: { href: 'https://api.helpscout.net/v3/customers?cursor=cursor-1' },
+            first: { href: 'https://api.helpscout.net/v3/customers' },
+            next: { href: 'https://api.helpscout.net/v3/customers?cursor=cursor-2' },
+          },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('listCustomersV3', {
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane@example.com',
+        createdSince: '2024-01-01T00:00:00Z',
+        modifiedSince: '2024-06-01T00:00:00Z',
+        query: '(email:"jane@example.com")',
+        cursor: 'cursor-1',
+      }));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(1);
+      expect(data.results[0].firstName).toBe('Jane');
+      expect(data.returnedCount).toBe(1);
+      expect(data.links.next.href).toContain('cursor-2');
+      expect(data.nextCursor).toBe('cursor-2');
+      expect(data.pagination.type).toBe('cursor');
+    });
+
+    it('should return an empty v3 customer result shape', async () => {
+      nock('https://api.helpscout.net')
+        .get('/v3/customers')
+        .query(true)
+        .reply(200, {
+          _embedded: { customers: [] },
+          _links: { self: { href: 'https://api.helpscout.net/v3/customers' } },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('listCustomersV3', { firstName: 'Nobody' }));
+      const data = parseResult(result);
+
+      expect(data.results).toEqual([]);
+      expect(data.returnedCount).toBe(0);
+      expect(data.links.self.href).toContain('/v3/customers');
+      expect(data.nextCursor).toBeUndefined();
+    });
+
+    it('should reject whitespace-only cursors before making a request', async () => {
+      const result = await toolHandler.callTool(makeRequest('listCustomersV3', { cursor: '   ' }));
+
+      expect(result.isError).toBe(true);
+      expect(nock.isDone()).toBe(false);
+    });
+  });
+
   describe('getCustomer - error handling', () => {
     it('should propagate 429 rate limit from address endpoint', async () => {
       nock(baseURL)
