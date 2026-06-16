@@ -563,7 +563,7 @@ describe('Customer & Organization Tools', () => {
     const mockEmails = { _embedded: { emails: [{ id: 1, value: 'jane@example.com', type: 'work' }] } };
     const mockPhones = { _embedded: { phones: [{ id: 2, value: '+1-555-0100', type: 'work' }] } };
     const mockChats = { _embedded: { chats: [{ id: 3, value: 'jane.doe', type: 'other' }] } };
-    const mockSocial = { _embedded: { social_profiles: [{ id: 4, value: '@janedoe', type: 'twitter' }] } };
+    const mockSocial = { _embedded: { 'social-profiles': [{ id: 4, value: '@janedoe', type: 'twitter' }] } };
     const mockWebsites = { _embedded: { websites: [{ id: 5, value: 'https://janedoe.com' }] } };
     const mockAddress = { city: 'Nashville', state: 'TN', postalCode: '37201', country: 'US', lines: ['100 Broadway'] };
 
@@ -653,6 +653,19 @@ describe('Customer & Organization Tools', () => {
     it('should reject non-numeric customerId', async () => {
       const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: 'abc' }));
       expect((result as any).isError).toBe(true);
+    });
+
+    it('should accept the legacy underscored social profile embedded key', async () => {
+      nock(baseURL).get('/customers/123/social-profiles').query(true).reply(200, {
+        _embedded: { social_profiles: [{ id: 4, value: '@janedoe', type: 'twitter' }] },
+      });
+
+      const result = await toolHandler.callTool(makeRequest('listCustomerSocialProfiles', { customerId: '123' }));
+      const data = parseResult(result);
+
+      expect(data.socialProfiles).toHaveLength(1);
+      expect(data.socialProfiles[0].value).toBe('@janedoe');
+      expect(data.total).toBe(1);
     });
   });
 });

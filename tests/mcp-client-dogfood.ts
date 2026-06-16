@@ -70,6 +70,7 @@ const EXPECTED_TOOLS = [
   'getThreadsV3',
   'getServerTime',
   'listAllInboxes',
+  'getInbox',
   'advancedConversationSearch',
   'comprehensiveConversationSearch',
   'structuredConversationFilter',
@@ -77,6 +78,12 @@ const EXPECTED_TOOLS = [
   'listCustomers',
   'searchCustomersByEmail',
   'getCustomerContacts',
+  'getCustomerAddress',
+  'listCustomerEmails',
+  'listCustomerPhones',
+  'listCustomerChats',
+  'listCustomerSocialProfiles',
+  'listCustomerWebsites',
   'getOrganization',
   'listOrganizations',
   'getOrganizationMembers',
@@ -141,6 +148,7 @@ const EXPECTED_TOOLS = [
   'getPhoneReport',
   'listDocsSites',
   'getDocsSite',
+  'getDocsSiteRestrictions',
   'listDocsCollections',
   'getDocsCollection',
   'listDocsCategories',
@@ -508,6 +516,16 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const inboxes = requireArray(data, ['inboxes', 'results'], 'inboxes');
         requireCondition(inboxes.length <= 2, `Expected at most 2 inboxes, got ${inboxes.length}`);
+      },
+    },
+    {
+      tool: 'getInbox',
+      name: 'configured inbox detail',
+      args: (ctx) => ({ inboxId: ctx.inboxId }),
+      validate: (data, _result, ctx) => {
+        const inbox = getObject(data, 'inbox');
+        requireCondition(String(inbox?.id) === ctx.inboxId, 'Missing configured inbox detail');
+        requireCondition(typeof inbox.email === 'string', 'Missing inbox email');
       },
     },
     {
@@ -1752,6 +1770,56 @@ function buildScenarios(): Scenario[] {
       },
     },
     {
+      tool: 'getCustomerAddress',
+      name: 'golden customer address',
+      args: (ctx) => ({ customerId: ctx.customerId }),
+      validate: (data) => {
+        const address = getObject(data, 'address');
+        requireCondition(address?.country, 'Missing customer address');
+      },
+    },
+    {
+      tool: 'listCustomerEmails',
+      name: 'golden customer emails',
+      args: (ctx) => ({ customerId: ctx.customerId }),
+      validate: (data) => {
+        const emails = requireArray(data, ['emails'], 'emails') as JsonObject[];
+        requireCondition(emails.some((email) => email.value === GOLDEN.customerEmail), 'Missing golden customer email');
+      },
+    },
+    {
+      tool: 'listCustomerPhones',
+      name: 'golden customer phones',
+      args: (ctx) => ({ customerId: ctx.customerId }),
+      validate: (data) => {
+        requireCondition(requireArray(data, ['phones'], 'phones').length > 0, 'Missing customer phones');
+      },
+    },
+    {
+      tool: 'listCustomerChats',
+      name: 'golden customer chats',
+      args: (ctx) => ({ customerId: ctx.customerId }),
+      validate: (data) => {
+        requireCondition(requireArray(data, ['chats'], 'chats').length > 0, 'Missing customer chat handles');
+      },
+    },
+    {
+      tool: 'listCustomerSocialProfiles',
+      name: 'golden customer social profiles',
+      args: (ctx) => ({ customerId: ctx.customerId }),
+      validate: (data) => {
+        requireCondition(requireArray(data, ['socialProfiles'], 'socialProfiles').length > 0, 'Missing customer social profiles');
+      },
+    },
+    {
+      tool: 'listCustomerWebsites',
+      name: 'golden customer websites',
+      args: (ctx) => ({ customerId: ctx.customerId }),
+      validate: (data) => {
+        requireCondition(requireArray(data, ['websites'], 'websites').length > 0, 'Missing customer websites');
+      },
+    },
+    {
       tool: 'getCustomerContacts',
       name: 'invalid customer ID validation',
       args: { customerId: 'abc' },
@@ -1866,6 +1934,20 @@ function buildScenarios(): Scenario[] {
       validate: (data) => {
         const site = getObject(data, 'site');
         requireCondition(site?.id, 'Missing Docs site');
+      },
+    },
+    {
+      tool: 'getDocsSiteRestrictions',
+      name: 'Docs site restrictions',
+      args: (ctx) => ({ siteId: ctx.docsSiteId ?? 'missing-site' }),
+      skipIf: (ctx) => missingDocsCredentials() || (!ctx.docsSiteId ? 'no Docs site fixture discovered or configured' : undefined),
+      validate: (data) => {
+        const restrictions = getObject(data, 'restrictions');
+        requireCondition(restrictions && typeof restrictions.enabled === 'boolean', 'Missing Docs site restrictions');
+        const callbackConfiguration = getObject(restrictions, 'callbackConfiguration');
+        if (callbackConfiguration?.sharedSecret) {
+          requireCondition(callbackConfiguration.sharedSecret === '[redacted]', 'Docs restriction shared secret was not redacted');
+        }
       },
     },
     {

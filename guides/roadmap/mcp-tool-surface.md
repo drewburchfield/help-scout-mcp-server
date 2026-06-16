@@ -40,13 +40,12 @@ Current:
 - `downloadAttachmentFile`
 - `searchInboxes`
 - `listAllInboxes`
+- `getInbox`
 
 Next:
 
-- Seed a stable thread original-source fixture so JSON and RFC 822 source
-  dogfood does not depend on optional account history.
-- Keep attachment data and file-download fixtures readable in the shared seed
-  set.
+- Keep attachment data, file-download, and original-source fixtures readable in
+  the shared dogfood account.
 
 ## 2. Customer And Account Context
 
@@ -59,6 +58,12 @@ Current:
 - `getCustomer`
 - `searchCustomersByEmail`
 - `getCustomerContacts`
+- `getCustomerAddress`
+- `listCustomerEmails`
+- `listCustomerPhones`
+- `listCustomerChats`
+- `listCustomerSocialProfiles`
+- `listCustomerWebsites`
 - `listOrganizations`
 - `getOrganization`
 - `getOrganizationMembers`
@@ -163,6 +168,7 @@ Current:
 
 - `listDocsSites`
 - `getDocsSite`
+- `getDocsSiteRestrictions`
 - `listDocsCollections`
 - `getDocsCollection`
 - `listDocsCategories`

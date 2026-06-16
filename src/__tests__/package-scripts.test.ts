@@ -7,7 +7,7 @@ describe('package scripts', () => {
   it('exposes a dogfood account audit command', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-    expect(packageJson.scripts['dogfood:audit']).toBe('node --loader ts-node/esm tests/audit-dogfood-account.ts');
+    expect(packageJson.scripts['dogfood:audit']).toBe('TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/audit-dogfood-account.ts');
     expect(fs.existsSync(path.join(process.cwd(), 'tests/audit-dogfood-account.ts'))).toBe(true);
   });
 
@@ -15,7 +15,7 @@ describe('package scripts', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
 
     expect(packageJson.scripts['dogfood:seed']).toContain('npm run dogfood:seed:docs');
-    expect(packageJson.scripts['dogfood:seed:docs']).toBe('node --loader ts-node/esm tests/seed-docs-data.ts');
+    expect(packageJson.scripts['dogfood:seed:docs']).toBe('TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/seed-docs-data.ts');
     expect(fs.existsSync(path.join(process.cwd(), 'tests/seed-docs-data.ts'))).toBe(true);
 
     const result = spawnSync('node', ['--loader', 'ts-node/esm', 'tests/seed-docs-data.ts'], {
