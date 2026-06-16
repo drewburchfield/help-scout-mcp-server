@@ -443,7 +443,7 @@ Note: The exact tag names may vary by organization. Common urgent tag variations
 
 2. Calculate the timestamp ${hours} hours ago from the current time.
    - Subtract ${hours} hours from the current timestamp
-   - Example: If current time is "2025-06-11T15:04:00Z" and hours is 24,
+   - Example: If current time is "2025-06-11T15:04:00Z" and hours is ${hours},
      then ${hours} hours ago would be "${this.exampleHoursAgo(hours)}"
 
 3. Search for conversations in the specified inbox using the "searchConversations" tool:

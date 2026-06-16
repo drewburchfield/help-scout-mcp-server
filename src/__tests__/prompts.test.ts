@@ -434,7 +434,7 @@ describe('PromptHandler', () => {
             name: 'list-inbox-activity',
             arguments: {
               inboxId: 'inbox-123',
-              hours: 24,
+              hours: 12,
             }
           }
         };
@@ -442,8 +442,8 @@ describe('PromptHandler', () => {
         const result = await promptHandler.getPrompt(request);
         const promptText = result.messages[0].content.text;
 
-        expect(promptText).toContain('If current time is "2025-06-11T15:04:00Z" and hours is 24');
-        expect(promptText).toContain('then 24 hours ago would be "2025-06-10T15:04:00Z"');
+        expect(promptText).toContain('If current time is "2025-06-11T15:04:00Z" and hours is 12');
+        expect(promptText).toContain('then 12 hours ago would be "2025-06-11T03:04:00Z"');
       });
 
       it('should include thread details when includeThreads is true', async () => {
