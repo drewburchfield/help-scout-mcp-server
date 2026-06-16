@@ -45,13 +45,15 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(89);
+      expect(tools).toHaveLength(93);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
         'getConversation',
+        'getConversationV3',
         'getConversationSummary',
         'getThreads',
+        'getThreadsV3',
         'getServerTime',
         'listAllInboxes',
         'advancedConversationSearch',
@@ -84,7 +86,9 @@ describe('ToolHandler', () => {
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
+        'getOriginalSourceRfc822',
         'getAttachment',
+        'downloadAttachmentFile',
         'listWorkflows',
         'listWebhooks',
         'getWebhook',
@@ -158,6 +162,7 @@ describe('ToolHandler', () => {
         'searchInboxes',
         'searchConversations',
         'getThreads',
+        'getThreadsV3',
         'advancedConversationSearch',
         'structuredConversationFilter',
         'listTags',
@@ -884,6 +889,59 @@ describe('ToolHandler', () => {
       }
     });
 
+    it('should get a thread original source as RFC 822', async () => {
+      nock(baseURL)
+        .get('/conversations/123/threads/456/original-source')
+        .matchHeader('accept', 'message/rfc822')
+        .reply(200, 'From: customer@example.com\nSubject: Raw source', {
+          'Content-Type': 'message/rfc822',
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getOriginalSourceRfc822',
+          arguments: { conversationId: '123', threadId: '456' },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.conversationId).toBe('123');
+      expect(response.threadId).toBe('456');
+      expect(response.sourceFormat).toBe('message/rfc822');
+      expect(response.contentType).toContain('message/rfc822');
+      expect(response.originalSource).toContain('Subject: Raw source');
+    });
+
+    it('should redact RFC 822 original source when message redaction is enabled', async () => {
+      const originalRedactMessageContent = config.security.redactMessageContent;
+      config.security.redactMessageContent = true;
+
+      try {
+        const scope = nock(baseURL)
+          .get('/conversations/123/threads/456/original-source')
+          .reply(200, 'From: customer@example.com\nSubject: Raw source');
+
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: 'getOriginalSourceRfc822',
+            arguments: { conversationId: '123', threadId: '456' },
+          },
+        });
+
+        const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+        expect(result.isError).toBeUndefined();
+        expect(response.conversationId).toBe('123');
+        expect(response.threadId).toBe('456');
+        expect(response.originalSource).toBe(REDACTED_MESSAGE_BODY);
+        expect(scope.isDone()).toBe(false);
+      } finally {
+        config.security.redactMessageContent = originalRedactMessageContent;
+      }
+    });
+
     it('should get attachment data', async () => {
       nock(baseURL)
         .get('/conversations/123/attachments/789/data')
@@ -907,6 +965,36 @@ describe('ToolHandler', () => {
       expect(response.contentHandling).toEqual(expect.objectContaining({
         encoding: 'base64',
         source: 'Help Scout attachment data endpoint',
+      }));
+    });
+
+    it('should download attachment file content with response metadata', async () => {
+      nock(baseURL)
+        .get('/conversations/123/attachments/789/file')
+        .reply(200, Buffer.from('file bytes'), {
+          'Content-Disposition': 'attachment; filename="export.csv"',
+          'Content-Type': 'text/csv',
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'downloadAttachmentFile',
+          arguments: { conversationId: '123', attachmentId: '789' },
+        },
+      });
+
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(result.isError).toBeUndefined();
+      expect(response.conversationId).toBe('123');
+      expect(response.attachmentId).toBe('789');
+      expect(response.filename).toBe('export.csv');
+      expect(response.contentType).toContain('text/csv');
+      expect(response.byteLength).toBe(Buffer.byteLength('file bytes'));
+      expect(response.data).toBe(Buffer.from('file bytes').toString('base64'));
+      expect(response.contentHandling).toEqual(expect.objectContaining({
+        encoding: 'base64',
+        source: 'Help Scout attachment file endpoint',
       }));
     });
 
@@ -2474,6 +2562,45 @@ describe('ToolHandler', () => {
       expect(response.conversation._embedded.threads[0].body).toBe('Customer body');
     });
 
+    it('should get v3 conversation detail with preserved person type fields', async () => {
+      const apiRoot = baseURL.replace('/v2', '');
+      nock(apiRoot)
+        .get('/v3/conversations/123')
+        .query({ embed: 'threads' })
+        .reply(200, {
+          id: 123,
+          subject: 'Raw v3 conversation',
+          preview: 'Latest customer preview',
+          createdBy: { id: 42, type: 'system_user', email: 'ai@example.com' },
+          assignee: { id: 77, type: 'team', name: 'Support' },
+          _embedded: {
+            threads: [
+              {
+                id: 10,
+                type: 'customer',
+                body: 'Customer body',
+                createdBy: { id: 42, type: 'system_user' },
+              },
+            ],
+          },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getConversationV3',
+          arguments: { conversationId: '123', embed: 'threads' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.apiVersion).toBe('v3');
+      expect(response.conversation.createdBy.type).toBe('system_user');
+      expect(response.conversation.assignee.type).toBe('team');
+      expect(response.conversation._embedded.threads[0].body).toBe('Customer body');
+    });
+
     it('should validate conversation IDs before raw conversation lookup', async () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
@@ -2710,6 +2837,49 @@ describe('ToolHandler', () => {
         const response = JSON.parse(textContent.text);
         expect(response.conversationId).toBe(conversationId);
         expect(response.threads).toHaveLength(2);
+      }
+    });
+
+    it('should get v3 conversation threads and redact bodies when configured', async () => {
+      const originalRedactMessageContent = config.security.redactMessageContent;
+      config.security.redactMessageContent = true;
+      const apiRoot = baseURL.replace('/v2', '');
+
+      try {
+        nock(apiRoot)
+          .get('/v3/conversations/999/threads')
+          .query({ page: 2, size: 1 })
+          .reply(200, {
+            _embedded: {
+              threads: [
+                {
+                  id: 1,
+                  type: 'message',
+                  body: 'Staff reply',
+                  createdBy: { id: 1, type: 'system_user' },
+                },
+              ],
+            },
+            page: { size: 1, totalElements: 2, totalPages: 2, number: 2 },
+          });
+
+        const result = await toolHandler.callTool({
+          method: 'tools/call',
+          params: {
+            name: 'getThreadsV3',
+            arguments: { conversationId: '999', limit: 1, page: 2 },
+          },
+        });
+
+        expect(result.isError).toBeUndefined();
+        const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+        expect(response.apiVersion).toBe('v3');
+        expect(response.threads).toHaveLength(1);
+        expect(response.threads[0].createdBy.type).toBe('system_user');
+        expect(response.threads[0].body).toBe(REDACTED_MESSAGE_BODY);
+        expect(response.nextPage).toBeNull();
+      } finally {
+        config.security.redactMessageContent = originalRedactMessageContent;
       }
     });
   });

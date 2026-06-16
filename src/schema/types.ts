@@ -106,10 +106,14 @@ export const GetThreadsInputSchema = z.object({
   page: z.number().int().min(1).default(1),
 });
 
+export const GetThreadsV3InputSchema = GetThreadsInputSchema;
+
 export const GetConversationInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
   embed: z.enum(['threads']).optional(),
 });
+
+export const GetConversationV3InputSchema = GetConversationInputSchema;
 
 export const GetConversationSummaryInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
@@ -781,10 +785,14 @@ export const GetOriginalSourceInputSchema = z.object({
   threadId: z.string().regex(/^\d+$/, 'Thread ID must be numeric').describe('Thread ID'),
 });
 
+export const GetOriginalSourceRfc822InputSchema = GetOriginalSourceInputSchema;
+
 export const GetAttachmentInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric').describe('Conversation ID'),
   attachmentId: z.string().regex(/^\d+$/, 'Attachment ID must be numeric').describe('Attachment ID'),
 });
+
+export const DownloadAttachmentFileInputSchema = GetAttachmentInputSchema;
 
 export const ListWorkflowsInputSchema = z.object({
   page: z.number().int().min(1).default(1),
@@ -935,7 +943,9 @@ export type HappinessRatingsReport = z.infer<typeof HappinessRatingsReportSchema
 export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
+export type GetThreadsV3Input = z.infer<typeof GetThreadsV3InputSchema>;
 export type GetConversationInput = z.infer<typeof GetConversationInputSchema>;
+export type GetConversationV3Input = z.infer<typeof GetConversationV3InputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
 export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
 export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
@@ -967,7 +977,9 @@ export type GetInboxRoutingInput = z.infer<typeof GetInboxRoutingInputSchema>;
 export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
 export type GetSavedReplyInput = z.infer<typeof GetSavedReplyInputSchema>;
 export type GetOriginalSourceInput = z.infer<typeof GetOriginalSourceInputSchema>;
+export type GetOriginalSourceRfc822Input = z.infer<typeof GetOriginalSourceRfc822InputSchema>;
 export type GetAttachmentInput = z.infer<typeof GetAttachmentInputSchema>;
+export type DownloadAttachmentFileInput = z.infer<typeof DownloadAttachmentFileInputSchema>;
 export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;
 export type ListWebhooksInput = z.infer<typeof ListWebhooksInputSchema>;
 export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;

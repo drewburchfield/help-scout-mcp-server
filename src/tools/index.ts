@@ -34,7 +34,9 @@ import {
   SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
+  GetThreadsV3InputSchema,
   GetConversationInputSchema,
+  GetConversationV3InputSchema,
   GetConversationSummaryInputSchema,
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
@@ -67,7 +69,9 @@ import {
   ListSavedRepliesInputSchema,
   GetSavedReplyInputSchema,
   GetOriginalSourceInputSchema,
+  GetOriginalSourceRfc822InputSchema,
   GetAttachmentInputSchema,
+  DownloadAttachmentFileInputSchema,
   ListWorkflowsInputSchema,
   ListWebhooksInputSchema,
   GetWebhookInputSchema,
@@ -349,6 +353,68 @@ export class ToolHandler {
     return new URL(normalizedPath, v3BaseUrl).toString();
   }
 
+  private redactThreadBody(thread: unknown): unknown {
+    if (!thread || typeof thread !== 'object' || Array.isArray(thread)) return thread;
+    const threadRecord = { ...(thread as Record<string, unknown>) };
+    threadRecord.body = config.security.redactMessageContent ? REDACTED_MESSAGE_BODY : threadRecord.body;
+    return threadRecord;
+  }
+
+  private redactConversationMessageContent(conversation: Record<string, unknown>): Record<string, unknown> {
+    if (!config.security.redactMessageContent) return conversation;
+
+    const processedConversation: Record<string, unknown> = { ...conversation };
+    if (typeof processedConversation.preview === 'string') {
+      processedConversation.preview = REDACTED_MESSAGE_BODY;
+    }
+
+    const embedded = processedConversation._embedded;
+    if (embedded && typeof embedded === 'object' && !Array.isArray(embedded)) {
+      const embeddedRecord = embedded as Record<string, unknown>;
+      const threads = embeddedRecord.threads;
+      if (Array.isArray(threads)) {
+        processedConversation._embedded = {
+          ...embeddedRecord,
+          threads: threads.map((thread) => this.redactThreadBody(thread)),
+        };
+      }
+    }
+
+    return processedConversation;
+  }
+
+  private getResponseHeader(headers: Record<string, unknown>, name: string): string | undefined {
+    const value = headers[name.toLowerCase()] ?? headers[name];
+    if (Array.isArray(value)) return value.join(', ');
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private parseContentDispositionFilename(contentDisposition?: string): string | undefined {
+    if (!contentDisposition) return undefined;
+    const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (filenameStarMatch?.[1]) {
+      const encodedFilename = filenameStarMatch[1].trim().replace(/^"|"$/g, '');
+      try {
+        return decodeURIComponent(encodedFilename);
+      } catch {
+        return encodedFilename;
+      }
+    }
+
+    const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    return filenameMatch?.[1]?.trim();
+  }
+
+  private responseDataToBuffer(data: unknown): Buffer {
+    if (Buffer.isBuffer(data)) return data;
+    if (data instanceof ArrayBuffer) return Buffer.from(data);
+    if (ArrayBuffer.isView(data)) {
+      return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (typeof data === 'string') return Buffer.from(data, 'utf8');
+    return Buffer.from(JSON.stringify(data), 'utf8');
+  }
+
   async listTools(): Promise<Tool[]> {
     return [
       {
@@ -464,6 +530,25 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getConversationV3',
+        description: 'Get the v3 Help Scout conversation object by ID, preserving system_user and team person types.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID to retrieve',
+            },
+            embed: {
+              type: 'string',
+              enum: ['threads'],
+              description: 'Optional sub-entity to embed. Help Scout currently supports "threads".',
+            },
+          },
+          required: ['conversationId'],
+        },
+      },
+      {
         name: 'getConversationSummary',
         description: 'Get conversation summary with first customer message and latest staff reply',
         inputSchema: {
@@ -480,6 +565,33 @@ export class ToolHandler {
       {
         name: 'getThreads',
         description: 'Retrieve full message history for a conversation. Returns all thread messages.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID to get threads for',
+            },
+            limit: {
+              type: 'number',
+              description: `Maximum number of threads (1-${TOOL_CONSTANTS.MAX_THREAD_SIZE})`,
+              minimum: 1,
+              maximum: TOOL_CONSTANTS.MAX_THREAD_SIZE,
+              default: TOOL_CONSTANTS.DEFAULT_THREAD_SIZE,
+            },
+            page: {
+              type: 'number',
+              minimum: 1,
+              default: 1,
+              description: 'Page number',
+            },
+          },
+          required: ['conversationId'],
+        },
+      },
+      {
+        name: 'getThreadsV3',
+        description: 'Retrieve v3 thread history for a conversation, preserving system_user and team person types.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1003,8 +1115,32 @@ export class ToolHandler {
         },
       },
       {
+        name: 'getOriginalSourceRfc822',
+        description: 'Get the original source for a Help Scout conversation thread as message/rfc822 text.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
+            threadId: { type: 'string', description: 'Thread ID from getThreads or getThreadsV3' },
+          },
+          required: ['conversationId', 'threadId'],
+        },
+      },
+      {
         name: 'getAttachment',
         description: 'Get base64-encoded Help Scout attachment data by conversation and attachment ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
+            attachmentId: { type: 'string', description: 'Attachment ID from getThreads attachment links' },
+          },
+          required: ['conversationId', 'attachmentId'],
+        },
+      },
+      {
+        name: 'downloadAttachmentFile',
+        description: 'Download a Help Scout attachment file as base64 with response metadata.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1931,11 +2067,17 @@ export class ToolHandler {
         case 'getConversation':
           result = await this.getConversation(request.params.arguments || {});
           break;
+        case 'getConversationV3':
+          result = await this.getConversationV3(request.params.arguments || {});
+          break;
         case 'getConversationSummary':
           result = await this.getConversationSummary(request.params.arguments || {});
           break;
         case 'getThreads':
           result = await this.getThreads(request.params.arguments || {});
+          break;
+        case 'getThreadsV3':
+          result = await this.getThreadsV3(request.params.arguments || {});
           break;
         case 'getServerTime':
           result = await this.getServerTime();
@@ -2033,8 +2175,14 @@ export class ToolHandler {
         case 'getOriginalSource':
           result = await this.getOriginalSource(request.params.arguments || {});
           break;
+        case 'getOriginalSourceRfc822':
+          result = await this.getOriginalSourceRfc822(request.params.arguments || {});
+          break;
         case 'getAttachment':
           result = await this.getAttachment(request.params.arguments || {});
+          break;
+        case 'downloadAttachmentFile':
+          result = await this.downloadAttachmentFile(request.params.arguments || {});
           break;
         case 'listWorkflows':
           result = await this.listWorkflows(request.params.arguments || {});
@@ -2447,31 +2595,7 @@ export class ToolHandler {
       params
     );
 
-    const processedConversation: Record<string, unknown> = { ...conversation };
-    if (config.security.redactMessageContent) {
-      if (typeof processedConversation.preview === 'string') {
-        processedConversation.preview = REDACTED_MESSAGE_BODY;
-      }
-
-      const embedded = processedConversation._embedded;
-      if (embedded && typeof embedded === 'object' && !Array.isArray(embedded)) {
-        const embeddedRecord = embedded as Record<string, unknown>;
-        const threads = embeddedRecord.threads;
-        if (Array.isArray(threads)) {
-          processedConversation._embedded = {
-            ...embeddedRecord,
-            threads: threads.map((thread) => {
-              if (!thread || typeof thread !== 'object' || Array.isArray(thread)) return thread;
-              const threadRecord = thread as Record<string, unknown>;
-              return {
-                ...threadRecord,
-                ['body']: REDACTED_MESSAGE_BODY,
-              };
-            }),
-          };
-        }
-      }
-    }
+    const processedConversation = this.redactConversationMessageContent(conversation);
 
     return {
       content: [{
@@ -2483,6 +2607,32 @@ export class ToolHandler {
           usage: input.embed === 'threads'
             ? 'Embedded threads are included for API parity; use getThreads for pagination or full chat thread retrieval.'
             : 'Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getConversationV3(args: unknown): Promise<CallToolResult> {
+    const input = GetConversationV3InputSchema.parse(args);
+    const params = input.embed ? { embed: input.embed } : undefined;
+    const conversation = await helpScoutClient.get<Record<string, unknown>>(
+      this.buildV3ApiUrl(`/conversations/${input.conversationId}`),
+      params
+    );
+
+    const processedConversation = this.redactConversationMessageContent(conversation);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          embedded: input.embed,
+          apiVersion: 'v3',
+          conversation: processedConversation,
+          usage: input.embed === 'threads'
+            ? 'Embedded threads are included for API parity; use getThreadsV3 for pagination.'
+            : 'Use this v3 view when createdBy or assignee person type must distinguish user, team, and system_user.',
         }, null, 2),
       }],
     };
@@ -2575,6 +2725,39 @@ export class ToolHandler {
             threads: processedThreads,
             pagination: response.page,
             nextPage: getNextPage(response.page),
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async getThreadsV3(args: unknown): Promise<CallToolResult> {
+    const input = GetThreadsV3InputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<Record<string, unknown>>>(
+      this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
+      {
+        page: input.page,
+        size: input.limit,
+      }
+    );
+
+    const threads = (response._embedded?.threads || []).slice(0, input.limit);
+    const processedThreads = config.security.redactMessageContent
+      ? threads.map((thread) => this.redactThreadBody(thread))
+      : threads;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            conversationId: input.conversationId,
+            apiVersion: 'v3',
+            threads: processedThreads,
+            pagination: response.page,
+            nextPage: getNextPage(response.page),
+            usage: 'Use this v3 thread view when createdBy or assignedTo person type must distinguish user, team, and system_user.',
           }, null, 2),
         },
       ],
@@ -3048,6 +3231,48 @@ export class ToolHandler {
     };
   }
 
+  private async getOriginalSourceRfc822(args: unknown): Promise<CallToolResult> {
+    const input = GetOriginalSourceRfc822InputSchema.parse(args);
+    if (config.security.redactMessageContent) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            conversationId: input.conversationId,
+            threadId: input.threadId,
+            sourceFormat: 'message/rfc822',
+            originalSource: REDACTED_MESSAGE_BODY,
+            usage: 'RFC 822 source content is hidden because REDACT_MESSAGE_CONTENT is enabled.',
+          }, null, 2),
+        }],
+      };
+    }
+
+    const response = await helpScoutClient.getRaw<string>(
+      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`,
+      undefined,
+      {
+        responseType: 'text',
+        headers: { Accept: 'message/rfc822' },
+      }
+    );
+    const headers = response.headers as Record<string, unknown>;
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          threadId: input.threadId,
+          sourceFormat: 'message/rfc822',
+          contentType: this.getResponseHeader(headers, 'content-type') ?? 'message/rfc822',
+          originalSource: response.data,
+          usage: 'Use RFC 822 source for read-only inspection of raw email source when JSON original source is insufficient.',
+        }, null, 2),
+      }],
+    };
+  }
+
   private async getAttachment(args: unknown): Promise<CallToolResult> {
     const input = GetAttachmentInputSchema.parse(args);
     const attachment = await helpScoutClient.get<Record<string, unknown>>(
@@ -3068,6 +3293,39 @@ export class ToolHandler {
             source: 'Help Scout attachment data endpoint',
           },
           usage: 'Decode attachment.data only when the caller explicitly needs the file content; avoid logging decoded attachment bytes.',
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async downloadAttachmentFile(args: unknown): Promise<CallToolResult> {
+    const input = DownloadAttachmentFileInputSchema.parse(args);
+    const response = await helpScoutClient.getRaw<Buffer>(
+      `/conversations/${input.conversationId}/attachments/${input.attachmentId}/file`,
+      undefined,
+      { responseType: 'arraybuffer' }
+    );
+    const headers = response.headers as Record<string, unknown>;
+    const contentDisposition = this.getResponseHeader(headers, 'content-disposition');
+    const contentType = this.getResponseHeader(headers, 'content-type') ?? 'application/octet-stream';
+    const fileBuffer = this.responseDataToBuffer(response.data);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          attachmentId: input.attachmentId,
+          filename: this.parseContentDispositionFilename(contentDisposition),
+          contentType,
+          contentDisposition,
+          byteLength: fileBuffer.byteLength,
+          data: fileBuffer.toString('base64'),
+          contentHandling: {
+            encoding: 'base64',
+            source: 'Help Scout attachment file endpoint',
+          },
+          usage: 'Decode data only when the caller explicitly needs the file content; avoid logging decoded attachment bytes.',
         }, null, 2),
       }],
     };

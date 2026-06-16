@@ -278,6 +278,38 @@ describe('HelpScoutClient', () => {
       });
     }, 10000);
 
+    it('should return raw response data and headers for non-JSON reads', async () => {
+      process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+
+      nock(baseURL)
+        .post('/oauth2/token')
+        .reply(200, {
+          access_token: 'mock-access-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        })
+        .get('/conversations/123/attachments/789/file')
+        .reply(200, Buffer.from('file bytes'), {
+          'Content-Type': 'text/plain',
+          'Content-Disposition': 'attachment; filename="file.txt"',
+        });
+
+      const client = new HelpScoutClient();
+      const response = await client.getRaw<Buffer>(
+        '/conversations/123/attachments/789/file',
+        undefined,
+        { responseType: 'arraybuffer' }
+      );
+
+      expect(Buffer.isBuffer(response.data)).toBe(true);
+      expect(response.data.toString('utf8')).toBe('file bytes');
+      expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.headers['content-disposition']).toContain('file.txt');
+      void client.closePool();
+    }, 10000);
+
     it('should handle 429 rate limit errors with retries', async () => {
       const client = new HelpScoutClient();
       
