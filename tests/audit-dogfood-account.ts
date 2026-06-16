@@ -26,6 +26,12 @@ interface AuditResult {
   status: 'PASS' | 'GAP';
   detail: string;
   env?: Record<string, string>;
+  fixture?: {
+    source: string;
+    setup: string;
+    envKeys: string[];
+    docs: string[];
+  };
 }
 
 let accessToken: string | null = null;
@@ -101,6 +107,15 @@ async function auditTeams(client: AxiosInstance): Promise<AuditResult> {
       name: 'getTeamMembers',
       status: 'GAP',
       detail: 'No teams returned by GET /teams; create a Help Scout Team with at least one member in account settings.',
+      fixture: {
+        source: 'Help Scout account setup',
+        setup: 'The documented Inbox API only lists teams and team members. Create an account team with at least one member, then rerun this audit.',
+        envKeys: ['MCP_DOGFOOD_TEAM_ID'],
+        docs: [
+          'https://developer.helpscout.com/mailbox-api/endpoints/teams/list-teams/',
+          'https://developer.helpscout.com/mailbox-api/endpoints/teams/list-team-members/',
+        ],
+      },
     };
   } catch (err) {
     return { name: 'getTeamMembers', status: 'GAP', detail: `Team audit failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -148,6 +163,15 @@ async function auditSatisfactionRating(client: AxiosInstance): Promise<AuditResu
       name: 'getSatisfactionRating',
       status: 'GAP',
       detail: 'No rating row found in the 30-day happiness ratings report; submit a customer satisfaction rating and set MCP_DOGFOOD_SATISFACTION_RATING_ID if needed.',
+      fixture: {
+        source: 'Help Scout customer satisfaction flow',
+        setup: 'The documented Inbox API exposes rating retrieval and reports, but no rating creation endpoint. Generate a real satisfaction response, then rerun this audit.',
+        envKeys: ['MCP_DOGFOOD_SATISFACTION_RATING_ID'],
+        docs: [
+          'https://developer.helpscout.com/mailbox-api/endpoints/ratings/get/',
+          'https://developer.helpscout.com/mailbox-api/endpoints/reports/happiness/reports-happiness-ratings/',
+        ],
+      },
     };
   } catch (err) {
     return { name: 'getSatisfactionRating', status: 'GAP', detail: `Satisfaction rating audit failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -252,6 +276,19 @@ async function auditOriginalSource(client: AxiosInstance, conversations: Array<{
       name: 'getOriginalSource',
       status: 'GAP',
       detail: 'No seeded or recent live thread exposes original email source; create or import an inbound email fixture and set MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID plus MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID.',
+      fixture: {
+        source: 'Inbound email-source fixture',
+        setup: 'Conversation and reply creation APIs can create/import threads, but original-source APIs are read-only retrieval endpoints. Use a real inbound email-source thread and pin its IDs.',
+        envKeys: [
+          'MCP_DOGFOOD_ORIGINAL_SOURCE_CONVERSATION_ID',
+          'MCP_DOGFOOD_ORIGINAL_SOURCE_THREAD_ID',
+        ],
+        docs: [
+          'https://developer.helpscout.com/mailbox-api/endpoints/conversations/create/',
+          'https://developer.helpscout.com/mailbox-api/endpoints/conversations/threads/thread-source-json/',
+          'https://developer.helpscout.com/mailbox-api/endpoints/conversations/threads/thread-source-rfc822/',
+        ],
+      },
     };
   } catch (err) {
     return { name: 'getOriginalSource', status: 'GAP', detail: `Original-source audit failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -334,6 +371,13 @@ async function main(): Promise<void> {
 
   const gaps = results.filter((result) => result.status === 'GAP');
   if (gaps.length > 0) {
+    process.stdout.write('\nFixture gap setup guidance:\n');
+    for (const gap of gaps) {
+      if (!gap.fixture) continue;
+      process.stdout.write(`- ${gap.name}: ${gap.fixture.source}. ${gap.fixture.setup}\n`);
+      process.stdout.write(`  Pin after setup: ${gap.fixture.envKeys.join(', ')}\n`);
+      process.stdout.write(`  Docs: ${gap.fixture.docs.join(' ')}\n`);
+    }
     process.stdout.write(`\n${gaps.length} dogfood account fixture gap(s) remain.\n`);
     process.exit(1);
   }
