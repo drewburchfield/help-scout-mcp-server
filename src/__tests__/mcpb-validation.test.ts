@@ -67,8 +67,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 98 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(98);
+    it('should have all 73 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(73);
 
       const expectedTools = [
         'searchInboxes',
@@ -122,37 +122,12 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getWebhook',
         'getSatisfactionRating',
         'getCompanyReport',
-        'getCompanyCustomersHelpedReport',
-        'getCompanyDrilldownReport',
         'getConversationsReport',
-        'getConversationVolumeByChannelReport',
-        'getConversationBusyTimesReport',
-        'getConversationDrilldownReport',
-        'getConversationFieldDrilldownReport',
-        'getConversationNewReport',
-        'getConversationNewDrilldownReport',
-        'getConversationReceivedMessagesReport',
-        'getDocsReport',
-        'getHappinessReport',
-        'getHappinessRatingsReport',
         'getProductivityReport',
-        'getProductivityFirstResponseTimeReport',
-        'getProductivityRepliesSentReport',
-        'getProductivityResolutionTimeReport',
-        'getProductivityResolvedReport',
-        'getProductivityResponseTimeReport',
         'getUserReport',
-        'getUserConversationHistoryReport',
-        'getUserCustomersHelpedReport',
-        'getUserDrilldownReport',
-        'getUserHappinessReport',
-        'getUserRatingsReport',
-        'getUserRepliesReport',
-        'getUserResolutionsReport',
-        'getUserChatReport',
-        'getChatReport',
-        'getEmailReport',
-        'getPhoneReport',
+        'getHappinessReport',
+        'getChannelReport',
+        'getDocsReport',
         'listDocsSites',
         'getDocsSite',
         'getDocsSiteRestrictions',

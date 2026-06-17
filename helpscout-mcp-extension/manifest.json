@@ -314,131 +314,31 @@
     },
     {
       "name": "getCompanyReport",
-      "description": "Get the Help Scout company overall report"
-    },
-    {
-      "name": "getCompanyCustomersHelpedReport",
-      "description": "Get Help Scout company customers helped time series"
-    },
-    {
-      "name": "getCompanyDrilldownReport",
-      "description": "Get Help Scout company drilldown conversation rows"
+      "description": "Get a Help Scout company report (overall, customers-helped, or drilldown)"
     },
     {
       "name": "getConversationsReport",
-      "description": "Get the Help Scout conversations overall report"
+      "description": "Get a Help Scout conversations report (overall, volume-by-channel, busy-times, drilldown, fields-drilldown, new, new-drilldown, received-messages)"
     },
     {
-      "name": "getConversationVolumeByChannelReport",
-      "description": "Get Help Scout conversation volume by channel time series"
+      "name": "getProductivityReport",
+      "description": "Get a Help Scout productivity report (overall, first-response-time, replies-sent, resolved, response-time, resolution-time)"
     },
     {
-      "name": "getConversationBusyTimesReport",
-      "description": "Get Help Scout busiest time of day conversation report"
+      "name": "getUserReport",
+      "description": "Get a Help Scout user or team report (overall, conversation-history, customers-helped, drilldown, happiness, ratings, replies, resolutions, chat)"
     },
     {
-      "name": "getConversationDrilldownReport",
-      "description": "Get Help Scout conversation drilldown rows"
+      "name": "getHappinessReport",
+      "description": "Get a Help Scout happiness report (overall or ratings)"
     },
     {
-      "name": "getConversationFieldDrilldownReport",
-      "description": "Get Help Scout conversation drilldown rows for a field value"
-    },
-    {
-      "name": "getConversationNewReport",
-      "description": "Get Help Scout new conversations time series"
-    },
-    {
-      "name": "getConversationNewDrilldownReport",
-      "description": "Get Help Scout new conversation drilldown rows"
-    },
-    {
-      "name": "getConversationReceivedMessagesReport",
-      "description": "Get Help Scout received customer messages time series"
+      "name": "getChannelReport",
+      "description": "Get a Help Scout channel report (chat, email, or phone)"
     },
     {
       "name": "getDocsReport",
       "description": "Get the Help Scout Docs overall report"
-    },
-    {
-      "name": "getHappinessReport",
-      "description": "Get the Help Scout happiness overall report"
-    },
-    {
-      "name": "getHappinessRatingsReport",
-      "description": "Get Help Scout happiness rating rows"
-    },
-    {
-      "name": "getProductivityReport",
-      "description": "Get the Help Scout productivity overall report"
-    },
-    {
-      "name": "getProductivityFirstResponseTimeReport",
-      "description": "Get Help Scout productivity first response time series"
-    },
-    {
-      "name": "getProductivityRepliesSentReport",
-      "description": "Get Help Scout productivity replies sent time series"
-    },
-    {
-      "name": "getProductivityResolutionTimeReport",
-      "description": "Get Help Scout productivity resolution time series"
-    },
-    {
-      "name": "getProductivityResolvedReport",
-      "description": "Get Help Scout productivity resolved conversations time series"
-    },
-    {
-      "name": "getProductivityResponseTimeReport",
-      "description": "Get Help Scout productivity response time series"
-    },
-    {
-      "name": "getUserReport",
-      "description": "Get the Help Scout user or team overall report"
-    },
-    {
-      "name": "getUserConversationHistoryReport",
-      "description": "Get Help Scout user conversation history rows"
-    },
-    {
-      "name": "getUserCustomersHelpedReport",
-      "description": "Get Help Scout user customers helped time series"
-    },
-    {
-      "name": "getUserDrilldownReport",
-      "description": "Get Help Scout user report drilldown conversations"
-    },
-    {
-      "name": "getUserHappinessReport",
-      "description": "Get Help Scout user happiness report"
-    },
-    {
-      "name": "getUserRatingsReport",
-      "description": "Get Help Scout user happiness rating rows"
-    },
-    {
-      "name": "getUserRepliesReport",
-      "description": "Get Help Scout user replies time series"
-    },
-    {
-      "name": "getUserResolutionsReport",
-      "description": "Get Help Scout user resolutions time series"
-    },
-    {
-      "name": "getUserChatReport",
-      "description": "Get Help Scout user or team chat report"
-    },
-    {
-      "name": "getChatReport",
-      "description": "Get the Help Scout chat report"
-    },
-    {
-      "name": "getEmailReport",
-      "description": "Get the Help Scout email report"
-    },
-    {
-      "name": "getPhoneReport",
-      "description": "Get the Help Scout phone report"
     },
     {
       "name": "listDocsSites",

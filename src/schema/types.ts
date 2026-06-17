@@ -444,9 +444,6 @@ const ReportIdSchema = z.union([
 ]).transform(String);
 const ReportConversationTypesSchema = z.array(z.enum(['email', 'chat', 'phone'])).min(1).max(3);
 const ReportViewBySchema = z.enum(['day', 'week', 'month']);
-const ReportSortOrderSchema = z.enum(['ASC', 'DESC', 'asc', 'desc'])
-  .default('DESC')
-  .transform((value) => value.toUpperCase() as 'ASC' | 'DESC');
 const OptionalReportSortOrderSchema = z.enum(['ASC', 'DESC', 'asc', 'desc'])
   .transform((value) => value.toUpperCase() as 'ASC' | 'DESC')
   .optional();
@@ -461,27 +458,16 @@ const ReportBaseInputObjectSchema = z.object({
   types: ReportConversationTypesSchema.optional().describe('Conversation types to filter by'),
   folders: ReportIdListSchema.optional().describe('Folder IDs to filter by'),
 });
-const ReportCurrentInputObjectSchema = ReportBaseInputObjectSchema.omit({
-  previousStart: true,
-  previousEnd: true,
-});
 
 export const ReportBaseInputSchema = ReportBaseInputObjectSchema.refine(
   (data) => (!!data.previousStart) === (!!data.previousEnd),
   { message: 'previousStart and previousEnd must be provided together' }
 );
 
+// Retained as the company-overall base; reused by the consolidated getCompanyReport tool.
 export const GetCompanyReportInputSchema = ReportBaseInputSchema;
-export const GetConversationsReportInputSchema = ReportBaseInputSchema;
-export const GetHappinessReportInputSchema = ReportBaseInputSchema;
 
-export const CompanyTimelineReportInputSchema = ReportBaseInputObjectSchema.extend({
-  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
+// Shared enums for the consolidated report tools.
 const ReportDrilldownRangeSchema = z.enum([
   'replies',
   'firstReplyResolved',
@@ -490,167 +476,131 @@ const ReportDrilldownRangeSchema = z.enum([
   'firstResponseTime',
   'handleTime',
 ]);
-
-export const ReportDrilldownInputSchema = ReportCurrentInputObjectSchema.extend({
-  page: z.number().int().min(1).default(1),
-  rows: z.number().int().min(1).max(50).default(25),
-  range: ReportDrilldownRangeSchema,
-  rangeId: z.number().int().min(1).max(10).optional(),
-});
-
-export const ReportCurrentDrilldownInputSchema = ReportCurrentInputObjectSchema.extend({
-  page: z.number().int().min(1).default(1),
-  rows: z.number().int().min(1).max(50).default(25),
-});
-
-export const ConversationTimelineReportInputSchema = ReportBaseInputObjectSchema.extend({
-  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
 export const ConversationFieldDrilldownFieldSchema = z.enum(['tagid', 'replyid', 'workflowid', 'customerid']);
+const ReportRatingSchema = z.enum(['great', 'ok', 'all', 'not-good']);
 
-export const ConversationFieldDrilldownReportInputSchema = ReportCurrentInputObjectSchema.extend({
-  field: ConversationFieldDrilldownFieldSchema.describe('Conversation field to drill into'),
-  fieldid: ReportIdSchema.describe('Identifier for the selected field value'),
-  page: z.number().int().min(1).default(1),
-  rows: z.number().int().min(1).max(50).default(25),
+const pairedComparison = (data: { previousStart?: string; previousEnd?: string }): boolean =>
+  (!!data.previousStart) === (!!data.previousEnd);
+const pairedComparisonMessage = { message: 'previousStart and previousEnd must be provided together' };
+
+// ---------------------------------------------------------------------------
+// Consolidated report tools: one tool per report family, routed by discriminator.
+// Each schema exposes the union of params its report values can use; the handler
+// forwards only the params the selected report path documents.
+// ---------------------------------------------------------------------------
+
+// 1. getCompanyReport: overall | customers-helped | drilldown
+export const GetCompanyReportInputSchemaUnion = ReportBaseInputObjectSchema.extend({
+  report: z.enum(['overall', 'customers-helped', 'drilldown']).default('overall'),
+  viewBy: ReportViewBySchema.optional().describe('Report granularity (customers-helped only)'),
+  page: z.number().int().min(1).optional().describe('Drilldown page number'),
+  rows: z.number().int().min(1).max(50).optional().describe('Drilldown rows per page (max 50)'),
+  range: ReportDrilldownRangeSchema.optional().describe('Drilldown range filter (drilldown only)'),
+  rangeId: z.number().int().min(1).max(10).optional().describe('Drilldown range bucket ID (drilldown only)'),
+}).superRefine((data, ctx) => {
+  if (!pairedComparison(data)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, ...pairedComparisonMessage, path: ['previousStart'] });
+  }
+  if (data.report === 'drilldown' && !data.range) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'range is required for the drilldown report', path: ['range'] });
+  }
 });
 
-export const DocsReportInputSchema = z.object({
+// 2. getConversationsReport: overall | volume-by-channel | busy-times | drilldown
+//    | fields-drilldown | new | new-drilldown | received-messages
+export const GetConversationsReportInputSchemaUnion = ReportBaseInputObjectSchema.extend({
+  report: z.enum([
+    'overall',
+    'volume-by-channel',
+    'busy-times',
+    'drilldown',
+    'fields-drilldown',
+    'new',
+    'new-drilldown',
+    'received-messages',
+  ]).default('overall'),
+  viewBy: ReportViewBySchema.optional().describe('Report granularity (timeline reports only)'),
+  page: z.number().int().min(1).optional().describe('Drilldown page number'),
+  rows: z.number().int().min(1).max(50).optional().describe('Drilldown rows per page (max 50)'),
+  field: ConversationFieldDrilldownFieldSchema.optional().describe('Field to drill into (fields-drilldown only)'),
+  fieldid: ReportIdSchema.optional().describe('Field value identifier (fields-drilldown only)'),
+}).superRefine((data, ctx) => {
+  if (!pairedComparison(data)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, ...pairedComparisonMessage, path: ['previousStart'] });
+  }
+  if (data.report === 'fields-drilldown') {
+    if (!data.field) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'field is required for the fields-drilldown report', path: ['field'] });
+    }
+    if (!data.fieldid) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'fieldid is required for the fields-drilldown report', path: ['fieldid'] });
+    }
+  }
+});
+
+// 3. getProductivityReport: overall | first-response-time | replies-sent
+//    | resolved | response-time | resolution-time
+export const GetProductivityReportInputSchemaUnion = ReportBaseInputObjectSchema.extend({
+  report: z.enum([
+    'overall',
+    'first-response-time',
+    'replies-sent',
+    'resolved',
+    'response-time',
+    'resolution-time',
+  ]).default('overall'),
+  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
+  viewBy: ReportViewBySchema.optional().describe('Report granularity (timeline reports only)'),
+}).refine(pairedComparison, pairedComparisonMessage);
+
+// 4. getUserReport: overall | conversation-history | customers-helped | drilldown
+//    | happiness | ratings | replies | resolutions | chat
+export const GetUserReportInputSchemaUnion = ReportBaseInputObjectSchema.extend({
+  user: ReportIdSchema.describe('User ID or team ID for the report'),
+  report: z.enum([
+    'overall',
+    'conversation-history',
+    'customers-helped',
+    'drilldown',
+    'happiness',
+    'ratings',
+    'replies',
+    'resolutions',
+    'chat',
+  ]).default('overall'),
+  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
+  viewBy: ReportViewBySchema.optional().describe('Report granularity (timeline reports only)'),
+  page: z.number().int().min(1).optional().describe('Page number (drilldown, ratings, conversation-history)'),
+  rows: z.number().int().min(1).max(50).optional().describe('Rows per page (drilldown only, max 50)'),
+  status: z.enum(['active', 'pending', 'closed']).optional().describe('Conversation status (conversation-history only)'),
+  sortField: z.string().optional().describe('Sort field (conversation-history, ratings)'),
+  sortOrder: OptionalReportSortOrderSchema.describe('Sort order ASC/DESC (conversation-history, ratings)'),
+  rating: ReportRatingSchema.optional().describe('Rating value filter (ratings only)'),
+}).refine(pairedComparison, pairedComparisonMessage);
+
+// 5. getHappinessReport: overall | ratings
+export const GetHappinessReportInputSchemaUnion = ReportBaseInputObjectSchema.extend({
+  report: z.enum(['overall', 'ratings']).default('overall'),
+  page: z.number().int().min(1).optional().describe('Page number (ratings only)'),
+  sortField: z.enum(['number', 'modifiedAt', 'rating']).optional().describe('Sort field (ratings only)'),
+  sortOrder: OptionalReportSortOrderSchema.describe('Sort order ASC/DESC (ratings only)'),
+  rating: ReportRatingSchema.optional().describe('Rating value filter (ratings only)'),
+}).refine(pairedComparison, pairedComparisonMessage);
+
+// 6. getChannelReport: chat | email | phone (each /reports/<channel>)
+export const GetChannelReportInputSchemaUnion = ReportBaseInputObjectSchema.omit({ types: true }).extend({
+  channel: z.enum(['chat', 'email', 'phone']),
+  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
+}).refine(pairedComparison, pairedComparisonMessage);
+
+// 7. getDocsReport: single /reports/docs (kept as-is).
+export const GetDocsReportInputSchema = z.object({
   start: ReportDateSchema.describe('Start of the reporting interval, ISO 8601'),
   end: ReportDateSchema.describe('End of the reporting interval, ISO 8601'),
   previousStart: ReportDateSchema.optional().describe('Optional start of the comparison interval'),
   previousEnd: ReportDateSchema.optional().describe('Optional end of the comparison interval'),
   sites: z.array(z.string().min(1)).min(1).max(50).optional().describe('Docs site IDs to filter by'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const ChannelReportInputSchema = ReportBaseInputObjectSchema.omit({ types: true }).extend({
-  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const GetCompanyCustomersHelpedReportInputSchema = CompanyTimelineReportInputSchema;
-export const GetCompanyDrilldownReportInputSchema = ReportDrilldownInputSchema;
-export const GetConversationVolumeByChannelReportInputSchema = ConversationTimelineReportInputSchema;
-export const GetConversationBusyTimesReportInputSchema = ReportBaseInputSchema;
-export const GetConversationDrilldownReportInputSchema = ReportCurrentDrilldownInputSchema;
-export const GetConversationFieldDrilldownReportInputSchema = ConversationFieldDrilldownReportInputSchema;
-export const GetConversationNewReportInputSchema = ConversationTimelineReportInputSchema;
-export const GetConversationNewDrilldownReportInputSchema = ReportCurrentDrilldownInputSchema;
-export const GetConversationReceivedMessagesReportInputSchema = ConversationTimelineReportInputSchema;
-export const GetDocsReportInputSchema = DocsReportInputSchema;
-export const GetChatReportInputSchema = ChannelReportInputSchema;
-export const GetEmailReportInputSchema = ChannelReportInputSchema;
-export const GetPhoneReportInputSchema = ChannelReportInputSchema;
-
-const ProductivityReportBaseInputObjectSchema = ReportBaseInputObjectSchema.extend({
-  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
-});
-
-export const GetProductivityReportInputSchema = ProductivityReportBaseInputObjectSchema.refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const ProductivityTimelineReportInputSchema = ProductivityReportBaseInputObjectSchema.extend({
-  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const GetProductivityFirstResponseTimeReportInputSchema = ProductivityTimelineReportInputSchema;
-export const GetProductivityRepliesSentReportInputSchema = ProductivityTimelineReportInputSchema;
-export const GetProductivityResolutionTimeReportInputSchema = ProductivityTimelineReportInputSchema;
-export const GetProductivityResolvedReportInputSchema = ProductivityTimelineReportInputSchema;
-export const GetProductivityResponseTimeReportInputSchema = ProductivityTimelineReportInputSchema;
-
-export const GetHappinessRatingsReportInputSchema = ReportBaseInputObjectSchema.extend({
-  page: z.number().int().min(1).default(1),
-  sortField: z.enum(['number', 'modifiedAt', 'rating']).default('modifiedAt'),
-  sortOrder: ReportSortOrderSchema,
-  rating: z.enum(['great', 'ok', 'all', 'not-good']).optional(),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-const UserReportBaseInputObjectSchema = ReportBaseInputObjectSchema.extend({
-  user: ReportIdSchema.describe('User ID or team ID for the report'),
-});
-
-const UserOfficeHoursReportInputObjectSchema = UserReportBaseInputObjectSchema.extend({
-  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
-});
-
-export const GetUserReportInputSchema = UserOfficeHoursReportInputObjectSchema.refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const UserTimelineReportInputSchema = UserReportBaseInputObjectSchema.extend({
-  viewBy: ReportViewBySchema.default('day').describe('Report granularity: day, week, or month'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const GetUserCustomersHelpedReportInputSchema = UserTimelineReportInputSchema;
-export const GetUserRepliesReportInputSchema = UserTimelineReportInputSchema;
-export const GetUserResolutionsReportInputSchema = UserTimelineReportInputSchema;
-
-export const GetUserHappinessReportInputSchema = UserReportBaseInputObjectSchema.refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const GetUserRatingsReportInputSchema = UserReportBaseInputObjectSchema.extend({
-  page: z.number().int().min(1).default(1),
-  sortField: z.enum(['number', 'modifiedAt', 'rating']).optional(),
-  sortOrder: OptionalReportSortOrderSchema,
-  rating: z.enum(['great', 'ok', 'all', 'not-good']).optional(),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const GetUserConversationHistoryReportInputSchema = UserOfficeHoursReportInputObjectSchema.extend({
-  status: z.enum(['active', 'pending', 'closed']).optional(),
-  page: z.number().int().min(1).default(1),
-  sortField: z.enum(['number', 'repliesSent', 'responseTime', 'resolveTime']).default('number'),
-  sortOrder: ReportSortOrderSchema,
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
-
-export const GetUserDrilldownReportInputSchema = ReportCurrentInputObjectSchema.extend({
-  user: ReportIdSchema.describe('User ID or team ID for the report'),
-  page: z.number().int().min(1).default(1),
-  rows: z.number().int().min(1).max(50).default(25),
-});
-
-export const GetUserChatReportInputSchema = z.object({
-  user: ReportIdSchema.describe('User ID or team ID for the report'),
-  start: ReportDateSchema.describe('Start of the reporting interval, ISO 8601'),
-  end: ReportDateSchema.describe('End of the reporting interval, ISO 8601'),
-  previousStart: ReportDateSchema.optional().describe('Optional start of the comparison interval'),
-  previousEnd: ReportDateSchema.optional().describe('Optional end of the comparison interval'),
-  mailboxes: ReportIdListSchema.optional().describe('Inbox IDs to filter by'),
-  tags: ReportIdListSchema.optional().describe('Tag IDs to filter by'),
-  officeHours: z.boolean().optional().describe('Whether to take office hours into consideration'),
-}).refine(
-  (data) => (!!data.previousStart) === (!!data.previousEnd),
-  { message: 'previousStart and previousEnd must be provided together' }
-);
+}).refine(pairedComparison, pairedComparisonMessage);
 
 // Customer & Organization Input Schemas
 export const GetCustomerInputSchema = z.object({
@@ -1032,13 +982,12 @@ export type ListDocsRedirectsInput = z.infer<typeof ListDocsRedirectsInputSchema
 export type GetDocsRedirectInput = z.infer<typeof GetDocsRedirectInputSchema>;
 export type FindDocsRedirectInput = z.infer<typeof FindDocsRedirectInputSchema>;
 export type ReportBaseInput = z.infer<typeof ReportBaseInputSchema>;
-export type GetCompanyReportInput = z.infer<typeof GetCompanyReportInputSchema>;
-export type GetConversationsReportInput = z.infer<typeof GetConversationsReportInputSchema>;
-export type GetHappinessReportInput = z.infer<typeof GetHappinessReportInputSchema>;
-export type GetHappinessRatingsReportInput = z.infer<typeof GetHappinessRatingsReportInputSchema>;
-export type GetProductivityReportInput = z.infer<typeof GetProductivityReportInputSchema>;
-export type ProductivityTimelineReportInput = z.infer<typeof ProductivityTimelineReportInputSchema>;
-export type GetUserReportInput = z.infer<typeof GetUserReportInputSchema>;
-export type UserTimelineReportInput = z.infer<typeof UserTimelineReportInputSchema>;
+export type GetCompanyReportInput = z.infer<typeof GetCompanyReportInputSchemaUnion>;
+export type GetConversationsReportInput = z.infer<typeof GetConversationsReportInputSchemaUnion>;
+export type GetProductivityReportInput = z.infer<typeof GetProductivityReportInputSchemaUnion>;
+export type GetUserReportInput = z.infer<typeof GetUserReportInputSchemaUnion>;
+export type GetHappinessReportInput = z.infer<typeof GetHappinessReportInputSchemaUnion>;
+export type GetChannelReportInput = z.infer<typeof GetChannelReportInputSchemaUnion>;
+export type GetDocsReportInput = z.infer<typeof GetDocsReportInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;

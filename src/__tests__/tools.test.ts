@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(98);
+      expect(tools).toHaveLength(73);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -98,37 +98,12 @@ describe('ToolHandler', () => {
         'getWebhook',
         'getSatisfactionRating',
         'getCompanyReport',
-        'getCompanyCustomersHelpedReport',
-        'getCompanyDrilldownReport',
         'getConversationsReport',
-        'getConversationVolumeByChannelReport',
-        'getConversationBusyTimesReport',
-        'getConversationDrilldownReport',
-        'getConversationFieldDrilldownReport',
-        'getConversationNewReport',
-        'getConversationNewDrilldownReport',
-        'getConversationReceivedMessagesReport',
-        'getDocsReport',
-        'getHappinessReport',
-        'getHappinessRatingsReport',
         'getProductivityReport',
-        'getProductivityFirstResponseTimeReport',
-        'getProductivityRepliesSentReport',
-        'getProductivityResolutionTimeReport',
-        'getProductivityResolvedReport',
-        'getProductivityResponseTimeReport',
         'getUserReport',
-        'getUserConversationHistoryReport',
-        'getUserCustomersHelpedReport',
-        'getUserDrilldownReport',
-        'getUserHappinessReport',
-        'getUserRatingsReport',
-        'getUserRepliesReport',
-        'getUserResolutionsReport',
-        'getUserChatReport',
-        'getChatReport',
-        'getEmailReport',
-        'getPhoneReport',
+        'getHappinessReport',
+        'getChannelReport',
+        'getDocsReport',
         'listDocsSites',
         'getDocsSite',
         'getDocsSiteRestrictions',
@@ -1410,6 +1385,7 @@ describe('ToolHandler', () => {
           previous: { happinessScore: -0.18, greatCount: 340, ratingsCount: 1074 },
         });
 
+      // overall reports default report='overall' and hit the family root path.
       for (const [toolName, reportType, expectedField] of [
         ['getCompanyReport', 'company', 'customersHelped'],
         ['getConversationsReport', 'conversations', 'totalConversations'],
@@ -1436,8 +1412,104 @@ describe('ToolHandler', () => {
       }
     });
 
-    it('should get remaining reports API data with documented filters', async () => {
-      const reportArgs = {
+    it('should route company report variants by discriminator', async () => {
+      const baseArgs = {
+        start: '2024-01-01T00:00:00Z',
+        end: '2024-01-31T23:59:59Z',
+        mailboxes: ['359402'],
+        tags: ['123'],
+        types: ['email'],
+        folders: ['456'],
+      };
+
+      // customers-helped timeline with viewBy.
+      nock(baseURL)
+        .get('/reports/company/customers-helped')
+        .query({
+          start: baseArgs.start,
+          end: baseArgs.end,
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+          viewBy: 'week',
+        })
+        .reply(200, { current: [{ date: '2024-01-01T00:00:00Z', customers: 10 }] });
+
+      const chResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getCompanyReport',
+          arguments: { ...baseArgs, report: 'customers-helped', viewBy: 'week' },
+        },
+      });
+      const chResponse = JSON.parse((chResult.content[0] as { type: 'text'; text: string }).text);
+      expect(chResult.isError).toBeUndefined();
+      expect(chResponse.reportType).toBe('companyCustomersHelped');
+      expect(chResponse.filters.viewBy).toBe('week');
+
+      // drilldown carries page/rows/range/rangeId.
+      nock(baseURL)
+        .get('/reports/company/drilldown')
+        .query({
+          start: baseArgs.start,
+          end: baseArgs.end,
+          mailboxes: '359402',
+          tags: '123',
+          types: 'email',
+          folders: '456',
+          page: 2,
+          rows: 30,
+          range: 'replies',
+          rangeId: 5,
+        })
+        .reply(200, {
+          conversations: { page: 2, pages: 3, count: 51, results: [{ id: 987, number: 123 }] },
+        });
+
+      const ddResult = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getCompanyReport',
+          arguments: {
+            ...baseArgs,
+            report: 'drilldown',
+            page: 2,
+            rows: 30,
+            range: 'replies',
+            rangeId: 5,
+          },
+        },
+      });
+      const ddResponse = JSON.parse((ddResult.content[0] as { type: 'text'; text: string }).text);
+      expect(ddResult.isError).toBeUndefined();
+      expect(ddResponse.reportType).toBe('companyDrilldown');
+      expect(ddResponse.filters).toEqual(expect.objectContaining({ page: 2, rows: 30, range: 'replies', rangeId: 5 }));
+      expect(ddResponse.report.conversations.results[0].number).toBe(123);
+    });
+
+    it('should reject a company drilldown report without a range', async () => {
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getCompanyReport',
+          arguments: {
+            start: '2024-01-01T00:00:00Z',
+            end: '2024-01-31T23:59:59Z',
+            report: 'drilldown',
+          },
+        },
+      });
+      expect(result.isError).toBe(true);
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error.code).toBe('INVALID_INPUT');
+      expect(response.error.validationIssues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ message: 'range is required for the drilldown report' }),
+      ]));
+    });
+
+    it('should route conversations report variants by discriminator', async () => {
+      const baseArgs = {
         start: '2024-01-01T00:00:00Z',
         end: '2024-01-31T23:59:59Z',
         previousStart: '2023-12-01T00:00:00Z',
@@ -1448,114 +1520,85 @@ describe('ToolHandler', () => {
         folders: ['456'],
       };
 
-      for (const [toolName, path, reportType] of [
-        ['getCompanyCustomersHelpedReport', '/reports/company/customers-helped', 'companyCustomersHelped'],
-        ['getConversationVolumeByChannelReport', '/reports/conversations/volume-by-channel', 'conversationVolumeByChannel'],
-        ['getConversationNewReport', '/reports/conversations/new', 'conversationNew'],
-        ['getConversationReceivedMessagesReport', '/reports/conversations/received-messages', 'conversationReceivedMessages'],
+      for (const [report, path, reportType] of [
+        ['volume-by-channel', '/reports/conversations/volume-by-channel', 'conversationVolumeByChannel'],
+        ['new', '/reports/conversations/new', 'conversationNew'],
+        ['received-messages', '/reports/conversations/received-messages', 'conversationReceivedMessages'],
       ] as const) {
         nock(baseURL)
           .get(path)
           .query({
-            start: reportArgs.start,
-            end: reportArgs.end,
-            previousStart: reportArgs.previousStart,
-            previousEnd: reportArgs.previousEnd,
+            start: baseArgs.start,
+            end: baseArgs.end,
+            previousStart: baseArgs.previousStart,
+            previousEnd: baseArgs.previousEnd,
             mailboxes: '359402',
             tags: '123',
             types: 'email',
             folders: '456',
             viewBy: 'week',
           })
-          .reply(200, {
-            current: [{ date: '2024-01-01T00:00:00Z', count: 10 }],
-            previous: [{ date: '2023-12-01T00:00:00Z', count: 8 }],
-          });
+          .reply(200, { current: [{ date: '2024-01-01T00:00:00Z', count: 10 }] });
 
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: toolName,
-            arguments: { ...reportArgs, viewBy: 'week' },
+            name: 'getConversationsReport',
+            arguments: { ...baseArgs, report, viewBy: 'week' },
           },
         });
-
         const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
         expect(result.isError).toBeUndefined();
         expect(response.reportType).toBe(reportType);
-        expect(response.filters).toEqual(expect.objectContaining({
-          mailboxes: '359402',
-          tags: '123',
-          types: 'email',
-          folders: '456',
-          viewBy: 'week',
-        }));
+        expect(response.filters.viewBy).toBe('week');
       }
 
-      for (const [toolName, path, reportType] of [
-        ['getCompanyDrilldownReport', '/reports/company/drilldown', 'companyDrilldown'],
-        ['getConversationDrilldownReport', '/reports/conversations/drilldown', 'conversationDrilldown'],
-        ['getConversationNewDrilldownReport', '/reports/conversations/new-drilldown', 'conversationNewDrilldown'],
+      // drilldown variants (no previous*, with page/rows).
+      const drillArgs = {
+        start: baseArgs.start,
+        end: baseArgs.end,
+        mailboxes: baseArgs.mailboxes,
+        tags: baseArgs.tags,
+        types: baseArgs.types,
+        folders: baseArgs.folders,
+      };
+      for (const [report, path, reportType] of [
+        ['drilldown', '/reports/conversations/drilldown', 'conversationDrilldown'],
+        ['new-drilldown', '/reports/conversations/new-drilldown', 'conversationNewDrilldown'],
       ] as const) {
-        const query: Record<string, string | number> = {
-          start: reportArgs.start,
-          end: reportArgs.end,
-          mailboxes: '359402',
-          tags: '123',
-          types: 'email',
-          folders: '456',
-          page: 2,
-          rows: 30,
-        };
-        const args: Record<string, unknown> = {
-          start: reportArgs.start,
-          end: reportArgs.end,
-          mailboxes: reportArgs.mailboxes,
-          tags: reportArgs.tags,
-          types: reportArgs.types,
-          folders: reportArgs.folders,
-          page: 2,
-          rows: 30,
-        };
-        if (toolName === 'getCompanyDrilldownReport') {
-          query.range = 'replies';
-          query.rangeId = 5;
-          args.range = 'replies';
-          args.rangeId = 5;
-        }
-
         nock(baseURL)
           .get(path)
-          .query(query)
-          .reply(200, {
-            conversations: {
-              page: 2,
-              pages: 3,
-              count: 51,
-              results: [{ id: 987, number: 123, type: 'email' }],
-            },
-          });
+          .query({
+            start: drillArgs.start,
+            end: drillArgs.end,
+            mailboxes: '359402',
+            tags: '123',
+            types: 'email',
+            folders: '456',
+            page: 2,
+            rows: 30,
+          })
+          .reply(200, { conversations: { page: 2, pages: 3, count: 51, results: [{ id: 987, number: 123 }] } });
 
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: toolName,
-            arguments: args,
+            name: 'getConversationsReport',
+            arguments: { ...drillArgs, report, page: 2, rows: 30 },
           },
         });
-
         const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
         expect(result.isError).toBeUndefined();
         expect(response.reportType).toBe(reportType);
-        expect(response.filters).toEqual(expect.objectContaining(query));
         expect(response.report.conversations.results[0].number).toBe(123);
       }
 
+      // fields-drilldown with field/fieldid.
       nock(baseURL)
         .get('/reports/conversations/fields-drilldown')
         .query({
-          start: reportArgs.start,
-          end: reportArgs.end,
+          start: drillArgs.start,
+          end: drillArgs.end,
           field: 'tagid',
           fieldid: '123',
           mailboxes: '359402',
@@ -1565,48 +1608,28 @@ describe('ToolHandler', () => {
           page: 1,
           rows: 25,
         })
-        .reply(200, {
-          conversations: {
-            page: 1,
-            pages: 1,
-            count: 1,
-            results: [{ id: 987, number: 123, type: 'email' }],
-          },
-        });
+        .reply(200, { conversations: { page: 1, pages: 1, count: 1, results: [{ id: 987, number: 123 }] } });
 
-      const fieldDrilldownResult = await toolHandler.callTool({
+      const fieldResult = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getConversationFieldDrilldownReport',
-          arguments: {
-            start: reportArgs.start,
-            end: reportArgs.end,
-            field: 'tagid',
-            fieldid: '123',
-            mailboxes: reportArgs.mailboxes,
-            tags: reportArgs.tags,
-            types: reportArgs.types,
-            folders: reportArgs.folders,
-            page: 1,
-            rows: 25,
-          },
+          name: 'getConversationsReport',
+          arguments: { ...drillArgs, report: 'fields-drilldown', field: 'tagid', fieldid: '123', page: 1, rows: 25 },
         },
       });
-      const fieldDrilldownResponse = JSON.parse((fieldDrilldownResult.content[0] as { type: 'text'; text: string }).text);
-      expect(fieldDrilldownResult.isError).toBeUndefined();
-      expect(fieldDrilldownResponse.reportType).toBe('conversationFieldDrilldown');
-      expect(fieldDrilldownResponse.filters).toEqual(expect.objectContaining({
-        field: 'tagid',
-        fieldid: '123',
-      }));
+      const fieldResponse = JSON.parse((fieldResult.content[0] as { type: 'text'; text: string }).text);
+      expect(fieldResult.isError).toBeUndefined();
+      expect(fieldResponse.reportType).toBe('conversationFieldDrilldown');
+      expect(fieldResponse.filters).toEqual(expect.objectContaining({ field: 'tagid', fieldid: '123' }));
 
+      // busy-times overall variant.
       nock(baseURL)
         .get('/reports/conversations/busy-times')
         .query({
-          start: reportArgs.start,
-          end: reportArgs.end,
-          previousStart: reportArgs.previousStart,
-          previousEnd: reportArgs.previousEnd,
+          start: baseArgs.start,
+          end: baseArgs.end,
+          previousStart: baseArgs.previousStart,
+          previousEnd: baseArgs.previousEnd,
           mailboxes: '359402',
           tags: '123',
           types: 'email',
@@ -1614,25 +1637,48 @@ describe('ToolHandler', () => {
         })
         .reply(200, [{ day: 1, hour: 9, count: 3 }]);
 
-      const busyTimesResult = await toolHandler.callTool({
+      const busyResult = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getConversationBusyTimesReport',
-          arguments: reportArgs,
+          name: 'getConversationsReport',
+          arguments: { ...baseArgs, report: 'busy-times' },
         },
       });
-      const busyTimesResponse = JSON.parse((busyTimesResult.content[0] as { type: 'text'; text: string }).text);
-      expect(busyTimesResult.isError).toBeUndefined();
-      expect(busyTimesResponse.reportType).toBe('conversationBusyTimes');
-      expect(busyTimesResponse.report[0]).toEqual(expect.objectContaining({ day: 1, hour: 9, count: 3 }));
+      const busyResponse = JSON.parse((busyResult.content[0] as { type: 'text'; text: string }).text);
+      expect(busyResult.isError).toBeUndefined();
+      expect(busyResponse.reportType).toBe('conversationBusyTimes');
+      expect(busyResponse.report[0]).toEqual(expect.objectContaining({ day: 1, hour: 9, count: 3 }));
+    });
 
+    it('should reject a conversations fields-drilldown report without field/fieldid', async () => {
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getConversationsReport',
+          arguments: {
+            start: '2024-01-01T00:00:00Z',
+            end: '2024-01-31T23:59:59Z',
+            report: 'fields-drilldown',
+          },
+        },
+      });
+      expect(result.isError).toBe(true);
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.error.code).toBe('INVALID_INPUT');
+      expect(response.error.validationIssues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ message: 'field is required for the fields-drilldown report' }),
+        expect.objectContaining({ message: 'fieldid is required for the fields-drilldown report' }),
+      ]));
+    });
+
+    it('should get the docs report', async () => {
       nock(baseURL)
         .get('/reports/docs')
         .query({
-          start: reportArgs.start,
-          end: reportArgs.end,
-          previousStart: reportArgs.previousStart,
-          previousEnd: reportArgs.previousEnd,
+          start: '2024-01-01T00:00:00Z',
+          end: '2024-01-31T23:59:59Z',
+          previousStart: '2023-12-01T00:00:00Z',
+          previousEnd: '2023-12-31T23:59:59Z',
           sites: 'site-1,site-2',
         })
         .reply(200, {
@@ -1646,10 +1692,10 @@ describe('ToolHandler', () => {
         params: {
           name: 'getDocsReport',
           arguments: {
-            start: reportArgs.start,
-            end: reportArgs.end,
-            previousStart: reportArgs.previousStart,
-            previousEnd: reportArgs.previousEnd,
+            start: '2024-01-01T00:00:00Z',
+            end: '2024-01-31T23:59:59Z',
+            previousStart: '2023-12-01T00:00:00Z',
+            previousEnd: '2023-12-31T23:59:59Z',
             sites: ['site-1', 'site-2'],
           },
         },
@@ -1659,19 +1705,27 @@ describe('ToolHandler', () => {
       expect(docsResponse.reportType).toBe('docs');
       expect(docsResponse.filters.sites).toBe('site-1,site-2');
       expect(docsResponse.report.current.visitors).toBe(10);
+    });
 
-      for (const [toolName, path, reportType] of [
-        ['getChatReport', '/reports/chat', 'chat'],
-        ['getEmailReport', '/reports/email', 'email'],
-        ['getPhoneReport', '/reports/phone', 'phone'],
-      ] as const) {
+    it('should route channel report by channel discriminator', async () => {
+      const baseArgs = {
+        start: '2024-01-01T00:00:00Z',
+        end: '2024-01-31T23:59:59Z',
+        previousStart: '2023-12-01T00:00:00Z',
+        previousEnd: '2023-12-31T23:59:59Z',
+        mailboxes: ['359402'],
+        tags: ['123'],
+        folders: ['456'],
+      };
+
+      for (const channel of ['chat', 'email', 'phone'] as const) {
         nock(baseURL)
-          .get(path)
+          .get(`/reports/${channel}`)
           .query({
-            start: reportArgs.start,
-            end: reportArgs.end,
-            previousStart: reportArgs.previousStart,
-            previousEnd: reportArgs.previousEnd,
+            start: baseArgs.start,
+            end: baseArgs.end,
+            previousStart: baseArgs.previousStart,
+            previousEnd: baseArgs.previousEnd,
             mailboxes: '359402',
             tags: '123',
             folders: '456',
@@ -1685,23 +1739,13 @@ describe('ToolHandler', () => {
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: toolName,
-            arguments: {
-              start: reportArgs.start,
-              end: reportArgs.end,
-              previousStart: reportArgs.previousStart,
-              previousEnd: reportArgs.previousEnd,
-              mailboxes: reportArgs.mailboxes,
-              tags: reportArgs.tags,
-              folders: reportArgs.folders,
-              officeHours: false,
-            },
+            name: 'getChannelReport',
+            arguments: { ...baseArgs, channel, officeHours: false },
           },
         });
-
         const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
         expect(result.isError).toBeUndefined();
-        expect(response.reportType).toBe(reportType);
+        expect(response.reportType).toBe(channel);
         expect(response.filters).toEqual(expect.objectContaining({
           mailboxes: '359402',
           tags: '123',
@@ -1740,8 +1784,9 @@ describe('ToolHandler', () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getHappinessRatingsReport',
+          name: 'getHappinessReport',
           arguments: {
+            report: 'ratings',
             start: '2024-01-01T00:00:00Z',
             end: '2024-01-31T23:59:59Z',
             page: 2,
@@ -1794,16 +1839,8 @@ describe('ToolHandler', () => {
           officeHours: 'true',
         })
         .reply(200, {
-          current: {
-            totalConversations: 12,
-            firstResponseTime: 42,
-            repliesSent: 31,
-          },
-          previous: {
-            totalConversations: 10,
-            firstResponseTime: 50,
-            repliesSent: 29,
-          },
+          current: { totalConversations: 12, firstResponseTime: 42, repliesSent: 31 },
+          previous: { totalConversations: 10, firstResponseTime: 50, repliesSent: 29 },
         });
 
       const overallResult = await toolHandler.callTool({
@@ -1813,25 +1850,19 @@ describe('ToolHandler', () => {
           arguments: reportArgs,
         },
       });
-
       const overallResponse = JSON.parse((overallResult.content[0] as { type: 'text'; text: string }).text);
       expect(overallResult.isError).toBeUndefined();
       expect(overallResponse.reportType).toBe('productivity');
-      expect(overallResponse.filters).toEqual(expect.objectContaining({
-        mailboxes: '359402',
-        tags: '123',
-        types: 'email',
-        folders: '456',
-        officeHours: 'true',
-      }));
+      expect(overallResponse.filters).toEqual(expect.objectContaining({ officeHours: 'true' }));
       expect(overallResponse.report.current.firstResponseTime).toBe(42);
 
-      for (const [toolName, path, reportType, expectedField] of [
-        ['getProductivityFirstResponseTimeReport', '/reports/productivity/first-response-time', 'productivityFirstResponseTime', 'time'],
-        ['getProductivityRepliesSentReport', '/reports/productivity/replies-sent', 'productivityRepliesSent', 'replies'],
-        ['getProductivityResolutionTimeReport', '/reports/productivity/resolution-time', 'productivityResolutionTime', 'time'],
-        ['getProductivityResolvedReport', '/reports/productivity/resolved', 'productivityResolved', 'resolved'],
-        ['getProductivityResponseTimeReport', '/reports/productivity/response-time', 'productivityResponseTime', 'time'],
+      // response-time slug is preserved verbatim (no doc-slug typo applied).
+      for (const [report, path, reportType, expectedField] of [
+        ['first-response-time', '/reports/productivity/first-response-time', 'productivityFirstResponseTime', 'time'],
+        ['replies-sent', '/reports/productivity/replies-sent', 'productivityRepliesSent', 'replies'],
+        ['resolution-time', '/reports/productivity/resolution-time', 'productivityResolutionTime', 'time'],
+        ['resolved', '/reports/productivity/resolved', 'productivityResolved', 'resolved'],
+        ['response-time', '/reports/productivity/response-time', 'productivityResponseTime', 'time'],
       ] as const) {
         nock(baseURL)
           .get(path)
@@ -1848,34 +1879,21 @@ describe('ToolHandler', () => {
             viewBy: 'week',
           })
           .reply(200, {
-            current: [{
-              date: '2024-01-01T00:00:00Z',
-              [expectedField]: 10,
-            }],
-            previous: [{
-              date: '2023-12-01T00:00:00Z',
-              [expectedField]: 20,
-            }],
+            current: [{ date: '2024-01-01T00:00:00Z', [expectedField]: 10 }],
+            previous: [{ date: '2023-12-01T00:00:00Z', [expectedField]: 20 }],
           });
 
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: toolName,
-            arguments: {
-              ...reportArgs,
-              viewBy: 'week',
-            },
+            name: 'getProductivityReport',
+            arguments: { ...reportArgs, report, viewBy: 'week' },
           },
         });
-
         const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
         expect(result.isError).toBeUndefined();
         expect(response.reportType).toBe(reportType);
-        expect(response.filters).toEqual(expect.objectContaining({
-          officeHours: 'true',
-          viewBy: 'week',
-        }));
+        expect(response.filters).toEqual(expect.objectContaining({ officeHours: 'true', viewBy: 'week' }));
         expect(response.report.current[0][expectedField]).toBe(10);
       }
     });
@@ -1893,6 +1911,7 @@ describe('ToolHandler', () => {
         folders: ['456'],
       };
 
+      // overall: required user + report='overall'.
       nock(baseURL)
         .get('/reports/user')
         .query({
@@ -1923,12 +1942,10 @@ describe('ToolHandler', () => {
       const overallResponse = JSON.parse((overallResult.content[0] as { type: 'text'; text: string }).text);
       expect(overallResult.isError).toBeUndefined();
       expect(overallResponse.reportType).toBe('user');
-      expect(overallResponse.filters).toEqual(expect.objectContaining({
-        user: '12345',
-        officeHours: 'false',
-      }));
+      expect(overallResponse.filters).toEqual(expect.objectContaining({ user: '12345', officeHours: 'false' }));
       expect(overallResponse.report.current.totalReplies).toBe(42);
 
+      // conversation-history: status/page/sortField/sortOrder.
       nock(baseURL)
         .get('/reports/user/conversation-history')
         .query({
@@ -1947,19 +1964,15 @@ describe('ToolHandler', () => {
           sortField: 'responseTime',
           sortOrder: 'ASC',
         })
-        .reply(200, {
-          results: [{ id: 987, number: 123, responseTime: 300 }],
-          page: 2,
-          count: 3,
-          pages: 2,
-        });
+        .reply(200, { results: [{ id: 987, number: 123, responseTime: 300 }], page: 2, count: 3, pages: 2 });
 
       const historyResult = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getUserConversationHistoryReport',
+          name: 'getUserReport',
           arguments: {
             ...reportArgs,
+            report: 'conversation-history',
             officeHours: true,
             status: 'closed',
             page: 2,
@@ -1979,10 +1992,11 @@ describe('ToolHandler', () => {
       }));
       expect(historyResponse.report.results[0].responseTime).toBe(300);
 
-      for (const [toolName, path, reportType, expectedField] of [
-        ['getUserCustomersHelpedReport', '/reports/user/customers-helped', 'userCustomersHelped', 'customers'],
-        ['getUserRepliesReport', '/reports/user/replies', 'userReplies', 'replies'],
-        ['getUserResolutionsReport', '/reports/user/resolutions', 'userResolutions', 'resolved'],
+      // timeline reports: customers-helped, replies, resolutions.
+      for (const [report, path, reportType, expectedField] of [
+        ['customers-helped', '/reports/user/customers-helped', 'userCustomersHelped', 'customers'],
+        ['replies', '/reports/user/replies', 'userReplies', 'replies'],
+        ['resolutions', '/reports/user/resolutions', 'userResolutions', 'resolved'],
       ] as const) {
         nock(baseURL)
           .get(path)
@@ -1999,37 +2013,25 @@ describe('ToolHandler', () => {
             viewBy: 'week',
           })
           .reply(200, {
-            current: [{
-              date: '2024-01-01T00:00:00Z',
-              [expectedField]: 10,
-            }],
-            previous: [{
-              date: '2023-12-01T00:00:00Z',
-              [expectedField]: 20,
-            }],
+            current: [{ date: '2024-01-01T00:00:00Z', [expectedField]: 10 }],
+            previous: [{ date: '2023-12-01T00:00:00Z', [expectedField]: 20 }],
           });
 
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: toolName,
-            arguments: {
-              ...reportArgs,
-              viewBy: 'week',
-            },
+            name: 'getUserReport',
+            arguments: { ...reportArgs, report, viewBy: 'week' },
           },
         });
-
         const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
         expect(result.isError).toBeUndefined();
         expect(response.reportType).toBe(reportType);
-        expect(response.filters).toEqual(expect.objectContaining({
-          user: '12345',
-          viewBy: 'week',
-        }));
+        expect(response.filters).toEqual(expect.objectContaining({ user: '12345', viewBy: 'week' }));
         expect(response.report.current[0][expectedField]).toBe(10);
       }
 
+      // drilldown: page/rows, no previous*.
       nock(baseURL)
         .get('/reports/user/drilldown')
         .query({
@@ -2043,21 +2045,15 @@ describe('ToolHandler', () => {
           page: 1,
           rows: 50,
         })
-        .reply(200, {
-          conversations: {
-            count: 1,
-            page: 1,
-            pages: 1,
-            results: [{ id: 987, number: 123, subject: 'Billing' }],
-          },
-        });
+        .reply(200, { conversations: { count: 1, page: 1, pages: 1, results: [{ id: 987, number: 123, subject: 'Billing' }] } });
 
       const drilldownResult = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getUserDrilldownReport',
+          name: 'getUserReport',
           arguments: {
             user: reportArgs.user,
+            report: 'drilldown',
             start: reportArgs.start,
             end: reportArgs.end,
             mailboxes: reportArgs.mailboxes,
@@ -2074,10 +2070,11 @@ describe('ToolHandler', () => {
       expect(drilldownResponse.reportType).toBe('userDrilldown');
       expect(drilldownResponse.report.conversations.results[0].number).toBe(123);
 
-      for (const [toolName, path, reportType, responseBody] of [
-        ['getUserHappinessReport', '/reports/user/happiness', 'userHappiness', { current: { greatCount: 4 } }],
-        ['getUserRatingsReport', '/reports/user/ratings', 'userRatings', { results: [{ ratingId: 1 }], page: 1, count: 1, pages: 1 }],
-        ['getUserChatReport', '/reports/user/chat', 'userChat', { current: { newConversations: 2 } }],
+      // happiness, ratings, chat variants.
+      for (const [report, path, reportType, responseBody] of [
+        ['happiness', '/reports/user/happiness', 'userHappiness', { current: { greatCount: 4 } }],
+        ['ratings', '/reports/user/ratings', 'userRatings', { results: [{ ratingId: 1 }], page: 1, count: 1, pages: 1 }],
+        ['chat', '/reports/user/chat', 'userChat', { current: { newConversations: 2 } }],
       ] as const) {
         const query: Record<string, string | number> = {
           user: reportArgs.user,
@@ -2087,20 +2084,16 @@ describe('ToolHandler', () => {
           previousEnd: reportArgs.previousEnd,
           mailboxes: '359402',
           tags: '123',
+          types: 'email',
+          folders: '456',
         };
-        if (toolName === 'getUserHappinessReport') {
-          query.types = 'email';
-          query.folders = '456';
-        }
-        if (toolName === 'getUserRatingsReport') {
-          query.types = 'email';
-          query.folders = '456';
+        if (report === 'ratings') {
           query.page = 1;
           query.sortField = 'rating';
           query.sortOrder = 'DESC';
           query.rating = 'great';
         }
-        if (toolName === 'getUserChatReport') {
+        if (report === 'chat') {
           query.officeHours = 'true';
         }
 
@@ -2112,15 +2105,15 @@ describe('ToolHandler', () => {
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: toolName,
+            name: 'getUserReport',
             arguments: {
               ...reportArgs,
-              ...(toolName === 'getUserRatingsReport' ? { sortField: 'rating', sortOrder: 'desc', rating: 'great' } : {}),
-              ...(toolName === 'getUserChatReport' ? { types: undefined, folders: undefined, officeHours: true } : {}),
+              report,
+              ...(report === 'ratings' ? { page: 1, sortField: 'rating', sortOrder: 'desc', rating: 'great' } : {}),
+              ...(report === 'chat' ? { officeHours: true } : {}),
             },
           },
         });
-
         const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
         expect(result.isError).toBeUndefined();
         expect(response.reportType).toBe(reportType);
