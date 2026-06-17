@@ -177,7 +177,7 @@ describe('Complete User Workflows - Integration Tests', () => {
     });
   });
 
-  describe('Workflow 2: Comprehensive Multi-Status Search → Analysis', () => {
+  describe('Workflow 2: Multi-Status Search → Analysis', () => {
     it('should handle complex search across all conversation statuses', async () => {
       // SCENARIO: Manager wants to "analyze all billing-related conversations from the last month"
       
@@ -236,45 +236,35 @@ describe('Complete User Workflows - Integration Tests', () => {
         )
         .reply(200, mockClosedConversations);
 
-      // Execute comprehensive search
-      const comprehensiveSearchRequest: CallToolRequest = {
+      // Execute a keyword search that fans out across default statuses.
+      // contentTerms compiles into body:"billing" and createdAfter adds the
+      // createdAt:[...] clause the per-status interceptors require.
+      const multiStatusSearchRequest: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'comprehensiveConversationSearch',
+          name: 'searchConversations',
           arguments: {
-            searchTerms: ['billing'],
-            statuses: ['active', 'pending', 'closed'],
-            timeframeDays: 30
+            contentTerms: ['billing'],
+            createdAfter: '2024-01-01T00:00:00Z'
           }
         }
       };
 
-      const result = await toolHandler.callTool(comprehensiveSearchRequest);
+      const result = await toolHandler.callTool(multiStatusSearchRequest);
       const response = JSON.parse((result.content[0] as any).text);
 
-      // Verify comprehensive analysis
-      expect(response.totalConversationsFound).toBe(4);
-      expect(response.resultsByStatus).toHaveLength(3);
-      
-      // Verify status-specific results
-      const activeResults = response.resultsByStatus.find((r: any) => r.status === 'active');
-      const pendingResults = response.resultsByStatus.find((r: any) => r.status === 'pending');
-      const closedResults = response.resultsByStatus.find((r: any) => r.status === 'closed');
-
-      expect(activeResults.conversations).toHaveLength(1);
-      expect(pendingResults.conversations).toHaveLength(1);
-      expect(closedResults.conversations).toHaveLength(2);
-
-      // Verify search metadata
-      expect(response.searchTerms).toEqual(['billing']);
-      expect(response.timeframe.days).toBe(30);
+      // Verify merged multi-status analysis (active + pending + closed deduped)
+      expect(response.results).toHaveLength(4);
+      expect(response.searchInfo.statusesSearched).toEqual(['active', 'pending', 'closed']);
+      expect(response.pagination.totalByStatus).toEqual({ active: 1, pending: 1, closed: 2 });
+      expect(response.results.map((c: any) => c.status).sort()).toEqual(['active', 'closed', 'closed', 'pending']);
     });
   });
 
-  describe('Workflow 3: Advanced Search with Complex Criteria', () => {
-    it('should handle advanced search with multiple criteria types', async () => {
+  describe('Workflow 3: Search with Complex Criteria', () => {
+    it('should compile multiple content/metadata criteria into one query', async () => {
       // SCENARIO: "Find all conversations from VIP customers about refunds in the last 7 days"
-      
+
       const mockAdvancedResults = {
         _embedded: {
           conversations: [
@@ -294,23 +284,25 @@ describe('Complete User Workflows - Integration Tests', () => {
       nock(baseURL)
         .get('/conversations')
         .query(params => {
-          // Verify complex query construction
+          // contentTerms/subjectTerms compile into the query=() syntax; tag
+          // remains a dedicated top-level param.
           const query = params.query as string;
-          return !!(query && 
+          return !!(query &&
                    query.includes('body:"refund"') &&
                    query.includes('subject:"refund"') &&
-                   query.includes('tag:"vip"'));
+                   params.tag === 'vip' &&
+                   params.status === 'pending');
         })
         .reply(200, mockAdvancedResults);
 
       const advancedSearchRequest: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'advancedConversationSearch',
+          name: 'searchConversations',
           arguments: {
             contentTerms: ['refund'],
             subjectTerms: ['refund'],
-            tags: ['vip'],
+            tag: 'vip',
             createdAfter: '2024-01-14T00:00:00Z',
             status: 'pending'
           }
@@ -322,8 +314,7 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       expect(response.results).toHaveLength(1);
       expect(response.results[0].subject).toContain('Refund');
-      expect(response.searchCriteria.contentTerms).toEqual(['refund']);
-      expect(response.searchCriteria.tags).toEqual(['vip']);
+      expect(response.searchInfo.statusesSearched).toEqual(['pending']);
     });
   });
 
@@ -389,9 +380,12 @@ describe('Complete User Workflows - Integration Tests', () => {
         page: { size: 50, totalElements: 2 }
       };
 
+      // searchConversations(email) fans out across active/pending/closed; serve
+      // the same matched customer payload for each status call (deduped by id).
       nock(baseURL)
         .get('/conversations')
         .query(params => params.query === 'email:"jane@bigcorp.com"')
+        .times(3)
         .reply(200, customerSearchResult);
 
       // Step 2: Get summary of latest conversation
@@ -439,9 +433,9 @@ describe('Complete User Workflows - Integration Tests', () => {
       const customerSearchRequest: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'advancedConversationSearch',
+          name: 'searchConversations',
           arguments: {
-            customerEmail: 'jane@bigcorp.com'
+            email: 'jane@bigcorp.com'
           }
         }
       };

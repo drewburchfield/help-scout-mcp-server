@@ -76,7 +76,7 @@ describe('HelpScoutAPIConstraints', () => {
       expect(result.suggestions).toContain('Conversation IDs should be numeric strings');
     });
 
-    it('should suggest comprehensiveConversationSearch for searches without status', () => {
+    it('should suggest explicit status control for searches without status', () => {
       const context: ToolCallContext = {
         toolName: 'searchConversations',
         arguments: { query: 'urgent refund' },
@@ -87,7 +87,7 @@ describe('HelpScoutAPIConstraints', () => {
       const result = HelpScoutAPIConstraints.validateToolCall(context);
 
       expect(result.isValid).toBe(true);
-      expect(result.suggestions.some(s => s.includes('comprehensiveConversationSearch'))).toBe(true);
+      expect(result.suggestions.some(s => s.includes('explicit status'))).toBe(true);
     });
 
     it('should allow global searches that contain generic support topics', () => {
@@ -105,24 +105,10 @@ describe('HelpScoutAPIConstraints', () => {
       expect(result.requiredPrerequisites).toBeUndefined();
     });
 
-    it('should validate comprehensiveConversationSearch searchTerms', () => {
+    it('should block searchConversations when an inbox is named without inboxId', () => {
       const context: ToolCallContext = {
-        toolName: 'comprehensiveConversationSearch',
-        arguments: {},
-        userQuery: '',
-        previousCalls: []
-      };
-
-      const result = HelpScoutAPIConstraints.validateToolCall(context);
-
-      expect(result.isValid).toBe(false);
-      expect(result.errors).toContain('searchTerms is required and must be a non-empty array');
-    });
-
-    it('should block comprehensiveConversationSearch when an inbox is named without inboxId', () => {
-      const context: ToolCallContext = {
-        toolName: 'comprehensiveConversationSearch',
-        arguments: { searchTerms: ['urgent'] },
+        toolName: 'searchConversations',
+        arguments: { query: 'urgent' },
         userQuery: 'find urgent conversations in the support inbox',
         previousCalls: []
       };

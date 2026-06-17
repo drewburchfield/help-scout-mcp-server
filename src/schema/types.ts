@@ -87,15 +87,29 @@ export const SearchInboxesInputSchema = z.object({
 });
 
 export const SearchConversationsInputSchema = z.object({
+  // Raw Help Scout query passthrough (power users). Convenience params below are
+  // compiled into this query syntax automatically, so most callers never need it.
   query: z.string().optional(),
-  inboxId: z.string().optional(),
-  tag: z.string().optional(),
-  status: z.enum(['active', 'pending', 'closed', 'spam']).optional(),
+  // Content/metadata convenience filters (compiled into the `query=()` syntax):
+  contentTerms: z.array(z.string()).optional().describe('Match these terms in the message body (body:"term")'),
+  subjectTerms: z.array(z.string()).optional().describe('Match these terms in the subject (subject:"term")'),
+  email: z.string().optional().describe('Match conversations involving this email (to/cc/bcc or customer)'),
+  emailDomain: z.string().optional().describe('Match conversations involving any email at this domain'),
+  customerIds: z.array(z.number().int().min(0)).max(100).optional().describe('Conversations belonging to these customer IDs (customer -> conversations bridge)'),
+  hasAttachments: z.boolean().optional().describe('Only conversations with attachments'),
+  // Documented top-level structured filters:
+  inboxId: z.string().optional().describe('Inbox (mailbox) ID'),
+  folderId: z.number().int().min(0).optional().describe('Folder ID'),
+  tag: z.string().optional().describe('Tag name (comma-separated for multiple)'),
+  assignedTo: z.number().int().min(-1).optional().describe('Assignee user ID (-1 = unassigned)'),
+  conversationNumber: z.number().int().min(1).optional().describe('Look up by conversation number'),
+  status: z.enum(['active', 'pending', 'closed', 'open', 'spam', 'all']).optional().describe('Conversation status; omit to search active+pending+closed (excludes spam)'),
   createdAfter: z.string().optional(),
   createdBefore: z.string().optional(),
-  limit: z.number().int().min(1).max(100).default(50),
+  modifiedSince: z.string().optional(),
+  limit: z.number().int().min(1).max(200).default(50),
   page: z.number().int().min(1).default(1),
-  sort: z.enum(['createdAt', 'modifiedAt', 'number']).default('createdAt'),
+  sort: z.enum(['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxid', 'status', 'subject', 'score']).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
   fields: z.array(z.string()).optional(),
 });
@@ -118,51 +132,6 @@ export const GetConversationV3InputSchema = GetConversationInputSchema;
 export const GetConversationSummaryInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
 });
-
-export const AdvancedConversationSearchInputSchema = z.object({
-  contentTerms: z.array(z.string()).optional(),
-  subjectTerms: z.array(z.string()).optional(),
-  customerEmail: z.string().optional(),
-  emailDomain: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  inboxId: z.string().optional(),
-  status: z.enum(['active', 'pending', 'closed', 'spam']).optional(),
-  createdAfter: z.string().optional(),
-  createdBefore: z.string().optional(),
-  limit: z.number().int().min(1).max(100).default(50),
-  page: z.number().int().min(1).default(1),
-});
-
-export const MultiStatusConversationSearchInputSchema = z.object({
-  searchTerms: z.array(z.string()).min(1, 'At least one search term is required'),
-  inboxId: z.string().optional(),
-  statuses: z.array(z.enum(['active', 'pending', 'closed', 'spam'])).default(['active', 'pending', 'closed']),
-  searchIn: z.array(z.enum(['body', 'subject', 'both'])).default(['both']),
-  timeframeDays: z.number().int().min(1).max(365).default(60),
-  createdAfter: z.string().optional(),
-  createdBefore: z.string().optional(),
-  limitPerStatus: z.number().int().min(1).max(100).default(25),
-});
-
-export const StructuredConversationFilterInputSchema = z.object({
-  assignedTo: z.number().int().min(-1).describe('User ID (-1 for unassigned)').optional(),
-  folderId: z.number().int().min(0).describe('Folder ID must be positive').optional(),
-  customerIds: z.array(z.number().int().min(0)).max(100).describe('Max 100 customer IDs').optional(),
-  conversationNumber: z.number().int().min(1).describe('Conversation number must be positive').optional(),
-  status: z.enum(['active', 'pending', 'closed', 'spam', 'all']).default('all'),
-  inboxId: z.string().optional(),
-  tag: z.string().optional(),
-  createdAfter: z.string().optional(),
-  createdBefore: z.string().optional(),
-  modifiedSince: z.string().optional(),
-  sortBy: z.enum(['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject']).default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).default('desc'),
-  limit: z.number().int().min(1).max(100).default(50),
-  page: z.number().int().min(1).default(1),
-}).refine(
-  (data) => !!(data.assignedTo !== undefined || data.folderId !== undefined || data.customerIds !== undefined || data.conversationNumber !== undefined || (data.sortBy && ['waitingSince', 'customerName', 'customerEmail'].includes(data.sortBy))),
-  { message: 'Must use at least one unique field: assignedTo, folderId, customerIds, conversationNumber, or unique sorting. For content search, use comprehensiveConversationSearch.' }
-);
 
 // Customer API Types
 
@@ -1005,8 +974,6 @@ export type GetThreadsV3Input = z.infer<typeof GetThreadsV3InputSchema>;
 export type GetConversationInput = z.infer<typeof GetConversationInputSchema>;
 export type GetConversationV3Input = z.infer<typeof GetConversationV3InputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
-export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
-export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
 export type GetCustomerInput = z.infer<typeof GetCustomerInputSchema>;
 export type ListCustomersInput = z.infer<typeof ListCustomersInputSchema>;
 export type SearchCustomersByEmailInput = z.infer<typeof SearchCustomersByEmailInputSchema>;

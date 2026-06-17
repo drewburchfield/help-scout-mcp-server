@@ -101,10 +101,10 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 ## Tool Selection Guide
 | Task | Tool |
 |------|------|
-| Find tickets by keyword (billing, refund, bug) | comprehensiveConversationSearch |
+| Find tickets by keyword (billing, refund, bug) | searchConversations (contentTerms) |
 | List recent/filtered tickets | searchConversations |
-| Complex filters (email domain, multiple tags) | advancedConversationSearch |
-| Lookup by ticket number (#12345) | structuredConversationFilter |
+| Complex filters (email domain, customer IDs) | searchConversations (emailDomain/customerIds) |
+| Lookup by ticket number (#12345) | searchConversations (conversationNumber) |
 | Browse customers by name or query | listCustomers |
 | Browse customers with v3 cursor filters | listCustomersV3 |
 | Find a customer by email | searchCustomersByEmail |
@@ -123,8 +123,8 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 
 ## Workflow Patterns
 - **Ticket investigation**: searchConversations → getConversation/getConversationSummary → getThreads
-- **Keyword research**: comprehensiveConversationSearch → getThreads for details
-- **Customer history**: listCustomersV3/searchCustomersByEmail → getCustomer → structuredConversationFilter/getThreads
+- **Keyword research**: searchConversations (contentTerms) → getThreads for details
+- **Customer history**: listCustomersV3/searchCustomersByEmail → getCustomer → searchConversations (customerIds)/getThreads
 - **Account review**: listOrganizations/getOrganization → getOrganizationMembers → getOrganizationConversations
 
 ## Notes

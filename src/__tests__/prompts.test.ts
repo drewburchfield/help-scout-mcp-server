@@ -139,7 +139,7 @@ describe('PromptHandler', () => {
         // v1.6.0: Updated best practices to reflect auto-discovery
         expect(promptText).toContain('Inbox Discovery');
         expect(promptText).toContain('Auto-Discovered on Connect');
-        expect(promptText).toContain('comprehensiveConversationSearch');
+        expect(promptText).toContain('searchConversations');
         expect(promptText).toContain('server instructions');
         expect(promptText).toContain('Common Pitfalls to Avoid');
       });

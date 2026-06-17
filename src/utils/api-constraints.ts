@@ -33,8 +33,6 @@ export class HelpScoutAPIConstraints {
     switch (toolName) {
       case 'searchConversations':
         return this.validateSearchConversations(args, userQuery, previousCalls);
-      case 'comprehensiveConversationSearch':
-        return this.validateComprehensiveSearch(args, userQuery, previousCalls);
       case 'getConversationSummary':
         return this.validateConversationSummary(args);
       case 'getThreads':
@@ -77,7 +75,7 @@ export class HelpScoutAPIConstraints {
     const hasTag = args.tag && typeof args.tag === 'string';
     
     if ((hasQuery || hasTag) && !hasStatus) {
-      suggestions.push('TIP: Keyword or tag searches without a status search all default statuses. Use comprehensiveConversationSearch when you need explicit multi-status control.');
+      suggestions.push('TIP: Keyword or tag searches without a status search all default statuses. Pass an explicit status to searchConversations when you need single-status control.');
     }
     
     // CONSTRAINT 3: API parameter mapping validation
@@ -107,47 +105,6 @@ export class HelpScoutAPIConstraints {
   }
   
   /**
-   * Validate comprehensive search based on API constraints
-   */
-  private static validateComprehensiveSearch(
-    args: Record<string, unknown>, 
-    userQuery: string, 
-    previousCalls: string[]
-  ): ValidationResult {
-    const errors: string[] = [];
-    const suggestions: string[] = [];
-    const requiredPrerequisites: string[] = [];
-    
-    // Same inbox validation as regular search
-    const inboxMentioned = this.detectInboxMention(userQuery);
-    const hasInboxId = args.inboxId && typeof args.inboxId === 'string';
-    const hasListedInboxes = previousCalls.includes('listAllInboxes') || previousCalls.includes('searchInboxes');
-    
-    if (inboxMentioned && !hasInboxId) {
-      errors.push('User mentioned an inbox by name but no inboxId provided');
-      if (!hasListedInboxes) {
-        requiredPrerequisites.push('listAllInboxes');
-        suggestions.push('REQUIRED: Use inbox IDs from server instructions or call listAllInboxes when user mentions specific inbox names');
-      } else {
-        suggestions.push('Use the inbox ID from the listAllInboxes results');
-      }
-    }
-    
-    // Validate search terms
-    const searchTerms = args.searchTerms as string[] | undefined;
-    if (!searchTerms || !Array.isArray(searchTerms) || searchTerms.length === 0) {
-      errors.push('searchTerms is required and must be a non-empty array');
-    }
-    
-    return {
-      isValid: errors.length === 0,
-      errors,
-      suggestions,
-      requiredPrerequisites: requiredPrerequisites.length > 0 ? requiredPrerequisites : undefined
-    };
-  }
-  
-  /**
    * Validate conversation summary calls
    */
   private static validateConversationSummary(args: Record<string, unknown>): ValidationResult {
@@ -156,7 +113,7 @@ export class HelpScoutAPIConstraints {
     
     if (!args.conversationId || typeof args.conversationId !== 'string') {
       errors.push('conversationId is required');
-      suggestions.push('Get conversation ID from searchConversations or comprehensiveConversationSearch results');
+      suggestions.push('Get conversation ID from searchConversations results');
     } else if (!/^\d+$/.test(args.conversationId)) {
       errors.push('Invalid conversation ID format');
       suggestions.push('Conversation IDs should be numeric strings');
@@ -215,11 +172,8 @@ export class HelpScoutAPIConstraints {
       }
     }
     
-    if (toolName === 'searchConversations' || toolName === 'comprehensiveConversationSearch') {
-      // comprehensiveConversationSearch uses resultsByStatus (array of status buckets),
-      // so use totalConversationsFound directly instead of counting buckets
-      const totalFound = result?.totalConversationsFound ??
-        (Array.isArray(result?.results) ? result.results.length : 0);
+    if (toolName === 'searchConversations') {
+      const totalFound = Array.isArray(result?.results) ? result.results.length : 0;
       
       if (totalFound === 0) {
         guidance.push('❌ No conversations found. Try:');

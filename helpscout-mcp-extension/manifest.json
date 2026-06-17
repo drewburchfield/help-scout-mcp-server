@@ -145,24 +145,12 @@
       "description": "Get current server time for date-relative queries"
     },
     {
-      "name": "advancedConversationSearch",
-      "description": "Advanced conversation search with complex boolean queries and customer organization support"
-    },
-    {
-      "name": "comprehensiveConversationSearch",
-      "description": "Search conversations across multiple statuses simultaneously - automatically searches active, pending, and closed conversations"
-    },
-    {
       "name": "listAllInboxes",
       "description": "List all accessible inboxes with their IDs - quick helper for seeing available inboxes"
     },
     {
       "name": "getInbox",
       "description": "Get one Help Scout inbox by ID"
-    },
-    {
-      "name": "structuredConversationFilter",
-      "description": "Structural filtering by assignedTo, folderId, customerIds, conversationNumber, or advanced sorting - use after discovering IDs from content search"
     },
     {
       "name": "getCustomer",

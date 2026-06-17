@@ -38,9 +38,6 @@ import {
   GetConversationInputSchema,
   GetConversationV3InputSchema,
   GetConversationSummaryInputSchema,
-  AdvancedConversationSearchInputSchema,
-  MultiStatusConversationSearchInputSchema,
-  StructuredConversationFilterInputSchema,
   GetCustomerInputSchema,
   ListCustomersInputSchema,
   ListCustomersV3InputSchema,
@@ -192,15 +189,6 @@ export class ToolHandler {
   }
 
   /**
-   * Escape special characters in Help Scout query syntax to prevent injection
-   * Help Scout uses double quotes for exact phrases, so we need to escape them
-   */
-  private escapeQueryTerm(term: string): string {
-    // Escape backslashes first, then double quotes
-    return term.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  }
-
-  /**
    * Append a createdAt date range to an existing Help Scout query string.
    * Help Scout has no native createdAfter/createdBefore URL params, so we
    * use query syntax: (createdAt:[start TO end]).
@@ -233,10 +221,6 @@ export class ToolHandler {
 
   private normalizeApiDateParam(date: string | undefined): string | undefined {
     return date?.replace(/\.\d{3}(Z|[+-]\d{2}:\d{2})$/, '$1');
-  }
-
-  private appendQueryClause(existingQuery: string | undefined, clause: string): string {
-    return existingQuery ? `(${existingQuery}) AND (${clause})` : `(${clause})`;
   }
 
   private buildReportQueryParams(input: ReportBaseInput): Record<string, string | number> {
@@ -466,7 +450,7 @@ export class ToolHandler {
       },
       {
         name: 'searchConversations',
-        description: 'List conversations by status, date range, inbox, or tags. Searches all statuses by default. For keyword content search, use comprehensiveConversationSearch.',
+        description: 'Search and list conversations. Filter by status, date range, inbox, or tags, and search content with contentTerms/subjectTerms, email/emailDomain, customerIds, assignedTo, folderId, or conversationNumber. Searches all statuses by default.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -672,161 +656,6 @@ export class ToolHandler {
             },
           },
           required: ['inboxId'],
-        },
-      },
-      {
-        name: 'advancedConversationSearch',
-        description: 'Filter conversations by email domain, customer email, or multiple tags. Supports boolean logic for complex queries. For simple keyword search, use comprehensiveConversationSearch.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            contentTerms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Search terms to find in conversation body/content (will be OR combined)',
-            },
-            subjectTerms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Search terms to find in conversation subject (will be OR combined)',
-            },
-            customerEmail: {
-              type: 'string',
-              description: 'Exact customer email to search for',
-            },
-            emailDomain: {
-              type: 'string',
-              description: 'Email domain to search for (e.g., "company.com" to find all @company.com emails)',
-            },
-            tags: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Tag names to search for (will be OR combined)',
-            },
-            inboxId: {
-              type: 'string',
-              description: 'Filter by inbox ID',
-            },
-            status: {
-              type: 'string',
-              enum: [TOOL_CONSTANTS.STATUSES.ACTIVE, TOOL_CONSTANTS.STATUSES.PENDING, TOOL_CONSTANTS.STATUSES.CLOSED, TOOL_CONSTANTS.STATUSES.SPAM],
-              description: 'Filter by conversation status',
-            },
-            createdAfter: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Filter conversations created after this timestamp (ISO8601)',
-            },
-            createdBefore: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Filter conversations created before this timestamp (ISO8601)',
-            },
-            limit: {
-              type: 'number',
-              description: `Maximum number of results (1-${TOOL_CONSTANTS.MAX_PAGE_SIZE})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
-            },
-            page: {
-              type: 'number',
-              minimum: 1,
-              default: 1,
-              description: 'Page number',
-            },
-          },
-        },
-      },
-      {
-        name: 'comprehensiveConversationSearch',
-        description: 'Search conversation content by keywords. Searches subject and body across all statuses. Requires searchTerms parameter. For listing without keywords, use searchConversations.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            searchTerms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Keywords to search for (OR logic). Example: ["billing", "refund"]',
-              minItems: 1,
-            },
-            inboxId: {
-              type: 'string',
-              description: 'Inbox ID from server instructions',
-            },
-            statuses: {
-              type: 'array',
-              items: { enum: ['active', 'pending', 'closed', 'spam'] },
-              description: 'Conversation statuses to search (defaults to active, pending, closed)',
-              default: ['active', 'pending', 'closed'],
-            },
-            searchIn: {
-              type: 'array',
-              items: { enum: ['body', 'subject', 'both'] },
-              description: 'Where to search for terms (defaults to both body and subject)',
-              default: ['both'],
-            },
-            timeframeDays: {
-              type: 'number',
-              description: `Number of days back to search (defaults to ${TOOL_CONSTANTS.DEFAULT_TIMEFRAME_DAYS})`,
-              minimum: 1,
-              maximum: 365,
-              default: TOOL_CONSTANTS.DEFAULT_TIMEFRAME_DAYS,
-            },
-            createdAfter: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Override timeframeDays with specific start date (ISO8601)',
-            },
-            createdBefore: {
-              type: 'string',
-              format: 'date-time',
-              description: 'End date for search range (ISO8601)',
-            },
-            limitPerStatus: {
-              type: 'number',
-              description: `Maximum results per status (defaults to ${TOOL_CONSTANTS.DEFAULT_LIMIT_PER_STATUS})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_LIMIT_PER_STATUS,
-            },
-          },
-          required: ['searchTerms'],
-        },
-      },
-      {
-        name: 'structuredConversationFilter',
-        description: 'Lookup conversation by ticket number or filter by assignee/customer/folder IDs. Use after discovering IDs from other searches. For initial searches, use searchConversations or comprehensiveConversationSearch.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            assignedTo: { type: 'number', description: 'User ID from previous_results[].assignee.id. Use -1 for unassigned.' },
-            folderId: { type: 'number', description: 'Folder ID from Help Scout UI (not in API responses)' },
-            customerIds: { type: 'array', items: { type: 'number' }, description: 'Customer IDs from previous_results[].customer.id' },
-            conversationNumber: { type: 'number', description: 'Ticket number from previous_results[].number or user reference' },
-            status: { type: 'string', enum: ['active', 'pending', 'closed', 'spam', 'all'], default: 'all' },
-            inboxId: { type: 'string', description: 'Inbox ID to combine with filters' },
-            tag: { type: 'string', description: 'Tag name to combine with filters' },
-            createdAfter: { type: 'string', format: 'date-time' },
-            createdBefore: { type: 'string', format: 'date-time' },
-            modifiedSince: { type: 'string', format: 'date-time', description: 'Filter by last modified (different from created)' },
-            sortBy: { type: 'string', enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject'], default: 'createdAt', description: 'waitingSince/customerName/customerEmail are unique to this tool' },
-            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
-            limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-          },
-          anyOf: [
-            { required: ['assignedTo'] },
-            { required: ['folderId'] },
-            { required: ['customerIds'] },
-            { required: ['conversationNumber'] },
-            {
-              required: ['sortBy'],
-              properties: {
-                sortBy: { type: 'string', enum: ['waitingSince', 'customerName', 'customerEmail'] },
-              },
-            },
-          ],
         },
       },
       // Customer tools (NAS-680, NAS-727, NAS-728)
@@ -2214,15 +2043,6 @@ export class ToolHandler {
         case 'getInbox':
           result = await this.getInbox(request.params.arguments || {});
           break;
-        case 'advancedConversationSearch':
-          result = await this.advancedConversationSearch(request.params.arguments || {});
-          break;
-        case 'comprehensiveConversationSearch':
-          result = await this.comprehensiveConversationSearch(request.params.arguments || {});
-          break;
-        case 'structuredConversationFilter':
-          result = await this.structuredConversationFilter(request.params.arguments || {});
-          break;
         case 'getCustomer':
           result = await this.getCustomer(request.params.arguments || {});
           break;
@@ -2583,10 +2403,10 @@ export class ToolHandler {
             totalFound: filteredInboxes.length,
             totalAvailable: totalElements,
             usage: filteredInboxes.length > 0 ?
-              'NEXT STEP: Use the "id" field from these results in your conversation search tools (comprehensiveConversationSearch or searchConversations)' : 
+              'NEXT STEP: Use the "id" field from these results as the inboxId for searchConversations' :
               'No inboxes matched your query. Try a different search term or use empty string "" to list all inboxes.',
-            example: filteredInboxes.length > 0 ? 
-              `comprehensiveConversationSearch({ searchTerms: ["your search"], inboxId: "${filteredInboxes[0].id}" })` : 
+            example: filteredInboxes.length > 0 ?
+              `searchConversations({ contentTerms: ["your search"], inboxId: "${filteredInboxes[0].id}" })` :
               null,
           }, null, 2),
         },
@@ -2603,10 +2423,28 @@ export class ToolHandler {
       sortOrder: input.order,
     };
 
-    // Add HelpScout query parameter for content/body search
-    if (input.query) {
-      baseParams.query = input.query;
+    // Compile the convenience filters into the documented query=() mini-language,
+    // then AND them with any raw `query` the caller supplied. This absorbs what
+    // the old advanced/comprehensive/structured search tools did, so callers get
+    // one tool instead of four.
+    const clauses: string[] = [];
+    if (input.query) clauses.push(input.query);
+    if (input.contentTerms?.length) clauses.push(input.contentTerms.map(t => `body:"${t}"`).join(' OR '));
+    if (input.subjectTerms?.length) clauses.push(input.subjectTerms.map(t => `subject:"${t}"`).join(' OR '));
+    if (input.email) clauses.push(`email:"${input.email}"`);
+    if (input.emailDomain) clauses.push(`email:"${input.emailDomain}"`);
+    if (input.customerIds?.length) clauses.push(input.customerIds.map(id => `customerIds:${id}`).join(' OR '));
+    if (input.hasAttachments) clauses.push('attachments:true');
+    if (input.assignedTo === -1) clauses.push('assigned:"Unassigned"');
+    if (clauses.length) {
+      baseParams.query = clauses.length === 1 ? clauses[0] : clauses.map(c => `(${c})`).join(' AND ');
     }
+
+    // Documented top-level structured filters.
+    if (input.folderId !== undefined) baseParams.folder = input.folderId;
+    if (typeof input.assignedTo === 'number' && input.assignedTo >= 0) baseParams.assigned_to = input.assignedTo;
+    if (input.conversationNumber !== undefined) baseParams.number = input.conversationNumber;
+    if (input.modifiedSince) baseParams.modifiedSince = input.modifiedSince;
 
     // Apply inbox scoping: explicit inboxId > default > all inboxes
     const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
@@ -2965,7 +2803,7 @@ export class ToolHandler {
             truncated,
             usage: 'Use the "id" field from these results in your conversation searches',
             nextSteps: [
-              'To search in a specific inbox, use the inbox ID with comprehensiveConversationSearch or searchConversations',
+              'To search in a specific inbox, use the inbox ID with searchConversations',
               'To search across all inboxes, omit the inboxId parameter',
             ],
           }, null, 2),
@@ -3299,7 +3137,7 @@ export class ToolHandler {
           totalFolders: folders.length,
           pagination: response.page,
           usage: folders.length > 0
-            ? 'Use folder.id with structuredConversationFilter for folder-scoped lookups.'
+            ? 'Use folder.id with searchConversations(folderId) for folder-scoped lookups.'
             : 'No folders returned for this inbox.',
         }, null, 2),
       }],
@@ -4104,307 +3942,6 @@ export class ToolHandler {
     });
   }
 
-  private async advancedConversationSearch(args: unknown): Promise<CallToolResult> {
-    const input = AdvancedConversationSearchInputSchema.parse(args);
-
-    // Build HelpScout query syntax
-    const queryParts: string[] = [];
-
-    // Content/body search (with injection protection)
-    if (input.contentTerms && input.contentTerms.length > 0) {
-      const bodyQueries = input.contentTerms.map(term => `body:"${this.escapeQueryTerm(term)}"`);
-      queryParts.push(`(${bodyQueries.join(' OR ')})`);
-    }
-
-    // Subject search (with injection protection)
-    if (input.subjectTerms && input.subjectTerms.length > 0) {
-      const subjectQueries = input.subjectTerms.map(term => `subject:"${this.escapeQueryTerm(term)}"`);
-      queryParts.push(`(${subjectQueries.join(' OR ')})`);
-    }
-
-    // Email searches (with injection protection)
-    if (input.customerEmail) {
-      queryParts.push(`email:"${this.escapeQueryTerm(input.customerEmail)}"`);
-    }
-
-    // Handle email domain search (with injection protection)
-    if (input.emailDomain) {
-      const domain = input.emailDomain.replace('@', ''); // Remove @ if present
-      queryParts.push(`email:"${this.escapeQueryTerm(domain)}"`);
-    }
-
-    // Tag search (with injection protection)
-    if (input.tags && input.tags.length > 0) {
-      const tagQueries = input.tags.map(tag => `tag:"${this.escapeQueryTerm(tag)}"`);
-      queryParts.push(`(${tagQueries.join(' OR ')})`);
-    }
-
-    // Build final query
-    const queryString = queryParts.length > 0 ? queryParts.join(' AND ') : undefined;
-
-    // Set up query parameters
-    const queryParams: Record<string, unknown> = {
-      page: input.page,
-      sortField: 'createdAt',
-      sortOrder: 'desc',
-    };
-
-    if (queryString) {
-      queryParams.query = queryString;
-    }
-
-    // Apply inbox scoping: explicit inboxId > default > all inboxes
-    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
-    if (effectiveInboxId) {
-      queryParams.mailbox = effectiveInboxId;
-    }
-
-    const queryWithDate = this.appendCreatedAtFilter(
-      queryParams.query as string | undefined,
-      input.createdAfter,
-      input.createdBefore
-    );
-    if (queryWithDate) queryParams.query = queryWithDate;
-
-    let conversations: Conversation[];
-    let paginationInfo: unknown;
-    let nextPage: number | null = null;
-    let searchedStatuses: string[];
-
-    if (input.status) {
-      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
-        ...queryParams,
-        status: input.status,
-      });
-      conversations = response._embedded?.conversations || [];
-      paginationInfo = response.page;
-      nextPage = getNextPage(response.page);
-      searchedStatuses = [input.status];
-    } else {
-      const statusResult = await this.searchConversationStatusSet(
-        queryParams,
-        DEFAULT_CONVERSATION_STATUSES,
-        input.limit || 50,
-      );
-      conversations = statusResult.conversations;
-      paginationInfo = statusResult.pagination;
-      searchedStatuses = statusResult.searchedStatuses;
-    }
-
-    let clientSideFiltered = false;
-    const originalCount = conversations.length;
-    if (input.createdBefore) {
-      const result = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'advancedConversationSearch');
-      conversations = result.filtered;
-      clientSideFiltered = result.wasFiltered;
-    }
-
-    if (clientSideFiltered) {
-      if (input.status) {
-        paginationInfo = this.buildFilteredPagination(
-          conversations.length,
-          paginationInfo as { totalElements?: number } | undefined,
-          true
-        );
-      } else {
-        const merged = paginationInfo as {
-          totalAvailable?: number;
-          totalByStatus?: Record<string, number>;
-          errors?: Array<{ status: string; message: string; code: string }>;
-          note?: string;
-        };
-        paginationInfo = {
-          totalResults: conversations.length,
-          totalAvailable: merged.totalAvailable,
-          totalByStatus: merged.totalByStatus,
-          errors: merged.errors,
-          note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged.totalAvailable}). ${merged.note || ''}`
-        };
-      }
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            results: this.redactConversationListContent(conversations),
-            searchQuery: queryString,
-            inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
-            searchCriteria: {
-              contentTerms: input.contentTerms,
-              subjectTerms: input.subjectTerms,
-              customerEmail: input.customerEmail,
-              emailDomain: input.emailDomain,
-              tags: input.tags,
-              status: input.status,
-            },
-            statusesSearched: searchedStatuses,
-            pagination: paginationInfo,
-            nextPage,
-            clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
-            note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
-          }, null, 2),
-        },
-      ],
-    };
-  }
-
-  /**
-   * Performs comprehensive conversation search across multiple statuses
-   * @param args - Search parameters including search terms, statuses, and timeframe
-   * @returns Promise<CallToolResult> with search results organized by status
-   * @example
-   * comprehensiveConversationSearch({
-   *   searchTerms: ["urgent", "billing"],
-   *   timeframeDays: 30,
-   *   inboxId: "123456"
-   * })
-   */
-  private async comprehensiveConversationSearch(args: unknown): Promise<CallToolResult> {
-    const input = MultiStatusConversationSearchInputSchema.parse(args);
-    
-    const searchContext = this.buildComprehensiveSearchContext(input);
-    const searchResults = await this.executeMultiStatusSearch(searchContext);
-    const summary = this.formatComprehensiveSearchResults(searchResults, searchContext);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(summary, null, 2),
-        },
-      ],
-    };
-  }
-
-  /**
-   * Build search context from input parameters
-   */
-  private buildComprehensiveSearchContext(input: z.infer<typeof MultiStatusConversationSearchInputSchema>) {
-    const createdAfter = input.createdAfter || this.calculateTimeRange(input.timeframeDays);
-    const searchQuery = this.buildSearchQuery(input.searchTerms, input.searchIn);
-    // Apply inbox scoping: explicit inboxId > default > all inboxes
-    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
-
-    return {
-      input,
-      createdAfter,
-      searchQuery,
-      effectiveInboxId,
-    };
-  }
-
-  /**
-   * Calculate time range for search
-   * Note: Help Scout API requires ISO 8601 format WITHOUT milliseconds
-   */
-  private calculateTimeRange(timeframeDays: number): string {
-    const timeRange = new Date();
-    timeRange.setDate(timeRange.getDate() - timeframeDays);
-    // Strip milliseconds - Help Scout rejects dates with .xxx format
-    return timeRange.toISOString().replace(/\.\d{3}Z$/, 'Z');
-  }
-
-  /**
-   * Build Help Scout search query from terms and search locations (with injection protection)
-   */
-  private buildSearchQuery(terms: string[], searchIn: string[]): string {
-    const queries: string[] = [];
-
-    for (const term of terms) {
-      const termQueries: string[] = [];
-      const escapedTerm = this.escapeQueryTerm(term);
-
-      if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BODY) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`body:"${escapedTerm}"`);
-      }
-
-      if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.SUBJECT) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`subject:"${escapedTerm}"`);
-      }
-
-      if (termQueries.length > 0) {
-        queries.push(`(${termQueries.join(' OR ')})`);
-      }
-    }
-
-    return queries.join(' OR ');
-  }
-
-  /**
-   * Execute search across multiple statuses with error handling
-   */
-  private async executeMultiStatusSearch(context: {
-    input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
-    createdAfter: string;
-    searchQuery: string;
-    effectiveInboxId?: string;
-  }) {
-    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
-    const allResults: Array<{
-      status: string;
-      totalCount: number;
-      totalCountBeforeFilter?: number;
-      conversations: Conversation[];
-      searchQuery: string;
-      filteredByCreatedBefore?: boolean;
-      error?: string;
-    }> = [];
-
-    for (const status of input.statuses) {
-      try {
-        const result = await this.searchSingleStatus({
-          status,
-          searchQuery,
-          createdAfter,
-          limitPerStatus: input.limitPerStatus,
-          inboxId: effectiveInboxId,
-          createdBefore: input.createdBefore,
-        });
-        allResults.push(result);
-      } catch (error) {
-        // Use type guard instead of unsafe cast
-        if (!isApiError(error)) {
-          // Non-API errors (TypeError, network failures) should not be silently swallowed
-          logger.error('Unexpected non-API error in multi-status search', {
-            status,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-
-        // Critical API errors should fail the entire operation.
-        if (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_INPUT') {
-          logger.error('Critical API error in multi-status search - aborting', {
-            status,
-            errorCode: error.code,
-            message: error.message
-          });
-          throw error;
-        }
-
-        // Non-critical API errors: log and include in response
-        logger.error('Status search failed - partial results will be returned', {
-          status,
-          errorCode: error.code,
-          message: error.message,
-          note: 'This status will be excluded from results'
-        });
-
-        allResults.push({
-          status,
-          totalCount: 0,
-          conversations: [],
-          searchQuery,
-          error: `Search failed (${error.code}): ${error.message}`,
-        });
-      }
-    }
-
-    return allResults;
-  }
-
   /**
    * Apply client-side createdBefore filter (Help Scout API does not support this natively).
    * Returns filtered conversations and metadata about what was removed.
@@ -4615,240 +4152,6 @@ export class ToolHandler {
     return typeof value === 'string' ? value : '';
   }
 
-  /**
-   * Search conversations for a single status
-   */
-  private async searchSingleStatus(params: {
-    status: string;
-    searchQuery: string;
-    createdAfter: string;
-    limitPerStatus: number;
-    inboxId?: string;
-    createdBefore?: string;
-  }) {
-    const queryWithDate = this.appendCreatedAtFilter(
-      params.searchQuery,
-      params.createdAfter,
-      params.createdBefore
-    );
-
-    const queryParams: Record<string, unknown> = {
-      page: 1,
-      sortField: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
-      sortOrder: TOOL_CONSTANTS.DEFAULT_SORT_ORDER,
-      query: queryWithDate || params.searchQuery,
-      status: params.status,
-    };
-
-    if (params.inboxId) {
-      queryParams.mailbox = params.inboxId;
-    }
-
-    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-    let conversations = response._embedded?.conversations || [];
-    const apiTotalElements = response.page?.totalElements || conversations.length;
-
-    let filteredByDate = false;
-    if (params.createdBefore) {
-      const result = this.applyCreatedBeforeFilter(conversations, params.createdBefore, `searchSingleStatus(${params.status})`);
-      conversations = result.filtered;
-      filteredByDate = result.wasFiltered;
-    }
-
-    return {
-      status: params.status,
-      totalCount: filteredByDate ? conversations.length : apiTotalElements,
-      totalCountBeforeFilter: filteredByDate ? apiTotalElements : undefined,
-      conversations,
-      searchQuery: params.searchQuery,
-      filteredByCreatedBefore: filteredByDate,
-    };
-  }
-
-  /**
-   * Format comprehensive search results into summary response
-   */
-  private formatComprehensiveSearchResults(
-    allResults: Array<{
-      status: string;
-      totalCount: number;
-      totalCountBeforeFilter?: number;
-      conversations: Conversation[];
-      searchQuery: string;
-      filteredByCreatedBefore?: boolean;
-      error?: string;
-    }>,
-    context: {
-      input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
-      createdAfter: string;
-      searchQuery: string;
-      effectiveInboxId?: string;
-    }
-  ) {
-    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
-    const totalConversations = allResults.reduce((sum, result) => sum + result.conversations.length, 0);
-    const totalAvailable = allResults.reduce((sum, result) => sum + result.totalCount, 0);
-    const hasClientSideFiltering = allResults.some(r => r.filteredByCreatedBefore);
-    const totalBeforeFilter = hasClientSideFiltering
-      ? allResults.reduce((sum, result) => sum + (result.totalCountBeforeFilter || result.totalCount), 0)
-      : undefined;
-
-    return {
-      searchTerms: input.searchTerms,
-      searchQuery,
-      searchIn: input.searchIn,
-      inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
-      timeframe: {
-        createdAfter,
-        createdBefore: input.createdBefore,
-        days: input.timeframeDays,
-      },
-      totalConversationsFound: totalConversations,
-      totalAvailableAcrossStatuses: totalAvailable,
-      totalBeforeClientSideFiltering: totalBeforeFilter,
-      clientSideFilteringApplied: hasClientSideFiltering ?
-        `createdBefore filter applied - totalConversationsFound (${totalConversations}) reflects filtered results, totalBeforeClientSideFiltering (${totalBeforeFilter}) shows pre-filter API totals` : undefined,
-      failedStatuses: allResults.filter(r => r.error).map(r => `[WARNING] Status "${r.status}" search failed: ${r.error}`),
-      resultsByStatus: allResults.map((result) => ({
-        ...result,
-        conversations: this.redactConversationListContent(result.conversations),
-      })),
-      searchTips: totalConversations === 0 ? [
-        'Try broader search terms or increase the timeframe',
-        'Check if the inbox ID is correct',
-        'Consider searching without status restrictions first',
-        'Verify that conversations exist for the specified criteria',
-        !effectiveInboxId ? 'Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
-      ].filter(Boolean) : (!effectiveInboxId ? [
-        'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
-      ] : undefined),
-    };
-  }
-
-  private async structuredConversationFilter(args: unknown): Promise<CallToolResult> {
-    const input = StructuredConversationFilterInputSchema.parse(args);
-
-    const queryParams: Record<string, unknown> = {
-      page: input.page,
-      sortField: input.sortBy,
-      sortOrder: input.sortOrder,
-    };
-
-    // Apply unique structural filters
-    if (input.assignedTo !== undefined && input.assignedTo !== -1) {
-      queryParams.assigned_to = input.assignedTo;
-    }
-    if (input.folderId !== undefined) queryParams.folder = input.folderId;
-    if (input.conversationNumber !== undefined) queryParams.number = input.conversationNumber;
-
-    if (input.assignedTo === -1) {
-      queryParams.query = this.appendQueryClause(queryParams.query as string | undefined, 'assigned:"Unassigned"');
-    }
-
-    // Apply customerIds via query syntax if provided
-    if (input.customerIds && input.customerIds.length > 0) {
-      queryParams.query = this.appendQueryClause(
-        queryParams.query as string | undefined,
-        input.customerIds.map(id => `customerIds:${id}`).join(' OR ')
-      );
-    }
-
-    // Apply combination filters
-    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
-    if (effectiveInboxId) queryParams.mailbox = effectiveInboxId;
-    const shouldSearchDefaultStatuses = input.status === 'all';
-    if (!shouldSearchDefaultStatuses) {
-      queryParams.status = input.status;
-    }
-    if (input.tag) queryParams.tag = input.tag;
-    if (input.modifiedSince) queryParams.modifiedSince = this.normalizeApiDateParam(input.modifiedSince);
-
-    const queryWithDate = this.appendCreatedAtFilter(
-      queryParams.query as string | undefined,
-      input.createdAfter,
-      input.createdBefore
-    );
-    if (queryWithDate) queryParams.query = queryWithDate;
-
-    let conversations: Conversation[];
-    let paginationInfo: unknown;
-    let nextPage: number | null = null;
-    let searchedStatuses: string[];
-
-    if (shouldSearchDefaultStatuses) {
-      const statusResult = await this.searchConversationStatusSet(
-        queryParams,
-        DEFAULT_CONVERSATION_STATUSES,
-        input.limit,
-      );
-      conversations = statusResult.conversations;
-      paginationInfo = statusResult.pagination;
-      searchedStatuses = statusResult.searchedStatuses;
-    } else {
-      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-      conversations = response._embedded?.conversations || [];
-      paginationInfo = response.page;
-      nextPage = getNextPage(response.page);
-      searchedStatuses = [input.status];
-    }
-
-    let clientSideFiltered = false;
-    const originalCount = conversations.length;
-    if (input.createdBefore) {
-      const result = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'structuredConversationFilter');
-      conversations = result.filtered;
-      clientSideFiltered = result.wasFiltered;
-    }
-
-    if (clientSideFiltered) {
-      if (shouldSearchDefaultStatuses) {
-        const merged = paginationInfo as {
-          totalAvailable?: number;
-          totalByStatus?: Record<string, number>;
-          errors?: Array<{ status: string; message: string; code: string }>;
-          note?: string;
-        };
-        paginationInfo = {
-          totalResults: conversations.length,
-          totalAvailable: merged.totalAvailable,
-          totalByStatus: merged.totalByStatus,
-          errors: merged.errors,
-          note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged.totalAvailable}). ${merged.note || ''}`
-        };
-      } else {
-        paginationInfo = this.buildFilteredPagination(
-          conversations.length,
-          paginationInfo as { totalElements?: number } | undefined,
-          true
-        );
-      }
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          results: this.redactConversationListContent(conversations),
-          filterApplied: {
-            filterType: 'structural',
-            assignedTo: input.assignedTo,
-            folderId: input.folderId,
-            customerIds: input.customerIds,
-            conversationNumber: input.conversationNumber,
-            uniqueSorting: ['waitingSince', 'customerName', 'customerEmail'].includes(input.sortBy) ? input.sortBy : undefined,
-            status: input.status,
-          },
-          inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
-          statusesSearched: searchedStatuses,
-          pagination: paginationInfo,
-          nextPage,
-          clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
-          note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
-        }, null, 2),
-      }],
-    };
-  }
-
   // ── Customer Tools (NAS-680, NAS-727) ──
 
   private formatAddress(address: CustomerAddress): Record<string, unknown> {
@@ -4919,7 +4222,7 @@ export class ToolHandler {
         type: 'text',
         text: JSON.stringify({
           customer: result,
-          usage: 'NEXT STEPS: Use organizationId to explore their org with getOrganization. Use customer.id with structuredConversationFilter(customerIds) to find their conversations.',
+          usage: 'NEXT STEPS: Use organizationId to explore their org with getOrganization. Use customer.id with searchConversations(customerIds) to find their conversations.',
         }, null, 2),
       }],
     };
@@ -4965,7 +4268,7 @@ export class ToolHandler {
           returnedCount: customers.length,
           pagination: response.page,
           nextPage: getNextPage(response.page),
-          usage: 'Use customer.id with getCustomer for full profile (includes emails, phones, address, etc.), or with structuredConversationFilter(customerIds) for their conversations.',
+          usage: 'Use customer.id with getCustomer for full profile (includes emails, phones, address, etc.), or with searchConversations(customerIds) for their conversations.',
         }, null, 2),
       }],
     };
@@ -5317,7 +4620,7 @@ export class ToolHandler {
           returnedCount: customers.length,
           pagination: response.page,
           nextPage: getNextPage(response.page),
-          usage: 'Use customer.id with getCustomer for full profile or structuredConversationFilter(customerIds) for their conversations.',
+          usage: 'Use customer.id with getCustomer for full profile or searchConversations(customerIds) for their conversations.',
         }, null, 2),
       }],
     };
