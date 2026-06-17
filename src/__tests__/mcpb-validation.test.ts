@@ -67,8 +67,12 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 55 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(55);
+    it('should have all 55 Help Scout tools + 3 discovery meta-tools declared', () => {
+      // The static manifest documents the FULL catalog: 55 Help Scout tools plus
+      // the 3 NAS-1305 discovery meta-tools (search_tools / get_tool_schema /
+      // call_tool) so MCPB/static clients know the meta layer exists. This is
+      // separate from the runtime listTools() surface (default = ~10 tools).
+      expect(manifest.tools).toHaveLength(58);
 
       const expectedTools = [
         'searchConversations',
@@ -125,7 +129,10 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getDocsArticleRevision',
         'listDocsRedirects',
         'getDocsRedirect',
-        'findDocsRedirect'
+        'findDocsRedirect',
+        'search_tools',
+        'get_tool_schema',
+        'call_tool'
       ];
 
       const toolNames = manifest.tools.map((tool: any) => tool.name);
