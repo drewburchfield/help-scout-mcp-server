@@ -62,7 +62,7 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       nock(baseURL)
         .get('/mailboxes')
-        .query({ page: 1, size: 50 })
+        .query({ page: 1 })
         .reply(200, { _embedded: { mailboxes: mockInboxes } });
 
       // Step 2: Mock conversation search
@@ -115,7 +115,7 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       nock(baseURL)
         .get('/conversations/789/threads')
-        .query({ page: 1, size: 200 })
+        .query({ page: 1 })
         .reply(200, mockThreads);
 
       // Execute the complete workflow
@@ -430,7 +430,7 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       nock(baseURL)
         .get('/conversations/202/threads')
-        .query({ page: 1, size: 50 })
+        .query({ page: 1 })
         .reply(200, summaryThreads);
 
       // Execute customer support workflow

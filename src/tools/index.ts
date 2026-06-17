@@ -2570,13 +2570,15 @@ export class ToolHandler {
 
   private async searchInboxes(args: unknown): Promise<CallToolResult> {
     const input = SearchInboxesInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-      page: input.page,
-      size: input.limit,
-    });
 
-    const inboxes = response._embedded?.mailboxes || [];
-    const filteredInboxes = inboxes.filter(inbox => 
+    // /mailboxes has no name filter, so the match must be done client-side over
+    // ALL inboxes. The endpoint is 50/page and ignores `size`, so loop pages —
+    // otherwise an inbox whose name matches but lives on page 2+ is invisible.
+    const { items: inboxes, totalElements } = await helpScoutClient.getAllPages<Inbox>(
+      '/mailboxes',
+      'mailboxes',
+    );
+    const filteredInboxes = inboxes.filter(inbox =>
       inbox.name.toLowerCase().includes(input.query.toLowerCase())
     );
 
@@ -2594,10 +2596,8 @@ export class ToolHandler {
             })),
             query: input.query,
             totalFound: filteredInboxes.length,
-            totalAvailable: response.page?.totalElements ?? inboxes.length,
-            pagination: response.page,
-            nextPage: getNextPage(response.page),
-            usage: filteredInboxes.length > 0 ? 
+            totalAvailable: totalElements,
+            usage: filteredInboxes.length > 0 ?
               'NEXT STEP: Use the "id" field from these results in your conversation search tools (comprehensiveConversationSearch or searchConversations)' : 
               'No inboxes matched your query. Try a different search term or use empty string "" to list all inboxes.',
             example: filteredInboxes.length > 0 ? 
@@ -2614,7 +2614,6 @@ export class ToolHandler {
 
     const baseParams: Record<string, unknown> = {
       page: input.page,
-      size: input.limit,
       sortField: input.sort,
       sortOrder: input.order,
     };
@@ -2809,13 +2808,14 @@ export class ToolHandler {
     // Get conversation details
     const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
     
-    // Get threads to find first customer message and latest staff reply
-    const threadsResponse = await helpScoutClient.get<PaginatedResponse<Thread>>(
+    // Get ALL threads to find first customer message and latest staff reply.
+    // The endpoint is 25/page and ignores `size`, so a single call would only
+    // see the first 25 threads and pick the wrong "first"/"latest" on long
+    // conversations. Loop pages for a correct summary.
+    const { items: threads } = await helpScoutClient.getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
-      { page: 1, size: 50 }
+      'threads',
     );
-    
-    const threads = threadsResponse._embedded?.threads || [];
     const customerThreads = threads.filter(t => t.type === 'customer');
     const staffThreads = threads.filter(t => t.type === 'message' && t.createdBy);
     
@@ -2864,17 +2864,17 @@ export class ToolHandler {
 
   private async getThreads(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsInputSchema.parse(args);
-    
-    const response = await helpScoutClient.get<PaginatedResponse<Thread>>(
+
+    // Threads ARE the messages. The v2 threads endpoint is fixed at 25/page and
+    // ignores `size`, so loop pages to return the complete history up to `limit`
+    // instead of silently truncating to the first 25.
+    const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
-      {
-        page: input.page,
-        size: input.limit,
-      }
+      'threads',
+      { page: input.page },
+      input.limit,
     );
 
-    const threads = (response._embedded?.threads || []).slice(0, input.limit);
-    
     // Redact message bodies if configured.
     const processedThreads = threads.map(thread => ({
       ...thread,
@@ -2888,8 +2888,9 @@ export class ToolHandler {
           text: JSON.stringify({
             conversationId: input.conversationId,
             threads: processedThreads,
-            pagination: response.page,
-            nextPage: getNextPage(response.page),
+            returnedCount: processedThreads.length,
+            totalThreads: totalElements,
+            truncated,
           }, null, 2),
         },
       ],
@@ -2899,15 +2900,15 @@ export class ToolHandler {
   private async getThreadsV3(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsV3InputSchema.parse(args);
 
-    const response = await helpScoutClient.get<PaginatedResponse<Record<string, unknown>>>(
+    // Loop pages for the complete thread history (page-based; getAllPages is
+    // safe if v3 returns no page block — it fetches a single page then stops).
+    const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Record<string, unknown>>(
       this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
-      {
-        page: input.page,
-        size: input.limit,
-      }
+      'threads',
+      { page: input.page },
+      input.limit,
     );
 
-    const threads = (response._embedded?.threads || []).slice(0, input.limit);
     const processedThreads = config.security.redactMessageContent
       ? threads.map((thread) => this.redactThreadBody(thread))
       : threads;
@@ -2920,8 +2921,9 @@ export class ToolHandler {
             conversationId: input.conversationId,
             apiVersion: 'v3',
             threads: processedThreads,
-            pagination: response.page,
-            nextPage: getNextPage(response.page),
+            returnedCount: processedThreads.length,
+            totalThreads: totalElements,
+            truncated,
             usage: 'Use this v3 thread view when createdBy or assignedTo person type must distinguish user, team, and system_user.',
           }, null, 2),
         },
@@ -2950,14 +2952,16 @@ export class ToolHandler {
 
   private async listAllInboxes(args: unknown): Promise<CallToolResult> {
     const input = ListAllInboxesInputSchema.parse(args);
-    const limit = input.limit || 100;
 
-    const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-      page: 1,
-      size: limit,
-    });
-
-    const inboxes = response._embedded?.mailboxes || [];
+    // "List ALL inboxes" must mean all: /mailboxes is 50/page and ignores
+    // `size`, so loop pages up to `limit` instead of returning only the first 50
+    // and mislabeling it as the total.
+    const { items: inboxes, totalElements, truncated } = await helpScoutClient.getAllPages<Inbox>(
+      '/mailboxes',
+      'mailboxes',
+      {},
+      input.limit,
+    );
 
     return {
       content: [
@@ -2971,7 +2975,9 @@ export class ToolHandler {
               createdAt: inbox.createdAt,
               updatedAt: inbox.updatedAt,
             })),
-            totalInboxes: inboxes.length,
+            totalInboxes: totalElements,
+            returnedCount: inboxes.length,
+            truncated,
             usage: 'Use the "id" field from these results in your conversation searches',
             nextSteps: [
               'To search in a specific inbox, use the inbox ID with comprehensiveConversationSearch or searchConversations',
@@ -4172,7 +4178,6 @@ export class ToolHandler {
     // Set up query parameters
     const queryParams: Record<string, unknown> = {
       page: input.page,
-      size: input.limit || 50,
       sortField: 'createdAt',
       sortOrder: 'desc',
     };
@@ -4662,7 +4667,6 @@ export class ToolHandler {
 
     const queryParams: Record<string, unknown> = {
       page: 1,
-      size: params.limitPerStatus,
       sortField: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
       sortOrder: TOOL_CONSTANTS.DEFAULT_SORT_ORDER,
       query: queryWithDate || params.searchQuery,
@@ -4759,7 +4763,6 @@ export class ToolHandler {
 
     const queryParams: Record<string, unknown> = {
       page: input.page,
-      size: input.limit,
       sortField: input.sortBy,
       sortOrder: input.sortOrder,
     };

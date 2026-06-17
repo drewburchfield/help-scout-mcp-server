@@ -2180,32 +2180,34 @@ describe('ToolHandler', () => {
   });
 
   describe('page-based v2 pagination', () => {
-    it('should pass the requested page through searchInboxes and return nextPage metadata', async () => {
+    it('should scan ALL inbox pages so a name match past page 1 is found (no size param)', async () => {
+      // /mailboxes is 50/page and ignores `size`; searchInboxes must loop pages
+      // so a matching inbox on page 2 is not invisible.
       nock(baseURL)
         .get('/mailboxes')
-        .query({ page: 2, size: 50 })
+        .query({ page: 1 })
         .reply(200, {
-          _embedded: {
-            mailboxes: [
-              { id: 10, name: 'Support', email: 'support@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' },
-            ]
-          },
-          page: { size: 50, totalElements: 101, totalPages: 3, number: 2 }
+          _embedded: { mailboxes: [{ id: 10, name: 'Sales', email: 's@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' }] },
+          page: { size: 50, totalElements: 2, totalPages: 2, number: 1 }
+        });
+      nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 2 })
+        .reply(200, {
+          _embedded: { mailboxes: [{ id: 11, name: 'Billing Support', email: 'b@example.com', createdAt: '2023-01-01T00:00:00Z', updatedAt: '2023-01-02T00:00:00Z' }] },
+          page: { size: 50, totalElements: 2, totalPages: 2, number: 2 }
         });
 
       const result = await toolHandler.callTool({
         method: 'tools/call',
-        params: {
-          name: 'searchInboxes',
-          arguments: { query: '', page: 2 },
-        },
+        params: { name: 'searchInboxes', arguments: { query: 'billing' } },
       });
-      const textContent = result.content[0] as { type: 'text'; text: string };
-      const response = JSON.parse(textContent.text);
+      const response = JSON.parse((result.content[0] as { text: string }).text);
 
+      // The page-2 inbox ("Billing Support") is found despite being beyond page 1.
       expect(response.results).toHaveLength(1);
-      expect(response.pagination).toEqual({ size: 50, totalElements: 101, totalPages: 3, number: 2 });
-      expect(response.nextPage).toBe(3);
+      expect(response.results[0].id).toBe(11);
+      expect(response.totalAvailable).toBe(2);
       expect(response.nextCursor).toBeUndefined();
     });
 
@@ -2238,33 +2240,35 @@ describe('ToolHandler', () => {
       expect(response.nextCursor).toBeUndefined();
     });
 
-    it('should pass the requested page through getThreads and omit v2 cursors', async () => {
+    it('should loop ALL thread pages so message history is complete (no size param, no cursors)', async () => {
+      // Threads are 25/page and `size` is ignored; getThreads must loop pages
+      // and return the COMPLETE history rather than the first page only.
       nock(baseURL)
         .get('/conversations/123/threads')
-        .query({ page: 2, size: 200 })
+        .query({ page: 1 })
         .reply(200, {
-          _embedded: {
-            threads: [
-              { id: 99, type: 'customer', body: 'page two', createdAt: '2023-01-01T00:00:00Z' },
-            ],
-          },
-          _links: { next: { href: '/conversations/123/threads?page=3' } },
-          page: { size: 200, totalElements: 401, totalPages: 3, number: 2 }
+          _embedded: { threads: [{ id: 1, type: 'customer', body: 'first', createdAt: '2023-01-01T00:00:00Z' }] },
+          page: { size: 25, totalElements: 2, totalPages: 2, number: 1 }
+        });
+      nock(baseURL)
+        .get('/conversations/123/threads')
+        .query({ page: 2 })
+        .reply(200, {
+          _embedded: { threads: [{ id: 2, type: 'message', body: 'reply', createdAt: '2023-01-02T00:00:00Z' }] },
+          page: { size: 25, totalElements: 2, totalPages: 2, number: 2 }
         });
 
       const result = await toolHandler.callTool({
         method: 'tools/call',
-        params: {
-          name: 'getThreads',
-          arguments: { conversationId: '123', page: 2 },
-        },
+        params: { name: 'getThreads', arguments: { conversationId: '123' } },
       });
-      const textContent = result.content[0] as { type: 'text'; text: string };
-      const response = JSON.parse(textContent.text);
+      const response = JSON.parse((result.content[0] as { text: string }).text);
 
-      expect(response.threads).toHaveLength(1);
-      expect(response.pagination).toEqual({ size: 200, totalElements: 401, totalPages: 3, number: 2 });
-      expect(response.nextPage).toBe(3);
+      // Both pages concatenated — no silent truncation to page 1.
+      expect(response.threads).toHaveLength(2);
+      expect(response.threads.map((t: { id: number }) => t.id)).toEqual([1, 2]);
+      expect(response.totalThreads).toBe(2);
+      expect(response.truncated).toBe(false);
       expect(response.nextCursor).toBeUndefined();
     });
 
@@ -2472,7 +2476,7 @@ describe('ToolHandler', () => {
     it('uses successful listAllInboxes calls as prior context for inbox-name validation', async () => {
       nock(baseURL)
         .get('/mailboxes')
-        .query({ page: 1, size: 100 })
+        .query({ page: 1 })
         .reply(200, {
           _embedded: {
             mailboxes: [
@@ -3036,7 +3040,7 @@ describe('ToolHandler', () => {
       try {
         nock(apiRoot)
           .get('/v3/conversations/999/threads')
-          .query({ page: 2, size: 1 })
+          .query({ page: 2 })
           .reply(200, {
             _embedded: {
               threads: [
@@ -3065,7 +3069,9 @@ describe('ToolHandler', () => {
         expect(response.threads).toHaveLength(1);
         expect(response.threads[0].createdBy.type).toBe('system_user');
         expect(response.threads[0].body).toBe(REDACTED_MESSAGE_BODY);
-        expect(response.nextPage).toBeNull();
+        // limit=1 with 2 total threads -> honestly reports truncation.
+        expect(response.truncated).toBe(true);
+        expect(response.totalThreads).toBe(2);
       } finally {
         config.security.redactMessageContent = originalRedactMessageContent;
       }
