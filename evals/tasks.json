@@ -1,0 +1,271 @@
+[
+ {
+  "prompt": "Find all conversations belonging to customer ID 4815.",
+  "control": [
+   "structuredConversationFilter",
+   "searchConversations"
+  ],
+  "treatment": [
+   "searchConversations"
+  ],
+  "key": {
+   "customerIds": [
+    4815
+   ]
+  }
+ },
+ {
+  "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+  "control": [
+   "advancedConversationSearch",
+   "comprehensiveConversationSearch",
+   "searchConversations"
+  ],
+  "treatment": [
+   "searchConversations"
+  ],
+  "key": {
+   "contentTerms": "refund"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Which conversations are currently assigned to user 99?",
+  "control": [
+   "structuredConversationFilter"
+  ],
+  "treatment": [
+   "searchConversations"
+  ],
+  "key": {
+   "assignedTo": 99
+  }
+ },
+ {
+  "prompt": "Get the team's average first response time report.",
+  "control": [
+   "getProductivityFirstResponseTimeReport"
+  ],
+  "treatment": [
+   "getProductivityReport"
+  ],
+  "key": {
+   "report": "first-response-time"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "How many conversations came in, broken down by channel?",
+  "control": [
+   "getConversationVolumeByChannelReport"
+  ],
+  "treatment": [
+   "getConversationsReport"
+  ],
+  "key": {
+   "report": "volume-by-channel"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Show the company happiness ratings list.",
+  "control": [
+   "getHappinessRatingsReport"
+  ],
+  "treatment": [
+   "getHappinessReport"
+  ],
+  "key": {
+   "report": "ratings"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Get the email channel report.",
+  "control": [
+   "getEmailReport"
+  ],
+  "treatment": [
+   "getChannelReport"
+  ],
+  "key": {
+   "channel": "email"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+  "control": [
+   "getCustomerContacts",
+   "listCustomerEmails"
+  ],
+  "treatment": [
+   "getCustomerContacts"
+  ],
+  "key": {
+   "customerId": "500"
+  }
+ },
+ {
+  "prompt": "Show the custom fields and folders configured on inbox 123.",
+  "control": [
+   "listInboxCustomFields",
+   "listInboxFolders"
+  ],
+  "treatment": [
+   "getInbox"
+  ],
+  "key": {
+   "include": [
+    "fields",
+    "folders"
+   ]
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+  "control": [
+   "getOriginalSourceRfc822"
+  ],
+  "treatment": [
+   "getOriginalSource"
+  ],
+  "key": {
+   "format": "rfc822"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "List the inboxes whose name contains 'Sales'.",
+  "control": [
+   "searchInboxes"
+  ],
+  "treatment": [
+   "listAllInboxes"
+  ],
+  "key": {
+   "nameContains": "Sales"
+  },
+  "controlKey": {
+   "query": "Sales"
+  }
+ },
+ {
+  "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+  "control": [
+   "getConversationV3"
+  ],
+  "treatment": [
+   "getConversation"
+  ],
+  "key": {
+   "includeSystemActors": true
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "What is user 12's current availability status?",
+  "control": [
+   "getUserStatus"
+  ],
+  "treatment": [
+   "getUser"
+  ],
+  "key": {
+   "includeStatus": true
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Find conversations that have attachments in inbox 50.",
+  "control": [
+   "advancedConversationSearch",
+   "searchConversations"
+  ],
+  "treatment": [
+   "searchConversations"
+  ],
+  "key": {
+   "hasAttachments": true
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Show the productivity resolution time report.",
+  "control": [
+   "getProductivityResolutionTimeReport"
+  ],
+  "treatment": [
+   "getProductivityReport"
+  ],
+  "key": {
+   "report": "resolution-time"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Get all conversations for organization 33911683.",
+  "control": [
+   "getOrganizationConversations"
+  ],
+  "treatment": [
+   "getOrganizationConversations"
+  ],
+  "key": {
+   "organizationId": "33911683"
+  }
+ },
+ {
+  "prompt": "Search the knowledge base articles about 'billing'.",
+  "control": [
+   "searchDocsArticles"
+  ],
+  "treatment": [
+   "searchDocsArticles"
+  ],
+  "key": {
+   "query": "billing"
+  }
+ },
+ {
+  "prompt": "Get docs site 5 along with its access restriction settings.",
+  "control": [
+   "getDocsSiteRestrictions",
+   "getDocsSite"
+  ],
+  "treatment": [
+   "getDocsSite"
+  ],
+  "key": {
+   "includeRestrictions": true
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "Get user 7's replies-sent report.",
+  "control": [
+   "getUserRepliesReport"
+  ],
+  "treatment": [
+   "getUserReport"
+  ],
+  "key": {
+   "report": "replies"
+  },
+  "controlKey": {}
+ },
+ {
+  "prompt": "List conversations in 'closed' status from inbox 42.",
+  "control": [
+   "structuredConversationFilter",
+   "searchConversations"
+  ],
+  "treatment": [
+   "searchConversations"
+  ],
+  "key": {
+   "status": "closed"
+  }
+ }
+]

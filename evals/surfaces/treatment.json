@@ -1,0 +1,2119 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "searchConversations",
+      "description": "Search and list conversations. Filter by status, date range, inbox, or tags, and search content with contentTerms/subjectTerms, email/emailDomain, customerIds, assignedTo, folderId, or conversationNumber. Searches all statuses by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Raw HelpScout query syntax (power users). The convenience filters below are compiled into this automatically. Example: (body:\"keyword\")"
+          },
+          "contentTerms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Match these terms in the message body (compiled to body:\"term\")"
+          },
+          "subjectTerms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Match these terms in the subject (compiled to subject:\"term\")"
+          },
+          "email": {
+            "type": "string",
+            "description": "Match conversations involving this email (to/cc/bcc or customer)"
+          },
+          "emailDomain": {
+            "type": "string",
+            "description": "Match conversations involving any email at this domain"
+          },
+          "customerIds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Conversations belonging to these customer IDs (the customer->conversations bridge)"
+          },
+          "hasAttachments": {
+            "type": "boolean",
+            "description": "Only conversations that have attachments"
+          },
+          "inboxId": {
+            "type": "string",
+            "description": "Inbox (mailbox) ID from server instructions"
+          },
+          "folderId": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Filter by folder ID"
+          },
+          "tag": {
+            "type": "string",
+            "description": "Filter by tag name (comma-separated for multiple)"
+          },
+          "assignedTo": {
+            "type": "integer",
+            "minimum": -1,
+            "description": "Filter by assignee user ID (-1 for unassigned)"
+          },
+          "conversationNumber": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Look up by conversation number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending",
+              "closed",
+              "open",
+              "spam",
+              "all"
+            ],
+            "description": "Filter by status. Omit to search active+pending+closed (excludes spam)."
+          },
+          "createdAfter": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter conversations created after this timestamp (ISO8601)"
+          },
+          "createdBefore": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter conversations created before this timestamp (ISO8601)"
+          },
+          "modifiedSince": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter conversations modified after this timestamp (ISO8601)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results (1-200)",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "modifiedAt",
+              "number",
+              "waitingSince",
+              "customerName",
+              "customerEmail",
+              "mailboxid",
+              "status",
+              "subject",
+              "score"
+            ],
+            "default": "createdAt",
+            "description": "Sort field"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc",
+            "description": "Sort order"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Specific fields to return (for partial responses)"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getConversation",
+      "description": "Get the raw Help Scout conversation object by ID. Optionally embeds threads for direct API parity; use getThreads when full thread pagination is needed. Set includeSystemActors to distinguish user, team, and system_user person types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation ID to retrieve"
+          },
+          "embed": {
+            "type": "string",
+            "enum": [
+              "threads"
+            ],
+            "description": "Optional sub-entity to embed. Help Scout currently supports \"threads\"."
+          },
+          "includeSystemActors": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, routes to the v3 conversation endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user)."
+          }
+        },
+        "required": [
+          "conversationId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getConversationSummary",
+      "description": "Get conversation summary with first customer message and latest staff reply",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation ID to get summary for"
+          }
+        },
+        "required": [
+          "conversationId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getThreads",
+      "description": "Retrieve full message history for a conversation. Returns all thread messages. Set includeSystemActors to distinguish user, team, and system_user person types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "The conversation ID to get threads for"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of threads (1-200)",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 200
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          },
+          "includeSystemActors": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, routes to the v3 threads endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user)."
+          }
+        },
+        "required": [
+          "conversationId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getServerTime",
+      "description": "Get the current MCP host timestamp. Use before date-relative searches to calculate time ranges.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listAllInboxes",
+      "description": "List all inboxes with IDs. Pass nameContains to filter by a case-insensitive name substring. Deprecated: inbox IDs now in server instructions. Only needed mid-session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results (1-100)",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "nameContains": {
+            "type": "string",
+            "description": "Case-insensitive substring filter applied to inbox names after all pages are fetched. Omit to list every inbox."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getInbox",
+      "description": "Get one Help Scout inbox by ID, including inbox email and resource links. Pass include to fan out and attach sub-resources in one call: \"fields\" (customFields with dropdown option IDs), \"folders\" (folder IDs and counts), and \"routing\" (rotation users and eligibility state). Each sub-resource is fetched from its own endpoint; a failure of one is reported under includeErrors without failing the whole call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "description": "Inbox ID from listAllInboxes or server instructions"
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "fields",
+                "folders",
+                "routing"
+              ]
+            },
+            "description": "Sub-resources to fetch and attach: \"fields\" -> customFields, \"folders\" -> folders, \"routing\" -> routing. Omit for just the inbox."
+          }
+        },
+        "required": [
+          "inboxId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getCustomer",
+      "description": "Get a customer profile by ID. Returns profile with contact details (emails, phones, chat handles, social profiles, websites) plus address from a separate lookup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "Customer ID"
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listCustomers",
+      "description": "List or search customers by name, query syntax, or dates. Defaults to v2 page-based pagination. Set useV3 (or pass a cursor) to use the v3 Customers API with cursor pagination, which also enables the email and createdSince filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Filter by first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Filter by last name"
+          },
+          "query": {
+            "type": "string",
+            "description": "Advanced query syntax, e.g. (email:\"john@example.com\")"
+          },
+          "mailbox": {
+            "type": "number",
+            "description": "Filter by inbox ID (v2 page path only)"
+          },
+          "modifiedSince": {
+            "type": "string",
+            "description": "ISO 8601 date - only customers modified after this date"
+          },
+          "sortField": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "firstName",
+              "lastName",
+              "modifiedAt"
+            ],
+            "default": "createdAt",
+            "description": "Sort field (v2 page path only)"
+          },
+          "sortOrder": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc",
+            "description": "Sort order (v2 page path only)"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number for the default v2 page-based pagination (API returns 50 results per page)"
+          },
+          "useV3": {
+            "type": "boolean",
+            "default": false,
+            "description": "Route to the v3 Customers endpoint (cursor-based pagination). Implied when a cursor is supplied."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for v3 pagination (from nextCursor in a previous v3 response). Supplying this forces the v3 path."
+          },
+          "email": {
+            "type": "string",
+            "description": "Filter by email address. v3 path only (requires useV3 or cursor)."
+          },
+          "createdSince": {
+            "type": "string",
+            "description": "ISO 8601 date - only customers created after this date. v3 path only (requires useV3 or cursor)."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "searchCustomersByEmail",
+      "description": "Search customers by email address using the v3 API. Provides email as a dedicated filter parameter (vs query syntax in v2) and cursor-based pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address to search for"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Filter by first name"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Filter by last name"
+          },
+          "query": {
+            "type": "string",
+            "description": "Advanced query syntax"
+          },
+          "modifiedSince": {
+            "type": "string",
+            "description": "ISO 8601 date"
+          },
+          "createdSince": {
+            "type": "string",
+            "description": "ISO 8601 date - only in v3"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for pagination (from nextCursor in previous response)"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getCustomerContacts",
+      "description": "Get all contact details for a customer: emails, phones, chat handles, social profiles, websites, and address. Calls dedicated sub-resource endpoints for complete data. Use after getCustomer or listCustomers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "description": "Customer ID"
+          }
+        },
+        "required": [
+          "customerId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getOrganization",
+      "description": "Get an organization by ID with optional customer/conversation counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "description": "Organization ID"
+          },
+          "includeCounts": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include customerCount and conversationCount"
+          },
+          "includeProperties": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include organization property values"
+          }
+        },
+        "required": [
+          "organizationId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listOrganizations",
+      "description": "List all organizations with sorting options. Use for discovering organizations before drilling into members or conversations. Returns 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sortField": {
+            "type": "string",
+            "enum": [
+              "name",
+              "customerCount",
+              "conversationCount",
+              "lastInteractionAt"
+            ],
+            "default": "lastInteractionAt"
+          },
+          "sortOrder": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number (50 results per page)"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getOrganizationMembers",
+      "description": "Get all customers belonging to an organization. Use after getOrganization to see who is in the org. Returns 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "description": "Organization ID"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number (50 results per page)"
+          }
+        },
+        "required": [
+          "organizationId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getOrganizationConversations",
+      "description": "Get all conversations associated with an organization. Traverses org-to-conversations without needing individual customer lookups. Returns 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "description": "Organization ID"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number (50 results per page)"
+          }
+        },
+        "required": [
+          "organizationId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listCustomerProperties",
+      "description": "List customer property definitions. Use to interpret custom property values embedded on customer records.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listOrganizationProperties",
+      "description": "List organization property definitions. Use to interpret custom company property values embedded on organizations.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getOrganizationProperty",
+      "description": "Get one organization property definition by slug. Use after listOrganizationProperties when exact option labels are needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Organization property slug from listOrganizationProperties"
+          }
+        },
+        "required": [
+          "slug"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listTags",
+      "description": "List Help Scout tags used across inboxes. Use to discover tag IDs and exact names before filtering conversations or reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional case-insensitive client-side tag name filter"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getTag",
+      "description": "Get a Help Scout tag by ID. Use after listTags when an exact tag record is needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tagId": {
+            "type": "string",
+            "description": "Tag ID from listTags"
+          }
+        },
+        "required": [
+          "tagId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listUsers",
+      "description": "List Help Scout users with optional exact email or inbox filter. Use to discover assignee IDs, mentions, and roles. Set includeStatuses to attach all user availability statuses; set includeSystemActors to list v3 system users (AI agents, integrations) instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact user email filter"
+          },
+          "inboxId": {
+            "type": "string",
+            "description": "Inbox ID to find users with access to that inbox"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          },
+          "includeStatuses": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, additionally calls /users/status once and attaches all user email/chat availability statuses under \"statuses\" (not fanned out per user)."
+          },
+          "includeSystemActors": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, routes to the v3 /system-users endpoint, returning system actors (AI agents, integration users) instead of standard users. Emits apiVersion: \"v3\". Ignores includeStatuses."
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getUser",
+      "description": "Get a Help Scout user by ID, or pass \"me\" to get the authenticated resource owner. Set includeStatus to attach the user availability status; set includeSystemActors to fetch the v3 system-user record instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "User ID from listUsers, or \"me\" for the authenticated resource owner"
+          },
+          "includeStatus": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, also fetches /users/{id}/status and attaches the email/chat availability status under \"status\". Ignored when includeSystemActors is true."
+          },
+          "includeSystemActors": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, routes to the v3 /system-users/{id} endpoint, returning the system actor record instead of a standard user. Emits apiVersion: \"v3\". Takes precedence over includeStatus."
+          }
+        },
+        "required": [
+          "userId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listTeams",
+      "description": "List Help Scout teams. Use to discover team IDs before team-member lookup or team-scoped reporting.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getTeamMembers",
+      "description": "List members of a Help Scout team. Use after listTeams to discover user IDs in a team.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "teamId": {
+            "type": "string",
+            "description": "Team ID from listTeams"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        },
+        "required": [
+          "teamId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listSavedReplies",
+      "description": "List saved replies for a Help Scout inbox. Use to discover saved reply IDs and inspect reusable response templates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "description": "Inbox ID from listAllInboxes or server instructions"
+          },
+          "includeChatReplies": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include chat-only saved replies in the response"
+          }
+        },
+        "required": [
+          "inboxId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getSavedReply",
+      "description": "Get one saved reply from a Help Scout inbox by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inboxId": {
+            "type": "string",
+            "description": "Inbox ID from listAllInboxes or server instructions"
+          },
+          "replyId": {
+            "type": "string",
+            "description": "Saved reply ID from listSavedReplies"
+          }
+        },
+        "required": [
+          "inboxId",
+          "replyId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getOriginalSource",
+      "description": "Get the original source for a Help Scout conversation thread. Set format to \"rfc822\" for raw email source, or \"json\" (default) for parsed source.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "Conversation ID from searchConversations or getConversationSummary"
+          },
+          "threadId": {
+            "type": "string",
+            "description": "Thread ID from getThreads"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "rfc822"
+            ],
+            "default": "json",
+            "description": "Source format: 'json' (parsed) or 'rfc822' (raw email source)"
+          }
+        },
+        "required": [
+          "conversationId",
+          "threadId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getAttachment",
+      "description": "Get base64-encoded Help Scout attachment data by conversation and attachment ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "Conversation ID from searchConversations or getConversationSummary"
+          },
+          "attachmentId": {
+            "type": "string",
+            "description": "Attachment ID from getThreads attachment links"
+          }
+        },
+        "required": [
+          "conversationId",
+          "attachmentId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "downloadAttachmentFile",
+      "description": "Download a Help Scout attachment file as base64 with response metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "description": "Conversation ID from searchConversations or getConversationSummary"
+          },
+          "attachmentId": {
+            "type": "string",
+            "description": "Attachment ID from getThreads attachment links"
+          }
+        },
+        "required": [
+          "conversationId",
+          "attachmentId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listWorkflows",
+      "description": "List Help Scout workflows. Use to inspect account workflow configuration and discover workflow IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listWebhooks",
+      "description": "List Help Scout webhooks. Use to inspect webhook configuration and discover webhook IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getWebhook",
+      "description": "Get a Help Scout webhook by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhookId": {
+            "type": "string",
+            "description": "Webhook ID from listWebhooks"
+          }
+        },
+        "required": [
+          "webhookId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getSatisfactionRating",
+      "description": "Get a Help Scout satisfaction rating by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ratingId": {
+            "type": "string",
+            "description": "Satisfaction rating ID"
+          }
+        },
+        "required": [
+          "ratingId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getCompanyReport",
+      "description": "Get a Help Scout company report for a bounded time range. report=overall (/reports/company), customers-helped (/reports/company/customers-helped), or drilldown (/reports/company/drilldown).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "enum": [
+              "overall",
+              "customers-helped",
+              "drilldown"
+            ],
+            "default": "overall",
+            "description": "Which company report to fetch"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601 (overall, customers-helped)"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601 (overall, customers-helped)"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Inbox IDs to filter by"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to filter by"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "chat",
+                "phone"
+              ]
+            },
+            "description": "Conversation types to filter by"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder IDs to filter by"
+          },
+          "viewBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Report granularity (customers-helped only)"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Drilldown page number (drilldown only)"
+          },
+          "rows": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Drilldown rows per page, max 50 (drilldown only)"
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "replies",
+              "firstReplyResolved",
+              "resolved",
+              "responseTime",
+              "firstResponseTime",
+              "handleTime"
+            ],
+            "description": "Drilldown range filter (required for drilldown)"
+          },
+          "rangeId": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Drilldown range bucket ID (drilldown only)"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getConversationsReport",
+      "description": "Get a Help Scout conversations report for a bounded time range. report selects /reports/conversations[/<report>]: overall, volume-by-channel, busy-times, drilldown, fields-drilldown, new, new-drilldown, received-messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "enum": [
+              "overall",
+              "volume-by-channel",
+              "busy-times",
+              "drilldown",
+              "fields-drilldown",
+              "new",
+              "new-drilldown",
+              "received-messages"
+            ],
+            "default": "overall",
+            "description": "Which conversations report to fetch"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601 (non-drilldown reports)"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601 (non-drilldown reports)"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Inbox IDs to filter by"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to filter by"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "chat",
+                "phone"
+              ]
+            },
+            "description": "Conversation types to filter by"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder IDs to filter by"
+          },
+          "viewBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Report granularity (volume-by-channel, new, received-messages)"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Drilldown page number (drilldown reports)"
+          },
+          "rows": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Drilldown rows per page, max 50 (drilldown reports)"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "tagid",
+              "replyid",
+              "workflowid",
+              "customerid"
+            ],
+            "description": "Field to drill into (required for fields-drilldown)"
+          },
+          "fieldid": {
+            "type": "string",
+            "description": "Field value identifier (required for fields-drilldown)"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getProductivityReport",
+      "description": "Get a Help Scout productivity report for a bounded time range. report selects /reports/productivity[/<report>]: overall, first-response-time, replies-sent, resolved, response-time, resolution-time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "enum": [
+              "overall",
+              "first-response-time",
+              "replies-sent",
+              "resolved",
+              "response-time",
+              "resolution-time"
+            ],
+            "default": "overall",
+            "description": "Which productivity report to fetch"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Inbox IDs to filter by"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to filter by"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "chat",
+                "phone"
+              ]
+            },
+            "description": "Conversation types to filter by"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder IDs to filter by"
+          },
+          "officeHours": {
+            "type": "boolean",
+            "description": "Whether to take office hours into consideration"
+          },
+          "viewBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Report granularity (timeline reports only)"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getUserReport",
+      "description": "Get a Help Scout user or team report for a bounded time range. report selects /reports/user[/<report>]: overall, conversation-history, customers-helped, drilldown, happiness, ratings, replies, resolutions, chat.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "number",
+            "description": "User ID or team ID for the report"
+          },
+          "report": {
+            "type": "string",
+            "enum": [
+              "overall",
+              "conversation-history",
+              "customers-helped",
+              "drilldown",
+              "happiness",
+              "ratings",
+              "replies",
+              "resolutions",
+              "chat"
+            ],
+            "default": "overall",
+            "description": "Which user report to fetch"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Inbox IDs to filter by"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to filter by"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "chat",
+                "phone"
+              ]
+            },
+            "description": "Conversation types to filter by"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder IDs to filter by"
+          },
+          "officeHours": {
+            "type": "boolean",
+            "description": "Whether to take office hours into consideration (overall, conversation-history, chat)"
+          },
+          "viewBy": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Report granularity (customers-helped, replies, resolutions)"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "pending",
+              "closed"
+            ],
+            "description": "Conversation status filter (conversation-history only)"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Page number (drilldown, ratings, conversation-history)"
+          },
+          "rows": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Rows per page, max 50 (drilldown only)"
+          },
+          "sortField": {
+            "type": "string",
+            "description": "Sort field (conversation-history, ratings)"
+          },
+          "sortOrder": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC",
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order (conversation-history, ratings)"
+          },
+          "rating": {
+            "type": "string",
+            "enum": [
+              "great",
+              "ok",
+              "all",
+              "not-good"
+            ],
+            "description": "Rating filter (ratings only)"
+          }
+        },
+        "required": [
+          "user",
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getHappinessReport",
+      "description": "Get a Help Scout happiness report for a bounded time range. report=overall (/reports/happiness) or ratings (/reports/happiness/ratings).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "enum": [
+              "overall",
+              "ratings"
+            ],
+            "default": "overall",
+            "description": "Which happiness report to fetch"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601 (overall only)"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601 (overall only)"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Inbox IDs to filter by"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to filter by"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "chat",
+                "phone"
+              ]
+            },
+            "description": "Conversation types to filter by"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder IDs to filter by"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Page number (ratings only)"
+          },
+          "sortField": {
+            "type": "string",
+            "enum": [
+              "number",
+              "modifiedAt",
+              "rating"
+            ],
+            "description": "Sort field (ratings only)"
+          },
+          "sortOrder": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC",
+              "asc",
+              "desc"
+            ],
+            "description": "Sort order (ratings only)"
+          },
+          "rating": {
+            "type": "string",
+            "enum": [
+              "great",
+              "ok",
+              "all",
+              "not-good"
+            ],
+            "description": "Rating filter (ratings only)"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getChannelReport",
+      "description": "Get a Help Scout channel report for a bounded time range. channel selects /reports/chat, /reports/email, or /reports/phone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "chat",
+              "email",
+              "phone"
+            ],
+            "description": "Which channel report to fetch"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601"
+          },
+          "mailboxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Inbox IDs to filter by"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag IDs to filter by"
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Folder IDs to filter by"
+          },
+          "officeHours": {
+            "type": "boolean",
+            "description": "Whether to take office hours into consideration"
+          }
+        },
+        "required": [
+          "channel",
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsReport",
+      "description": "Get the Help Scout Docs overall report for a bounded time range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start of the reporting interval, ISO 8601"
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the reporting interval, ISO 8601"
+          },
+          "previousStart": {
+            "type": "string",
+            "description": "Optional comparison interval start, ISO 8601"
+          },
+          "previousEnd": {
+            "type": "string",
+            "description": "Optional comparison interval end, ISO 8601"
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Docs site IDs to filter by"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsSites",
+      "description": "List Help Scout Docs sites using the Docs API v1.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsSite",
+      "description": "Get one Help Scout Docs site by ID. Set includeRestrictions to also attach the restricted-site settings (secrets redacted).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siteId": {
+            "type": "string",
+            "description": "Docs site ID"
+          },
+          "includeRestrictions": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, also fetches the restricted-site settings (/sites/{id}/restricted) and attaches them under \"restrictions\" with shared secrets redacted."
+          }
+        },
+        "required": [
+          "siteId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsCollections",
+      "description": "List Help Scout Docs collections, optionally scoped to a site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siteId": {
+            "type": "string",
+            "description": "Optional Docs site ID"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "all",
+              "public",
+              "private"
+            ],
+            "default": "all"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "number",
+              "visibility",
+              "order",
+              "name",
+              "createdAt",
+              "updatedAt"
+            ],
+            "default": "order"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "asc"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsCollection",
+      "description": "Get one Help Scout Docs collection by ID or number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Docs collection ID or number"
+          }
+        },
+        "required": [
+          "collectionId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsCategories",
+      "description": "List Help Scout Docs categories for a collection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Docs collection ID"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "number",
+              "order",
+              "name",
+              "articleCount",
+              "createdAt",
+              "updatedAt"
+            ],
+            "default": "order"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "asc"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        },
+        "required": [
+          "collectionId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsCategory",
+      "description": "Get one Help Scout Docs category by ID or number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Docs category ID or number"
+          }
+        },
+        "required": [
+          "categoryId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsArticles",
+      "description": "List Help Scout Docs articles for a collection or category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionId": {
+            "type": "string",
+            "description": "Docs collection ID. Provide this or categoryId."
+          },
+          "categoryId": {
+            "type": "string",
+            "description": "Docs category ID. Provide this or collectionId."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "published",
+              "notpublished"
+            ],
+            "default": "all"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "order",
+              "number",
+              "status",
+              "name",
+              "popularity",
+              "createdAt",
+              "updatedAt"
+            ],
+            "default": "order"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          },
+          "pageSize": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "searchDocsArticles",
+      "description": "Search Help Scout Docs articles by query, site, collection, status, or visibility.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          },
+          "collectionId": {
+            "type": "string",
+            "description": "Optional Docs collection ID"
+          },
+          "siteId": {
+            "type": "string",
+            "description": "Optional Docs site ID"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "published",
+              "notpublished"
+            ],
+            "default": "all"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "all",
+              "public",
+              "private"
+            ],
+            "default": "all"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsArticle",
+      "description": "Get one Help Scout Docs article by ID or number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "articleId": {
+            "type": "string",
+            "description": "Docs article ID or number"
+          },
+          "draft": {
+            "type": "boolean",
+            "default": false,
+            "description": "Return draft content when unpublished changes exist"
+          }
+        },
+        "required": [
+          "articleId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsRelatedArticles",
+      "description": "List Help Scout Docs articles related to an article.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "articleId": {
+            "type": "string",
+            "description": "Docs article ID"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "published",
+              "notpublished"
+            ],
+            "default": "all"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "order",
+              "number",
+              "status",
+              "name",
+              "popularity",
+              "createdAt",
+              "updatedAt"
+            ],
+            "default": "order"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        },
+        "required": [
+          "articleId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsArticleRevisions",
+      "description": "List Help Scout Docs article revisions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "articleId": {
+            "type": "string",
+            "description": "Docs article ID"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        },
+        "required": [
+          "articleId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsArticleRevision",
+      "description": "Get one Help Scout Docs article revision by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "revisionId": {
+            "type": "string",
+            "description": "Docs article revision ID"
+          }
+        },
+        "required": [
+          "revisionId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "listDocsRedirects",
+      "description": "List Help Scout Docs redirects for a site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siteId": {
+            "type": "string",
+            "description": "Docs site ID"
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number"
+          }
+        },
+        "required": [
+          "siteId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "getDocsRedirect",
+      "description": "Get one Help Scout Docs redirect by ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "redirectId": {
+            "type": "string",
+            "description": "Docs redirect ID"
+          }
+        },
+        "required": [
+          "redirectId"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "findDocsRedirect",
+      "description": "Resolve a Help Scout Docs redirect target from a site ID and URL path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "siteId": {
+            "type": "string",
+            "description": "Docs site ID"
+          },
+          "url": {
+            "type": "string",
+            "description": "URL path to redirect from, e.g. /old/path"
+          }
+        },
+        "required": [
+          "siteId",
+          "url"
+        ]
+      }
+    }
+  }
+]

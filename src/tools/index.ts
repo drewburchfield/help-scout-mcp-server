@@ -6,6 +6,7 @@ import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constrain
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
+import { sanitizeJsonSchema, coerceJsonStringArgs } from '../utils/schema-sanitizer.js';
 import {
   Inbox,
   Conversation,
@@ -1296,10 +1297,38 @@ export class ToolHandler {
     // CoWork) can auto-approve reads and skip "may modify data" confirmations.
     // openWorldHint is true because results depend on an external service.
     // A tool may still override by declaring its own `annotations`.
+    //
+    // Every advertised inputSchema is run through sanitizeJsonSchema so it loads
+    // across Gemini / OpenAI / GLM / Claude (NAS-1307): strips object-level
+    // anyOf/oneOf/allOf, adds additionalProperties:false to object nodes, and
+    // converts number -> integer.
     return tools.map((tool) => ({
       annotations: { readOnlyHint: true, openWorldHint: true },
       ...tool,
+      inputSchema: sanitizeJsonSchema(tool.inputSchema) as Tool['inputSchema'],
     }));
+  }
+
+  /**
+   * Best-effort JSON-string argument coercion (NAS-1307). Looks the tool's
+   * sanitized inputSchema up from the same registry listTools() advertises and
+   * coerces stringified arrays/objects to native. Defensive: never throws; on
+   * any failure (or unknown tool) the original arguments are returned unchanged.
+   */
+  private async coerceArgumentsForTool(
+    toolName: string,
+    args: CallToolRequest['params']['arguments'],
+  ): Promise<CallToolRequest['params']['arguments']> {
+    try {
+      const tools = await this.listTools();
+      const tool = tools.find((candidate) => candidate.name === toolName);
+      if (!tool?.inputSchema) {
+        return args;
+      }
+      return coerceJsonStringArgs(args, tool.inputSchema) as CallToolRequest['params']['arguments'];
+    } catch {
+      return args;
+    }
   }
 
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -1311,6 +1340,15 @@ export class ToolHandler {
       toolName: request.params.name,
       argumentKeys: Object.keys(request.params.arguments || {}).filter(key => key !== '__userQuery'),
     });
+
+    // NAS-1307: weaker / non-Claude models stringify complex args (`"[1,2]"`
+    // instead of `[1,2]`). Coerce stringified-JSON arrays/objects back to native
+    // against the tool's sanitized inputSchema before validation/parsing. This
+    // is best-effort and never throws; on any failure args are left untouched.
+    request.params.arguments = await this.coerceArgumentsForTool(
+      request.params.name,
+      request.params.arguments,
+    );
 
     const args = request.params.arguments || {};
     const userQuery = this.getToolCallUserQuery(args);
