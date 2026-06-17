@@ -214,6 +214,31 @@ export class ToolHandler {
   ];
 
   /**
+   * Response-bootstrapped successor hints (NAS-1305 phase 3). Maps a "hub" tool
+   * to the logically-next tools in the Help Scout entity graph
+   * (2026-06-16-helpscout-read-api-contract.md). When a hub tool returns, the
+   * full sanitized schemas of its (non-core) successors are appended to the
+   * result's `_meta.suggestedTools` so the model can call them next with correct
+   * args and no search detour. Successors already in CORE_TOOLS are filtered out
+   * (the model already has those); only additive tail tools are surfaced.
+   */
+  private static readonly SUCCESSOR_MAP: Record<string, readonly string[]> = {
+    searchConversations: ['getConversation', 'getThreads', 'getOriginalSource', 'getAttachment'],
+    getConversation: ['getThreads', 'getOriginalSource', 'getCustomer'],
+    getThreads: ['getOriginalSource', 'getAttachment', 'downloadAttachmentFile'],
+    getCustomer: ['getCustomerContacts', 'getOrganization'],
+    getOrganization: [
+      'getOrganizationMembers',
+      'getOrganizationConversations',
+      'listOrganizationProperties',
+    ],
+    listAllInboxes: ['getInbox', 'listSavedReplies'],
+    getInbox: ['listSavedReplies'],
+    searchDocsArticles: ['getDocsArticle', 'listDocsArticleRevisions', 'listDocsRelatedArticles'],
+    getCompanyReport: ['getConversationsReport', 'getProductivityReport', 'getHappinessReport'],
+  };
+
+  /**
    * Help Scout domain synonyms for search_tools (NAS-1305). Each entry maps a
    * canonical term to the words a model might use for the same concept. Used to
    * expand query terms so e.g. 'mailbox' surfaces inbox tools. Bidirectional:
@@ -1680,6 +1705,77 @@ export class ToolHandler {
    * switch.
    */
   private async dispatchTool(name: string, args: object): Promise<CallToolResult> {
+    const result = await this.dispatchToolInner(name, args);
+    return this.attachSuccessorHints(name, result);
+  }
+
+  /**
+   * Build the successor-hint defs for a tool (NAS-1305 phase 3). Looks up
+   * SUCCESSOR_MAP, filters OUT any name already in CORE_TOOLS (the model already
+   * has those) and any meta-tool, caps at 3, and maps each survivor to its
+   * sanitized def ({ name, description, inputSchema }) from allToolDefs().
+   * Returns undefined when nothing remains (terminal tools, or all-core tails).
+   */
+  private successorHintsFor(
+    toolName: string,
+  ): { name: string; description?: string; inputSchema: Tool['inputSchema'] }[] | undefined {
+    const successors = ToolHandler.SUCCESSOR_MAP[toolName];
+    if (!successors || successors.length === 0) {
+      return undefined;
+    }
+    const excluded = new Set<string>([...ToolHandler.CORE_TOOLS, ...ToolHandler.META_TOOLS]);
+    const wanted = successors.filter((name) => !excluded.has(name)).slice(0, 3);
+    if (wanted.length === 0) {
+      return undefined;
+    }
+    const byName = new Map(this.allToolDefs().map((tool) => [tool.name, tool]));
+    const hints = wanted
+      .map((name) => byName.get(name))
+      .filter((tool): tool is Tool => tool !== undefined)
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }));
+    return hints.length > 0 ? hints : undefined;
+  }
+
+  /**
+   * Attach response-bootstrapped successor hints (NAS-1305 phase 3) to a hub
+   * tool's result. Sets `result._meta.suggestedTools` to the sanitized schemas
+   * of the logically-next (non-core) tools so the model's next call_tool /
+   * direct call is correctly typed with no search detour.
+   *
+   * Gated OFF in HELPSCOUT_EXPOSE_ALL_TOOLS mode (every tool already advertised,
+   * so hints are redundant). Total: never throws and never changes the primary
+   * result payload — on any failure the original result is returned untouched.
+   * Meta-tool results are never hinted; when call_tool dispatches a hub tool the
+   * hint rides along because attachment keys off the dispatched tool name.
+   */
+  private attachSuccessorHints(name: string, result: CallToolResult): CallToolResult {
+    try {
+      if (process.env.HELPSCOUT_EXPOSE_ALL_TOOLS === 'true') {
+        return result;
+      }
+      if ((ToolHandler.META_TOOLS as readonly string[]).includes(name)) {
+        return result;
+      }
+      const hints = this.successorHintsFor(name);
+      if (!hints) {
+        return result;
+      }
+      result._meta = { ...result._meta, suggestedTools: hints };
+      return result;
+    } catch {
+      return result;
+    }
+  }
+
+  /**
+   * The pure name → handler switch. Extracted from dispatchTool so the latter
+   * can attach successor hints around it (NAS-1305 phase 3).
+   */
+  private async dispatchToolInner(name: string, args: object): Promise<CallToolResult> {
     switch (name) {
       // --- Discovery meta-tools (NAS-1305) ---
       case 'search_tools':
