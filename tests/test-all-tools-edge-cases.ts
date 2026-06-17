@@ -108,14 +108,14 @@ async function main() {
     detail: `${d?.inboxes?.length} inboxes`,
   }));
 
-  await test('happy', 'searchInboxes (empty query)', 'searchInboxes', { query: '' }, (d) => ({
-    ok: Array.isArray(d?.results),
-    detail: `${d?.results?.length} results`,
+  await test('happy', 'listAllInboxes (no nameContains)', 'listAllInboxes', {}, (d) => ({
+    ok: Array.isArray(d?.inboxes),
+    detail: `${d?.inboxes?.length} inboxes`,
   }));
 
-  await test('happy', 'searchInboxes (name match)', 'searchInboxes', { query: 'Client' }, (d) => ({
-    ok: d?.results?.some((r: any) => r.name?.includes('Client')),
-    detail: d?.results?.[0]?.name,
+  await test('happy', 'listAllInboxes (nameContains match)', 'listAllInboxes', { nameContains: 'Client' }, (d) => ({
+    ok: d?.inboxes?.some((r: any) => r.name?.includes('Client')),
+    detail: d?.inboxes?.[0]?.name,
   }));
 
   await test('happy', 'listCustomerProperties', 'listCustomerProperties', {}, (d) => ({
@@ -179,16 +179,16 @@ async function main() {
     }));
   }
 
-  await test('happy', 'listInboxCustomFields (golden inbox)', 'listInboxCustomFields',
-    { inboxId: GOLDEN.inboxId }, (d) => ({
-      ok: Array.isArray(d?.fields),
-      detail: `${d?.fields?.length || 0} fields`,
+  await test('happy', 'getInbox include fields (golden inbox)', 'getInbox',
+    { inboxId: GOLDEN.inboxId, include: ['fields'] }, (d) => ({
+      ok: Array.isArray(d?.customFields?.fields),
+      detail: `${d?.customFields?.fields?.length || 0} fields`,
     }));
 
-  await test('happy', 'listInboxFolders (golden inbox)', 'listInboxFolders',
-    { inboxId: GOLDEN.inboxId }, (d) => ({
-      ok: Array.isArray(d?.folders),
-      detail: `${d?.folders?.length || 0} folders`,
+  await test('happy', 'getInbox include folders (golden inbox)', 'getInbox',
+    { inboxId: GOLDEN.inboxId, include: ['folders'] }, (d) => ({
+      ok: Array.isArray(d?.folders?.folders),
+      detail: `${d?.folders?.folders?.length || 0} folders`,
     }));
 
   let conversationId: string | null = null;
@@ -206,22 +206,22 @@ async function main() {
       detail: `${d?.results?.length} results`,
     }));
 
-  await test('happy', 'advancedConversationSearch', 'advancedConversationSearch',
+  await test('happy', 'searchConversations (contentTerms + inbox)', 'searchConversations',
     { contentTerms: ['test'], inboxId: GOLDEN.inboxId }, (d) => ({
       ok: !d?.error,
-      detail: `${d?.conversations?.length || 0} conversations`,
+      detail: `${d?.results?.length || 0} conversations`,
     }));
 
-  await test('happy', 'comprehensiveConversationSearch', 'comprehensiveConversationSearch',
-    { searchTerms: ['support'] }, (d) => ({
+  await test('happy', 'searchConversations (contentTerms)', 'searchConversations',
+    { contentTerms: ['support'] }, (d) => ({
       ok: !d?.error,
       detail: `results returned`,
     }));
 
-  await test('happy', 'structuredConversationFilter (by customerIds)', 'structuredConversationFilter',
+  await test('happy', 'searchConversations (by customerIds)', 'searchConversations',
     { customerIds: [Number(GOLDEN.customerId)], inboxId: GOLDEN.inboxId }, (d) => ({
       ok: !d?.error, // Golden customer may have 0 conversations; success = no error
-      detail: `${d?.conversations?.length || 0} conversations`,
+      detail: `${d?.results?.length || 0} conversations`,
     }));
 
   if (conversationId) {
@@ -348,26 +348,28 @@ async function main() {
   // CATEGORY 4: Special Characters in Search
   // =========================================================================
 
-  await test('special-chars', 'searchInboxes single backslash', 'searchInboxes',
+  await test('special-chars', 'searchConversations single backslash', 'searchConversations',
     { query: '\\' }, expectGraceful);
 
   await test('special-chars', 'searchConversations HTML tags', 'searchConversations',
     { query: '<script>alert("xss")</script>' }, expectGraceful);
 
-  await test('special-chars', 'advancedConversationSearch emoji', 'advancedConversationSearch',
+  await test('special-chars', 'searchConversations emoji', 'searchConversations',
     { contentTerms: ['🔥 urgent'] }, expectGraceful);
 
-  await test('special-chars', 'advancedConversationSearch Lucene operators', 'advancedConversationSearch',
+  await test('special-chars', 'searchConversations Lucene operators', 'searchConversations',
     { contentTerms: ['+ - && || ! ( ) { } [ ] ^ ~ * ? :'] }, expectGraceful);
 
-  await test('special-chars', 'comprehensiveConversationSearch unicode', 'comprehensiveConversationSearch',
-    { searchTerms: ['tëštüšér'] }, expectGraceful);
+  await test('special-chars', 'searchConversations unicode', 'searchConversations',
+    { contentTerms: ['tëštüšér'] }, expectGraceful);
 
-  await test('special-chars', 'searchInboxes quote injection', 'searchInboxes',
-    { query: '" OR name:* OR "' }, expectGraceful);
+  // searchConversations escapes backslash/quote when compiling contentTerms into
+  // its query, so a quote-injection term must compile cleanly and not error.
+  await test('special-chars', 'searchConversations quote injection', 'searchConversations',
+    { contentTerms: ['" OR body:* OR "'] }, expectGraceful);
 
-  await test('special-chars', 'comprehensiveConversationSearch very long term', 'comprehensiveConversationSearch',
-    { searchTerms: ['a'.repeat(500)] }, expectGraceful);
+  await test('special-chars', 'searchConversations very long term', 'searchConversations',
+    { contentTerms: ['a'.repeat(500)] }, expectGraceful);
 
   // =========================================================================
   // CATEGORY 5: Email Format Edge Cases
@@ -469,14 +471,16 @@ async function main() {
   });
 
   // =========================================================================
-  // CATEGORY 9: structuredConversationFilter edge cases
+  // CATEGORY 9: searchConversations filter edge cases
   // =========================================================================
 
-  await test('structured', 'no unique fields (should reject)', 'structuredConversationFilter',
-    { status: 'active', inboxId: GOLDEN.inboxId }, expectError);
+  // searchConversations has no "at least one unique field" requirement (unlike the
+  // old structuredConversationFilter): an otherwise-empty search is valid = list all.
+  await test('structured', 'no unique fields (now valid = list all)', 'searchConversations',
+    { status: 'active', inboxId: GOLDEN.inboxId }, expectSuccess);
 
-  await test('structured', 'customerIds array with 1 element', 'structuredConversationFilter',
-    { customerIds: [GOLDEN.customerId] }, expectGraceful);
+  await test('structured', 'customerIds array with 1 element', 'searchConversations',
+    { customerIds: [Number(GOLDEN.customerId)] }, expectGraceful);
 
   // =========================================================================
   // CATEGORY 10: Missing required params
@@ -497,8 +501,10 @@ async function main() {
   await test('missing-params', 'searchCustomersByEmail no args', 'searchCustomersByEmail',
     {}, expectError);
 
-  await test('missing-params', 'searchInboxes no args (query required)', 'searchInboxes',
-    {}, expectError);
+  // listAllInboxes does not require nameContains (unlike the old searchInboxes,
+  // which required query): no args is valid and lists every inbox.
+  await test('missing-params', 'listAllInboxes no args (nameContains optional)', 'listAllInboxes',
+    {}, expectSuccess);
 
   // =========================================================================
   // Summary

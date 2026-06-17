@@ -214,9 +214,9 @@ If a search returns no results:
 
 ## Tool Selection Guide
 
-\`searchConversations\` is the single conversation search tool. It absorbed the
-old comprehensiveConversationSearch, advancedConversationSearch, and
-structuredConversationFilter tools.
+\`searchConversations\` is the single conversation search tool. It handles
+keyword search, advanced filtering, and multi-status comprehensive search in
+one place.
 
 ### Use \`searchConversations\` for:
 - Keyword content search: \`contentTerms\` / \`subjectTerms\` (compiled into body:/subject: query syntax)
