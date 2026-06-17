@@ -7,7 +7,6 @@ import {
   ListCustomersInputSchema,
   ListOrganizationsInputSchema,
   SearchConversationsInputSchema,
-  SearchInboxesInputSchema,
 } from '../schema/types.js';
 
 describe('Schema Validation', () => {
@@ -89,7 +88,6 @@ describe('Schema Validation', () => {
 
   describe('v2 page-based pagination schemas', () => {
     it('should accept numeric page inputs for v2 paginated tools', () => {
-      expect(SearchInboxesInputSchema.parse({ query: '', page: 2 }).page).toBe(2);
       expect(SearchConversationsInputSchema.parse({ page: 3 }).page).toBe(3);
       expect(GetThreadsInputSchema.parse({ conversationId: '123', page: 4 }).page).toBe(4);
       expect(SearchConversationsInputSchema.parse({ tag: 'billing', page: 5 }).page).toBe(5);
@@ -98,7 +96,6 @@ describe('Schema Validation', () => {
 
     it('should reject fractional page inputs for v2 paginated tools', () => {
       const cases = [
-        () => SearchInboxesInputSchema.parse({ query: '', page: 1.5 }),
         () => SearchConversationsInputSchema.parse({ page: 1.5 }),
         () => GetThreadsInputSchema.parse({ conversationId: '123', page: 1.5 }),
         () => SearchConversationsInputSchema.parse({ tag: 'billing', page: 1.5 }),
@@ -112,7 +109,6 @@ describe('Schema Validation', () => {
   describe('integer-only numeric tool inputs', () => {
     it('should reject fractional paging and limit values', () => {
       const cases = [
-        () => SearchInboxesInputSchema.parse({ query: '', limit: 1.5 }),
         () => GetThreadsInputSchema.parse({ conversationId: '123', limit: 1.5 }),
         () => SearchConversationsInputSchema.parse({ assignedTo: -1, limit: 1.5 }),
         () => ListCustomersInputSchema.parse({ page: 1.5 }),

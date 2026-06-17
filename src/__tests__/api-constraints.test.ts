@@ -148,19 +148,19 @@ describe('HelpScoutAPIConstraints', () => {
   });
 
   describe('generateToolGuidance', () => {
-    it('should provide next steps for searchInboxes results', () => {
+    it('should provide next steps for listAllInboxes results', () => {
       const mockResult = {
-        results: [{ id: '12345', name: 'Support' }]
+        inboxes: [{ id: '12345', name: 'Support' }]
       };
 
       const context: ToolCallContext = {
-        toolName: 'searchInboxes',
+        toolName: 'listAllInboxes',
         arguments: {},
         userQuery: '',
         previousCalls: []
       };
 
-      const guidance = HelpScoutAPIConstraints.generateToolGuidance('searchInboxes', mockResult, context);
+      const guidance = HelpScoutAPIConstraints.generateToolGuidance('listAllInboxes', mockResult, context);
 
       expect(guidance[0]).toContain('✅ NEXT STEP');
       expect(guidance[1]).toContain('"inboxId": "12345"');

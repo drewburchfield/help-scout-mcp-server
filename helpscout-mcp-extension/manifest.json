@@ -113,20 +113,12 @@
   },
   "tools": [
     {
-      "name": "searchInboxes",
-      "description": "Search Help Scout inboxes by name"
-    },
-    {
       "name": "searchConversations",
       "description": "Search Help Scout conversations with various filters including full-text content search"
     },
     {
       "name": "getConversation",
-      "description": "Get the raw Help Scout conversation object by ID with optional embedded threads"
-    },
-    {
-      "name": "getConversationV3",
-      "description": "Get the v3 Help Scout conversation object by ID with preserved person type fields"
+      "description": "Get the raw Help Scout conversation object by ID with optional embedded threads; set includeSystemActors to preserve user/team/system_user person types"
     },
     {
       "name": "getConversationSummary",
@@ -134,11 +126,7 @@
     },
     {
       "name": "getThreads",
-      "description": "Retrieve all thread messages for a conversation"
-    },
-    {
-      "name": "getThreadsV3",
-      "description": "Retrieve v3 thread messages for a conversation with preserved person type fields"
+      "description": "Retrieve all thread messages for a conversation; set includeSystemActors to preserve user/team/system_user person types"
     },
     {
       "name": "getServerTime",
@@ -146,7 +134,7 @@
     },
     {
       "name": "listAllInboxes",
-      "description": "List all accessible inboxes with their IDs - quick helper for seeing available inboxes"
+      "description": "List all accessible inboxes with their IDs; pass nameContains to filter by case-insensitive name substring"
     },
     {
       "name": "getInbox",
@@ -158,11 +146,7 @@
     },
     {
       "name": "listCustomers",
-      "description": "List customers by name or advanced query syntax using the v2 Customers API"
-    },
-    {
-      "name": "listCustomersV3",
-      "description": "List customers by name, email, query syntax, or cursor using the v3 Customers API"
+      "description": "List customers by name, query, or dates; defaults to v2 page pagination, set useV3 or pass a cursor for the v3 Customers API with cursor pagination and email/createdSince filters"
     },
     {
       "name": "searchCustomersByEmail",

@@ -67,23 +67,19 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 67 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(67);
+    it('should have all 63 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(63);
 
       const expectedTools = [
-        'searchInboxes',
         'searchConversations',
         'getConversation',
-        'getConversationV3',
         'getConversationSummary',
         'getThreads',
-        'getThreadsV3',
         'getServerTime',
         'listAllInboxes',
         'getInbox',
         'getCustomer',
         'listCustomers',
-        'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
         'getOrganization',
@@ -295,18 +291,14 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       const content = fs.readFileSync(toolsPath, 'utf8');
       
       const expectedExports = [
-        'searchInboxes',
         'searchConversations',
         'getConversation',
-        'getConversationV3',
-        'getConversationSummary', 
+        'getConversationSummary',
         'getThreads',
-        'getThreadsV3',
         'getServerTime',
         'getInbox',
         'getCustomer',
         'listCustomers',
-        'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
         'getOrganization',

@@ -120,12 +120,12 @@ describe('Complete User Workflows - Integration Tests', () => {
 
       // Execute the complete workflow
       
-      // Step 1: Search for "support" inbox
+      // Step 1: Find "support" inbox via listAllInboxes nameContains filter
       const inboxSearchRequest: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
-          arguments: { query: 'support' }
+          name: 'listAllInboxes',
+          arguments: { nameContains: 'support' }
         }
       };
 
@@ -133,9 +133,9 @@ describe('Complete User Workflows - Integration Tests', () => {
       expect(inboxResult.content[0]).toHaveProperty('type', 'text');
 
       const inboxResponse = JSON.parse((inboxResult.content[0] as any).text);
-      expect(inboxResponse.results).toHaveLength(1);
-      expect(inboxResponse.results[0].name).toBe('Support');
-      const supportInboxId = inboxResponse.results[0].id;
+      expect(inboxResponse.inboxes).toHaveLength(1);
+      expect(inboxResponse.inboxes[0].name).toBe('Support');
+      const supportInboxId = inboxResponse.inboxes[0].id;
 
       // Step 2: Search conversations in that inbox
       const conversationSearchRequest: CallToolRequest = {

@@ -30,16 +30,12 @@ import {
   HappinessRatingsReport,
   ReportBaseInput,
   ServerTime,
-  SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
-  GetThreadsV3InputSchema,
   GetConversationInputSchema,
-  GetConversationV3InputSchema,
   GetConversationSummaryInputSchema,
   GetCustomerInputSchema,
   ListCustomersInputSchema,
-  ListCustomersV3InputSchema,
   SearchCustomersByEmailInputSchema,
   GetCustomerContactsInputSchema,
   ListAllInboxesInputSchema,
@@ -390,33 +386,6 @@ export class ToolHandler {
   async listTools(): Promise<Tool[]> {
     const tools: Tool[] = [
       {
-        name: 'searchInboxes',
-        description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: 'Search query to match inbox names. Use empty string "" to list ALL inboxes. This is case-insensitive substring matching.',
-            },
-            limit: {
-              type: 'number',
-              description: `Maximum number of results (1-${TOOL_CONSTANTS.MAX_PAGE_SIZE})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
-            },
-            page: {
-              type: 'number',
-              minimum: 1,
-              default: 1,
-              description: 'Page number',
-            },
-          },
-          required: ['query'],
-        },
-      },
-      {
         name: 'searchConversations',
         description: 'Search and list conversations. Filter by status, date range, inbox, or tags, and search content with contentTerms/subjectTerms, email/emailDomain, customerIds, assignedTo, folderId, or conversationNumber. Searches all statuses by default.',
         inputSchema: {
@@ -484,7 +453,7 @@ export class ToolHandler {
       },
       {
         name: 'getConversation',
-        description: 'Get the raw Help Scout conversation object by ID. Optionally embeds threads for direct API parity; use getThreads when full thread pagination is needed.',
+        description: 'Get the raw Help Scout conversation object by ID. Optionally embeds threads for direct API parity; use getThreads when full thread pagination is needed. Set includeSystemActors to distinguish user, team, and system_user person types.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -497,24 +466,10 @@ export class ToolHandler {
               enum: ['threads'],
               description: 'Optional sub-entity to embed. Help Scout currently supports "threads".',
             },
-          },
-          required: ['conversationId'],
-        },
-      },
-      {
-        name: 'getConversationV3',
-        description: 'Get the v3 Help Scout conversation object by ID, preserving system_user and team person types.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            conversationId: {
-              type: 'string',
-              description: 'The conversation ID to retrieve',
-            },
-            embed: {
-              type: 'string',
-              enum: ['threads'],
-              description: 'Optional sub-entity to embed. Help Scout currently supports "threads".',
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 conversation endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user).',
             },
           },
           required: ['conversationId'],
@@ -536,7 +491,7 @@ export class ToolHandler {
       },
       {
         name: 'getThreads',
-        description: 'Retrieve full message history for a conversation. Returns all thread messages.',
+        description: 'Retrieve full message history for a conversation. Returns all thread messages. Set includeSystemActors to distinguish user, team, and system_user person types.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -557,32 +512,10 @@ export class ToolHandler {
               default: 1,
               description: 'Page number',
             },
-          },
-          required: ['conversationId'],
-        },
-      },
-      {
-        name: 'getThreadsV3',
-        description: 'Retrieve v3 thread history for a conversation, preserving system_user and team person types.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            conversationId: {
-              type: 'string',
-              description: 'The conversation ID to get threads for',
-            },
-            limit: {
-              type: 'number',
-              description: `Maximum number of threads (1-${TOOL_CONSTANTS.MAX_THREAD_SIZE})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_THREAD_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_THREAD_SIZE,
-            },
-            page: {
-              type: 'number',
-              minimum: 1,
-              default: 1,
-              description: 'Page number',
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 threads endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user).',
             },
           },
           required: ['conversationId'],
@@ -598,7 +531,7 @@ export class ToolHandler {
       },
       {
         name: 'listAllInboxes',
-        description: 'List all inboxes with IDs. Deprecated: inbox IDs now in server instructions. Only needed mid-session.',
+        description: 'List all inboxes with IDs. Pass nameContains to filter by a case-insensitive name substring. Deprecated: inbox IDs now in server instructions. Only needed mid-session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -608,6 +541,10 @@ export class ToolHandler {
               minimum: 1,
               maximum: 100,
               default: 100,
+            },
+            nameContains: {
+              type: 'string',
+              description: 'Case-insensitive substring filter applied to inbox names after all pages are fetched. Omit to list every inbox.',
             },
           },
         },
@@ -643,34 +580,22 @@ export class ToolHandler {
       },
       {
         name: 'listCustomers',
-        description: 'List or search customers by name, query syntax, or modification date. Page-based pagination (v2 API).',
+        description: 'List or search customers by name, query syntax, or dates. Defaults to v2 page-based pagination. Set useV3 (or pass a cursor) to use the v3 Customers API with cursor pagination, which also enables the email and createdSince filters.',
         inputSchema: {
           type: 'object',
           properties: {
             firstName: { type: 'string', description: 'Filter by first name' },
             lastName: { type: 'string', description: 'Filter by last name' },
             query: { type: 'string', description: 'Advanced query syntax, e.g. (email:"john@example.com")' },
-            mailbox: { type: 'number', description: 'Filter by inbox ID' },
+            mailbox: { type: 'number', description: 'Filter by inbox ID (v2 page path only)' },
             modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
-            sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt' },
-            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number (API returns 50 results per page)' },
-          },
-        },
-      },
-      {
-        name: 'listCustomersV3',
-        description: 'List or search customers through the v3 Customers API. Supports first name, last name, email, created/modified dates, query syntax, and cursor-based pagination.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            firstName: { type: 'string', description: 'Filter by first name' },
-            lastName: { type: 'string', description: 'Filter by last name' },
-            email: { type: 'string', description: 'Filter by email address' },
-            createdSince: { type: 'string', description: 'ISO 8601 date - only customers created after this date' },
-            modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
-            query: { type: 'string', description: 'Advanced v3 query syntax, e.g. (email:"john@example.com")' },
-            cursor: { type: 'string', description: 'Cursor for pagination (from nextCursor in previous response)' },
+            sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt', description: 'Sort field (v2 page path only)' },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc', description: 'Sort order (v2 page path only)' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number for the default v2 page-based pagination (API returns 50 results per page)' },
+            useV3: { type: 'boolean', default: false, description: 'Route to the v3 Customers endpoint (cursor-based pagination). Implied when a cursor is supplied.' },
+            cursor: { type: 'string', description: 'Cursor for v3 pagination (from nextCursor in a previous v3 response). Supplying this forces the v3 path.' },
+            email: { type: 'string', description: 'Filter by email address. v3 path only (requires useV3 or cursor).' },
+            createdSince: { type: 'string', description: 'ISO 8601 date - only customers created after this date. v3 path only (requires useV3 or cursor).' },
           },
         },
       },
@@ -1452,26 +1377,17 @@ export class ToolHandler {
       let result: CallToolResult;
 
       switch (request.params.name) {
-        case 'searchInboxes':
-          result = await this.searchInboxes(request.params.arguments || {});
-          break;
         case 'searchConversations':
           result = await this.searchConversations(request.params.arguments || {});
           break;
         case 'getConversation':
           result = await this.getConversation(request.params.arguments || {});
           break;
-        case 'getConversationV3':
-          result = await this.getConversationV3(request.params.arguments || {});
-          break;
         case 'getConversationSummary':
           result = await this.getConversationSummary(request.params.arguments || {});
           break;
         case 'getThreads':
           result = await this.getThreads(request.params.arguments || {});
-          break;
-        case 'getThreadsV3':
-          result = await this.getThreadsV3(request.params.arguments || {});
           break;
         case 'getServerTime':
           result = await this.getServerTime();
@@ -1487,9 +1403,6 @@ export class ToolHandler {
           break;
         case 'listCustomers':
           result = await this.listCustomers(request.params.arguments || {});
-          break;
-        case 'listCustomersV3':
-          result = await this.listCustomersV3(request.params.arguments || {});
           break;
         case 'searchCustomersByEmail':
           result = await this.searchCustomersByEmail(request.params.arguments || {});
@@ -1719,46 +1632,6 @@ export class ToolHandler {
     }
   }
 
-  private async searchInboxes(args: unknown): Promise<CallToolResult> {
-    const input = SearchInboxesInputSchema.parse(args);
-
-    // /mailboxes has no name filter, so the match must be done client-side over
-    // ALL inboxes. The endpoint is 50/page and ignores `size`, so loop pages —
-    // otherwise an inbox whose name matches but lives on page 2+ is invisible.
-    const { items: inboxes, totalElements } = await helpScoutClient.getAllPages<Inbox>(
-      '/mailboxes',
-      'mailboxes',
-    );
-    const filteredInboxes = inboxes.filter(inbox =>
-      inbox.name.toLowerCase().includes(input.query.toLowerCase())
-    );
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            results: filteredInboxes.map(inbox => ({
-              id: inbox.id,
-              name: inbox.name,
-              email: inbox.email,
-              createdAt: inbox.createdAt,
-              updatedAt: inbox.updatedAt,
-            })),
-            query: input.query,
-            totalFound: filteredInboxes.length,
-            totalAvailable: totalElements,
-            usage: filteredInboxes.length > 0 ?
-              'NEXT STEP: Use the "id" field from these results as the inboxId for searchConversations' :
-              'No inboxes matched your query. Try a different search term or use empty string "" to list all inboxes.',
-            example: filteredInboxes.length > 0 ?
-              `searchConversations({ contentTerms: ["your search"], inboxId: "${filteredInboxes[0].id}" })` :
-              null,
-          }, null, 2),
-        },
-      ],
-    };
-  }
 
   private async searchConversations(args: unknown): Promise<CallToolResult> {
     const input = SearchConversationsInputSchema.parse(args);
@@ -1924,12 +1797,25 @@ export class ToolHandler {
   private async getConversation(args: unknown): Promise<CallToolResult> {
     const input = GetConversationInputSchema.parse(args);
     const params = input.embed ? { embed: input.embed } : undefined;
+
+    // includeSystemActors routes to the v3 conversation endpoint, which
+    // preserves the user/team/system_user person types (v2 collapses
+    // system_user into user).
     const conversation = await helpScoutClient.get<Record<string, unknown>>(
-      `/conversations/${input.conversationId}`,
+      input.includeSystemActors
+        ? this.buildV3ApiUrl(`/conversations/${input.conversationId}`)
+        : `/conversations/${input.conversationId}`,
       params
     );
 
     const processedConversation = this.redactConversationMessageContent(conversation);
+
+    const embedUsage = input.includeSystemActors
+      ? 'Embedded threads are included for API parity; use getThreads(includeSystemActors:true) for pagination.'
+      : 'Embedded threads are included for API parity; use getThreads for pagination or full chat thread retrieval.';
+    const plainUsage = input.includeSystemActors
+      ? 'This v3 view distinguishes user, team, and system_user in createdBy/assignee. Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.'
+      : 'Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.';
 
     return {
       content: [{
@@ -1937,36 +1823,9 @@ export class ToolHandler {
         text: JSON.stringify({
           conversationId: input.conversationId,
           embedded: input.embed,
+          ...(input.includeSystemActors ? { apiVersion: 'v3' } : {}),
           conversation: processedConversation,
-          usage: input.embed === 'threads'
-            ? 'Embedded threads are included for API parity; use getThreads for pagination or full chat thread retrieval.'
-            : 'Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getConversationV3(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationV3InputSchema.parse(args);
-    const params = input.embed ? { embed: input.embed } : undefined;
-    const conversation = await helpScoutClient.get<Record<string, unknown>>(
-      this.buildV3ApiUrl(`/conversations/${input.conversationId}`),
-      params
-    );
-
-    const processedConversation = this.redactConversationMessageContent(conversation);
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          conversationId: input.conversationId,
-          embedded: input.embed,
-          apiVersion: 'v3',
-          conversation: processedConversation,
-          usage: input.embed === 'threads'
-            ? 'Embedded threads are included for API parity; use getThreadsV3 for pagination.'
-            : 'Use this v3 view when createdBy or assignee person type must distinguish user, team, and system_user.',
+          usage: input.embed === 'threads' ? embedUsage : plainUsage,
         }, null, 2),
       }],
     };
@@ -2035,9 +1894,42 @@ export class ToolHandler {
   private async getThreads(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsInputSchema.parse(args);
 
-    // Threads ARE the messages. The v2 threads endpoint is fixed at 25/page and
-    // ignores `size`, so loop pages to return the complete history up to `limit`
-    // instead of silently truncating to the first 25.
+    // Threads ARE the messages. Both the v2 and v3 threads endpoints are
+    // page-based and ignore `size`, so loop pages (getAllPages) to return the
+    // complete history up to `limit` instead of silently truncating.
+    //
+    // includeSystemActors routes to the v3 threads endpoint, which preserves the
+    // user/team/system_user person types (v2 collapses system_user into user).
+    if (input.includeSystemActors) {
+      const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Record<string, unknown>>(
+        this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
+        'threads',
+        { page: input.page },
+        input.limit,
+      );
+
+      const processedThreads = config.security.redactMessageContent
+        ? threads.map((thread) => this.redactThreadBody(thread))
+        : threads;
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              conversationId: input.conversationId,
+              apiVersion: 'v3',
+              threads: processedThreads,
+              returnedCount: processedThreads.length,
+              totalThreads: totalElements,
+              truncated,
+              usage: 'This v3 thread view distinguishes user, team, and system_user in createdBy/assignedTo.',
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
     const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
       'threads',
@@ -2061,40 +1953,6 @@ export class ToolHandler {
             returnedCount: processedThreads.length,
             totalThreads: totalElements,
             truncated,
-          }, null, 2),
-        },
-      ],
-    };
-  }
-
-  private async getThreadsV3(args: unknown): Promise<CallToolResult> {
-    const input = GetThreadsV3InputSchema.parse(args);
-
-    // Loop pages for the complete thread history (page-based; getAllPages is
-    // safe if v3 returns no page block — it fetches a single page then stops).
-    const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Record<string, unknown>>(
-      this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
-      'threads',
-      { page: input.page },
-      input.limit,
-    );
-
-    const processedThreads = config.security.redactMessageContent
-      ? threads.map((thread) => this.redactThreadBody(thread))
-      : threads;
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            conversationId: input.conversationId,
-            apiVersion: 'v3',
-            threads: processedThreads,
-            returnedCount: processedThreads.length,
-            totalThreads: totalElements,
-            truncated,
-            usage: 'Use this v3 thread view when createdBy or assignedTo person type must distinguish user, team, and system_user.',
           }, null, 2),
         },
       ],
@@ -2126,12 +1984,20 @@ export class ToolHandler {
     // "List ALL inboxes" must mean all: /mailboxes is 50/page and ignores
     // `size`, so loop pages up to `limit` instead of returning only the first 50
     // and mislabeling it as the total.
-    const { items: inboxes, totalElements, truncated } = await helpScoutClient.getAllPages<Inbox>(
+    const { items: allInboxes, totalElements, truncated } = await helpScoutClient.getAllPages<Inbox>(
       '/mailboxes',
       'mailboxes',
       {},
       input.limit,
     );
+
+    // /mailboxes has no name filter, so the nameContains match is done
+    // client-side over ALL fully-paged inboxes (case-insensitive substring).
+    const inboxes = input.nameContains
+      ? allInboxes.filter(inbox =>
+          inbox.name.toLowerCase().includes(input.nameContains!.toLowerCase())
+        )
+      : allInboxes;
 
     return {
       content: [
@@ -2145,6 +2011,7 @@ export class ToolHandler {
               createdAt: inbox.createdAt,
               updatedAt: inbox.updatedAt,
             })),
+            ...(input.nameContains ? { nameContains: input.nameContains } : {}),
             totalInboxes: totalElements,
             returnedCount: inboxes.length,
             truncated,
@@ -3453,6 +3320,38 @@ export class ToolHandler {
   private async listCustomers(args: unknown): Promise<CallToolResult> {
     const input = ListCustomersInputSchema.parse(args);
 
+    // v3 cursor path: requested explicitly via useV3 or implied by a cursor.
+    // The v3 Customers API uses cursor-based pagination (_links.next) and adds
+    // the email/createdSince filters that the v2 page path does not support.
+    if (input.useV3 || input.cursor) {
+      const v3Params: Record<string, unknown> = {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email,
+        query: input.query,
+        modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
+        createdSince: this.normalizeApiDateParam(input.createdSince),
+        cursor: input.cursor,
+      };
+
+      const { customers, links, nextCursor } = await this.fetchCustomersV3(v3Params);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            results: customers.map(c => this.formatCustomer(c)),
+            returnedCount: customers.length,
+            links,
+            nextCursor,
+            pagination: { type: 'cursor', hasNext: Boolean(nextCursor) },
+            note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
+            usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
+          }, null, 2),
+        }],
+      };
+    }
+
     // v2 API: page size is fixed at 50, 'size' param is not documented/supported
     const params: Record<string, unknown> = {
       page: input.page,
@@ -3529,37 +3428,6 @@ export class ToolHandler {
       customers,
       links: v3Response._links,
       nextCursor,
-    };
-  }
-
-  private async listCustomersV3(args: unknown): Promise<CallToolResult> {
-    const input = ListCustomersV3InputSchema.parse(args);
-
-    const params: Record<string, unknown> = {
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      query: input.query,
-      modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
-      createdSince: this.normalizeApiDateParam(input.createdSince),
-      cursor: input.cursor,
-    };
-
-    const { customers, links, nextCursor } = await this.fetchCustomersV3(params);
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          results: customers.map(c => this.formatCustomer(c)),
-          returnedCount: customers.length,
-          links,
-          nextCursor,
-          pagination: { type: 'cursor', hasNext: Boolean(nextCursor) },
-          note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
-          usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
-        }, null, 2),
-      }],
     };
   }
 

@@ -57,7 +57,7 @@ export class HelpScoutAPIConstraints {
     // CONSTRAINT 1: Specific inbox reference but no inboxId provided
     const inboxMentioned = this.detectInboxMention(userQuery);
     const hasInboxId = args.inboxId && typeof args.inboxId === 'string';
-    const hasListedInboxes = previousCalls.includes('listAllInboxes') || previousCalls.includes('searchInboxes');
+    const hasListedInboxes = previousCalls.includes('listAllInboxes');
     
     if (inboxMentioned && !hasInboxId) {
       errors.push('User mentioned an inbox by name but no inboxId provided');
@@ -162,13 +162,13 @@ export class HelpScoutAPIConstraints {
   static generateToolGuidance(toolName: string, result: any, _context: ToolCallContext): string[] {
     const guidance: string[] = [];
     
-    if (toolName === 'searchInboxes') {
-      const results = result?.results || [];
-      if (results.length > 0) {
+    if (toolName === 'listAllInboxes') {
+      const inboxes = result?.inboxes || [];
+      if (inboxes.length > 0) {
         guidance.push('✅ NEXT STEP: Use the inbox ID from these results in your conversation search');
-        guidance.push(`Example: searchConversations({ "inboxId": "${results[0]?.id}", "status": "active" })`);
+        guidance.push(`Example: searchConversations({ "inboxId": "${inboxes[0]?.id}", "status": "active" })`);
       } else {
-        guidance.push('❌ No inboxes found. Try a broader search term or use empty string "" to list all inboxes');
+        guidance.push('❌ No inboxes found. Pass a broader nameContains filter, or omit nameContains to list all inboxes');
       }
     }
     

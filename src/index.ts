@@ -106,7 +106,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 | Complex filters (email domain, customer IDs) | searchConversations (emailDomain/customerIds) |
 | Lookup by ticket number (#12345) | searchConversations (conversationNumber) |
 | Browse customers by name or query | listCustomers |
-| Browse customers with v3 cursor filters | listCustomersV3 |
+| Browse customers with v3 cursor/email/createdSince filters | listCustomers (useV3 or cursor) |
 | Find a customer by email | searchCustomersByEmail |
 | Get a full customer profile | getCustomer |
 | Get customer contact channels (emails, phones, chats, social profiles, websites, address) | getCustomerContacts |
@@ -123,7 +123,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 ## Workflow Patterns
 - **Ticket investigation**: searchConversations → getConversation/getConversationSummary → getThreads
 - **Keyword research**: searchConversations (contentTerms) → getThreads for details
-- **Customer history**: listCustomersV3/searchCustomersByEmail → getCustomer → searchConversations (customerIds)/getThreads
+- **Customer history**: listCustomers/searchCustomersByEmail → getCustomer → searchConversations (customerIds)/getThreads
 - **Account review**: listOrganizations/getOrganization → getOrganizationMembers → getOrganizationConversations
 
 ## Notes

@@ -45,21 +45,17 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(67);
+      expect(tools).toHaveLength(63);
       expect(tools.map(t => t.name)).toEqual([
-        'searchInboxes',
         'searchConversations',
         'getConversation',
-        'getConversationV3',
         'getConversationSummary',
         'getThreads',
-        'getThreadsV3',
         'getServerTime',
         'listAllInboxes',
         'getInbox',
         'getCustomer',
         'listCustomers',
-        'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
         'getOrganization',
@@ -146,10 +142,8 @@ describe('ToolHandler', () => {
       const tools = await toolHandler.listTools();
       const byName = Object.fromEntries(tools.map(tool => [tool.name, tool]));
       const pageBasedTools = [
-        'searchInboxes',
         'searchConversations',
         'getThreads',
-        'getThreadsV3',
         'listTags',
         'listUsers',
         'listSystemUsers',
@@ -484,8 +478,8 @@ describe('ToolHandler', () => {
     });
   });
 
-  describe('searchInboxes', () => {
-    it('should search inboxes by name', async () => {
+  describe('listAllInboxes nameContains filter', () => {
+    it('should filter the fully-paged inboxes by case-insensitive name substring', async () => {
       const mockResponse = {
         _embedded: {
           mailboxes: [
@@ -493,27 +487,27 @@ describe('ToolHandler', () => {
             { id: 2, name: 'Sales Inbox', email: 'sales@example.com' }
           ]
         },
-        page: { size: 50, totalElements: 2 }
+        page: { size: 100, totalElements: 2 }
       };
 
       nock(baseURL)
         .get('/mailboxes')
-        .query({ page: 1, size: 50 })
+        .query({ page: 1, size: 100 })
         .reply(200, mockResponse);
 
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
-          arguments: { query: 'Support' }
+          name: 'listAllInboxes',
+          arguments: { nameContains: 'support' }
         }
       };
 
       const result = await toolHandler.callTool(request);
       expect(result.content).toHaveLength(1);
-      
+
       const textContent = result.content[0] as { type: 'text'; text: string };
-      
+
       // Handle error responses (structured JSON error format)
       if (result.isError) {
         const errorResponse = JSON.parse(textContent.text);
@@ -522,8 +516,11 @@ describe('ToolHandler', () => {
       }
 
       const response = JSON.parse(textContent.text);
-      expect(response.results).toHaveLength(1);
-      expect(response.results[0].name).toBe('Support Inbox');
+      expect(response.inboxes).toHaveLength(1);
+      expect(response.inboxes[0].name).toBe('Support Inbox');
+      expect(response.nameContains).toBe('support');
+      // totalInboxes reflects all available inboxes before filtering.
+      expect(response.totalInboxes).toBe(2);
     });
   });
 
@@ -2125,8 +2122,8 @@ describe('ToolHandler', () => {
 
   describe('page-based v2 pagination', () => {
     it('should scan ALL inbox pages so a name match past page 1 is found (no size param)', async () => {
-      // /mailboxes is 50/page and ignores `size`; searchInboxes must loop pages
-      // so a matching inbox on page 2 is not invisible.
+      // /mailboxes is 50/page and ignores `size`; listAllInboxes must loop pages
+      // so a nameContains match on page 2 is not invisible.
       nock(baseURL)
         .get('/mailboxes')
         .query({ page: 1 })
@@ -2144,14 +2141,14 @@ describe('ToolHandler', () => {
 
       const result = await toolHandler.callTool({
         method: 'tools/call',
-        params: { name: 'searchInboxes', arguments: { query: 'billing' } },
+        params: { name: 'listAllInboxes', arguments: { nameContains: 'billing' } },
       });
       const response = JSON.parse((result.content[0] as { text: string }).text);
 
       // The page-2 inbox ("Billing Support") is found despite being beyond page 1.
-      expect(response.results).toHaveLength(1);
-      expect(response.results[0].id).toBe(11);
-      expect(response.totalAvailable).toBe(2);
+      expect(response.inboxes).toHaveLength(1);
+      expect(response.inboxes[0].id).toBe(11);
+      expect(response.totalInboxes).toBe(2);
       expect(response.nextCursor).toBeUndefined();
     });
 
@@ -2286,19 +2283,19 @@ describe('ToolHandler', () => {
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
-          arguments: { query: 'test' }
+          name: 'listAllInboxes',
+          arguments: {}
         }
       };
 
       const result = await toolHandler.callTool(request);
       // The error might be handled gracefully, so check for either error or empty results
       expect(result.content[0]).toHaveProperty('type', 'text');
-      
+
       const textContent = result.content[0] as { type: 'text'; text: string };
       const response = JSON.parse(textContent.text);
       // Should either be an error or empty results
-      expect(response.results || response.totalFound === 0 || response.error).toBeTruthy();
+      expect(response.inboxes || response.returnedCount === 0 || response.error).toBeTruthy();
     });
 
     it('should handle unknown tool names', async () => {
@@ -2319,13 +2316,13 @@ describe('ToolHandler', () => {
     });
 
     it('should return a structured error when a tool returns no text content', async () => {
-      jest.spyOn(toolHandler as any, 'searchInboxes').mockResolvedValue({ content: [] });
+      jest.spyOn(toolHandler as any, 'listAllInboxes').mockResolvedValue({ content: [] });
 
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
-          arguments: { query: 'support' },
+          name: 'listAllInboxes',
+          arguments: {},
         },
       };
 
@@ -2485,14 +2482,14 @@ describe('ToolHandler', () => {
 
       nock(baseURL)
         .get('/mailboxes')
-        .query({ page: 1, size: 50 })
+        .query({ page: 1, size: 100 })
         .reply(200, { _embedded: { mailboxes: mockResponse.results } });
 
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
-          arguments: { query: 'support' }
+          name: 'listAllInboxes',
+          arguments: {}
         }
       };
 
@@ -2534,7 +2531,7 @@ describe('ToolHandler', () => {
       const request: CallToolRequest = {
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
+          name: 'listAllInboxes',
           arguments: { limit: 'invalid' }  // Should be number
         }
       };
@@ -2674,7 +2671,7 @@ describe('ToolHandler', () => {
       expect(response.conversation._embedded.threads[0].body).toBe('Customer body');
     });
 
-    it('should get v3 conversation detail with preserved person type fields', async () => {
+    it('should route to v3 conversation endpoint with includeSystemActors, preserving person type fields', async () => {
       const apiRoot = baseURL.replace('/v2', '');
       nock(apiRoot)
         .get('/v3/conversations/123')
@@ -2700,8 +2697,8 @@ describe('ToolHandler', () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getConversationV3',
-          arguments: { conversationId: '123', embed: 'threads' },
+          name: 'getConversation',
+          arguments: { conversationId: '123', embed: 'threads', includeSystemActors: true },
         },
       });
 
@@ -2952,7 +2949,7 @@ describe('ToolHandler', () => {
       }
     });
 
-    it('should get v3 conversation threads and redact bodies when configured', async () => {
+    it('should route threads to v3 endpoint with includeSystemActors and redact bodies when configured', async () => {
       const originalRedactMessageContent = config.security.redactMessageContent;
       config.security.redactMessageContent = true;
       const apiRoot = baseURL.replace('/v2', '');
@@ -2978,8 +2975,8 @@ describe('ToolHandler', () => {
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: 'getThreadsV3',
-            arguments: { conversationId: '999', limit: 1, page: 2 },
+            name: 'getThreads',
+            arguments: { conversationId: '999', limit: 1, page: 2, includeSystemActors: true },
           },
         });
 

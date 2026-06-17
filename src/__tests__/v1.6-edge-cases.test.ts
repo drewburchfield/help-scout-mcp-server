@@ -445,7 +445,7 @@ describe('v1.6.0 Edge Cases', () => {
       toolHandler = toolsModule.toolHandler;
     });
 
-    it('searchInboxes should still function', async () => {
+    it('listAllInboxes nameContains filter should still function', async () => {
       mockOAuthToken();
 
       nock(baseURL)
@@ -462,8 +462,8 @@ describe('v1.6.0 Edge Cases', () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'searchInboxes',
-          arguments: { query: 'Support' }
+          name: 'listAllInboxes',
+          arguments: { nameContains: 'Support' }
         }
       });
 

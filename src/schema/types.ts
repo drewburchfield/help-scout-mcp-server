@@ -80,12 +80,6 @@ export const ThreadSchema = z.object({
 });
 
 // MCP Tool Input Schemas
-export const SearchInboxesInputSchema = z.object({
-  query: z.string(),
-  limit: z.number().int().min(1).max(100).default(50),
-  page: z.number().int().min(1).default(1),
-});
-
 export const SearchConversationsInputSchema = z.object({
   // Raw Help Scout query passthrough (power users). Convenience params below are
   // compiled into this query syntax automatically, so most callers never need it.
@@ -118,16 +112,20 @@ export const GetThreadsInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
   limit: z.number().int().min(1).max(200).default(200),
   page: z.number().int().min(1).default(1),
+  includeSystemActors: z
+    .boolean()
+    .default(false)
+    .describe('When true, routes to the v3 threads endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user).'),
 });
-
-export const GetThreadsV3InputSchema = GetThreadsInputSchema;
 
 export const GetConversationInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
   embed: z.enum(['threads']).optional(),
+  includeSystemActors: z
+    .boolean()
+    .default(false)
+    .describe('When true, routes to the v3 conversation endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user).'),
 });
-
-export const GetConversationV3InputSchema = GetConversationInputSchema;
 
 export const GetConversationSummaryInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric'),
@@ -611,21 +609,17 @@ export const ListCustomersInputSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   query: z.string().optional().describe('Advanced query syntax, e.g. (email:"john@example.com")'),
-  mailbox: z.coerce.number().int().optional().describe('Filter by inbox ID'),
+  mailbox: z.coerce.number().int().optional().describe('Filter by inbox ID (v2 page path only)'),
   modifiedSince: z.string().optional().describe('ISO 8601 date'),
-  sortField: z.enum(['createdAt', 'firstName', 'lastName', 'modifiedAt']).default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).default('desc'),
-  page: z.number().int().min(1).default(1),
-});
-
-export const ListCustomersV3InputSchema = z.object({
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  email: z.string().optional().describe('Email address filter'),
-  createdSince: z.string().optional().describe('ISO 8601 date - only customers created after this date'),
-  modifiedSince: z.string().optional().describe('ISO 8601 date - only customers modified after this date'),
-  query: z.string().optional().describe('Advanced v3 query syntax, e.g. (email:"john@example.com")'),
-  cursor: z.string().trim().min(1, 'Cursor cannot be empty').optional().describe('Cursor for v3 pagination (from nextCursor in previous response)'),
+  sortField: z.enum(['createdAt', 'firstName', 'lastName', 'modifiedAt']).default('createdAt').describe('Sort field (v2 page path only)'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc').describe('Sort order (v2 page path only)'),
+  page: z.number().int().min(1).default(1).describe('Page number for the default v2 page-based pagination'),
+  // v3 cursor path: providing `cursor` or setting `useV3` routes to the v3 Customers
+  // endpoint, which uses cursor pagination and exposes the email/createdSince filters.
+  useV3: z.boolean().default(false).describe('Route to the v3 Customers endpoint (cursor-based pagination). Implied when a cursor is supplied.'),
+  cursor: z.string().trim().min(1, 'Cursor cannot be empty').optional().describe('Cursor for v3 pagination (from nextCursor in a previous v3 response). Supplying this forces the v3 path.'),
+  email: z.string().optional().describe('Filter by email address. v3 path only (requires useV3 or cursor).'),
+  createdSince: z.string().optional().describe('ISO 8601 date - only customers created after this date. v3 path only (requires useV3 or cursor).'),
 });
 
 export const SearchCustomersByEmailInputSchema = z.object({
@@ -674,6 +668,10 @@ export const GetCustomerContactsInputSchema = z.object({
 
 export const ListAllInboxesInputSchema = z.object({
   limit: z.number().int().min(1).max(100).default(100),
+  nameContains: z
+    .string()
+    .optional()
+    .describe('Case-insensitive substring filter applied to inbox names after all pages are fetched. Omit to list every inbox.'),
 });
 
 export const GetInboxInputSchema = z.object({
@@ -910,12 +908,9 @@ export type Webhook = z.infer<typeof WebhookSchema>;
 export type SatisfactionRating = z.infer<typeof SatisfactionRatingSchema>;
 export type ReportResponse = z.infer<typeof ReportResponseSchema>;
 export type HappinessRatingsReport = z.infer<typeof HappinessRatingsReportSchema>;
-export type SearchInboxesInput = z.infer<typeof SearchInboxesInputSchema>;
 export type SearchConversationsInput = z.infer<typeof SearchConversationsInputSchema>;
 export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
-export type GetThreadsV3Input = z.infer<typeof GetThreadsV3InputSchema>;
 export type GetConversationInput = z.infer<typeof GetConversationInputSchema>;
-export type GetConversationV3Input = z.infer<typeof GetConversationV3InputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
 export type GetCustomerInput = z.infer<typeof GetCustomerInputSchema>;
 export type ListCustomersInput = z.infer<typeof ListCustomersInputSchema>;
