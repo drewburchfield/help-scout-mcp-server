@@ -256,8 +256,8 @@ describe('Customer & Organization Tools', () => {
     });
   });
 
-  describe('listCustomersV3', () => {
-    it('should list customers through the direct v3 endpoint with official filters and cursor links', async () => {
+  describe('listCustomers - v3 cursor path', () => {
+    it('should route to the v3 endpoint with official filters and cursor links when a cursor is supplied', async () => {
       nock('https://api.helpscout.net')
         .get('/v3/customers')
         .query((query) => (
@@ -283,7 +283,7 @@ describe('Customer & Organization Tools', () => {
           },
         });
 
-      const result = await toolHandler.callTool(makeRequest('listCustomersV3', {
+      const result = await toolHandler.callTool(makeRequest('listCustomers', {
         firstName: 'Jane',
         lastName: 'Doe',
         email: 'jane@example.com',
@@ -302,6 +302,29 @@ describe('Customer & Organization Tools', () => {
       expect(data.pagination.type).toBe('cursor');
     });
 
+    it('should route to the v3 endpoint when useV3 is set without a cursor', async () => {
+      nock('https://api.helpscout.net')
+        .get('/v3/customers')
+        .query((query) => query.email === 'jane@example.com')
+        .reply(200, {
+          _embedded: {
+            customers: [
+              { id: 1, firstName: 'Jane', lastName: 'Doe', createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-06-01T00:00:00Z' },
+            ],
+          },
+          _links: { self: { href: 'https://api.helpscout.net/v3/customers' } },
+        });
+
+      const result = await toolHandler.callTool(makeRequest('listCustomers', {
+        useV3: true,
+        email: 'jane@example.com',
+      }));
+      const data = parseResult(result);
+
+      expect(data.results).toHaveLength(1);
+      expect(data.pagination.type).toBe('cursor');
+    });
+
     it('should return an empty v3 customer result shape', async () => {
       nock('https://api.helpscout.net')
         .get('/v3/customers')
@@ -311,7 +334,7 @@ describe('Customer & Organization Tools', () => {
           _links: { self: { href: 'https://api.helpscout.net/v3/customers' } },
         });
 
-      const result = await toolHandler.callTool(makeRequest('listCustomersV3', { firstName: 'Nobody' }));
+      const result = await toolHandler.callTool(makeRequest('listCustomers', { useV3: true, firstName: 'Nobody' }));
       const data = parseResult(result);
 
       expect(data.results).toEqual([]);
@@ -321,7 +344,7 @@ describe('Customer & Organization Tools', () => {
     });
 
     it('should reject whitespace-only cursors before making a request', async () => {
-      const result = await toolHandler.callTool(makeRequest('listCustomersV3', { cursor: '   ' }));
+      const result = await toolHandler.callTool(makeRequest('listCustomers', { cursor: '   ' }));
 
       expect(result.isError).toBe(true);
       expect(nock.isDone()).toBe(false);
@@ -728,16 +751,20 @@ describe('Customer & Organization Tools', () => {
     });
 
     it('should accept the legacy underscored social profile embedded key', async () => {
+      nock(baseURL).get('/customers/123/emails').query(true).reply(200, { _embedded: { emails: [] } });
+      nock(baseURL).get('/customers/123/phones').query(true).reply(200, { _embedded: { phones: [] } });
+      nock(baseURL).get('/customers/123/chats').query(true).reply(200, { _embedded: { chats: [] } });
+      nock(baseURL).get('/customers/123/websites').query(true).reply(200, { _embedded: { websites: [] } });
+      nock(baseURL).get('/customers/123/address').query(true).reply(404, { message: 'Not found' });
       nock(baseURL).get('/customers/123/social-profiles').query(true).reply(200, {
         _embedded: { social_profiles: [{ id: 4, value: '@janedoe', type: 'twitter' }] },
       });
 
-      const result = await toolHandler.callTool(makeRequest('listCustomerSocialProfiles', { customerId: '123' }));
+      const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: '123' }));
       const data = parseResult(result);
 
       expect(data.socialProfiles).toHaveLength(1);
       expect(data.socialProfiles[0].value).toBe('@janedoe');
-      expect(data.total).toBe(1);
     });
   });
 });

@@ -6,7 +6,6 @@ import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constrain
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
-import { z } from 'zod';
 import {
   Inbox,
   Conversation,
@@ -31,27 +30,14 @@ import {
   HappinessRatingsReport,
   ReportBaseInput,
   ServerTime,
-  SearchInboxesInputSchema,
   SearchConversationsInputSchema,
   GetThreadsInputSchema,
-  GetThreadsV3InputSchema,
   GetConversationInputSchema,
-  GetConversationV3InputSchema,
   GetConversationSummaryInputSchema,
-  AdvancedConversationSearchInputSchema,
-  MultiStatusConversationSearchInputSchema,
-  StructuredConversationFilterInputSchema,
   GetCustomerInputSchema,
   ListCustomersInputSchema,
-  ListCustomersV3InputSchema,
   SearchCustomersByEmailInputSchema,
   GetCustomerContactsInputSchema,
-  GetCustomerAddressInputSchema,
-  ListCustomerEmailsInputSchema,
-  ListCustomerPhonesInputSchema,
-  ListCustomerChatsInputSchema,
-  ListCustomerSocialProfilesInputSchema,
-  ListCustomerWebsitesInputSchema,
   ListAllInboxesInputSchema,
   GetInboxInputSchema,
   GetOrganizationInputSchema,
@@ -65,60 +51,26 @@ import {
   GetTagInputSchema,
   ListUsersInputSchema,
   GetUserInputSchema,
-  ListSystemUsersInputSchema,
-  GetSystemUserInputSchema,
-  ListUserStatusesInputSchema,
-  GetUserStatusInputSchema,
   ListTeamsInputSchema,
   GetTeamMembersInputSchema,
-  ListInboxCustomFieldsInputSchema,
-  ListInboxFoldersInputSchema,
-  GetInboxRoutingInputSchema,
   ListSavedRepliesInputSchema,
   GetSavedReplyInputSchema,
   GetOriginalSourceInputSchema,
-  GetOriginalSourceRfc822InputSchema,
   GetAttachmentInputSchema,
   DownloadAttachmentFileInputSchema,
   ListWorkflowsInputSchema,
   ListWebhooksInputSchema,
   GetWebhookInputSchema,
   GetSatisfactionRatingInputSchema,
-  GetCompanyReportInputSchema,
-  GetCompanyCustomersHelpedReportInputSchema,
-  GetCompanyDrilldownReportInputSchema,
-  GetConversationsReportInputSchema,
-  GetConversationVolumeByChannelReportInputSchema,
-  GetConversationBusyTimesReportInputSchema,
-  GetConversationDrilldownReportInputSchema,
-  GetConversationFieldDrilldownReportInputSchema,
-  GetConversationNewReportInputSchema,
-  GetConversationNewDrilldownReportInputSchema,
-  GetConversationReceivedMessagesReportInputSchema,
-  GetHappinessReportInputSchema,
-  GetHappinessRatingsReportInputSchema,
+  GetCompanyReportInputSchemaUnion,
+  GetConversationsReportInputSchemaUnion,
+  GetProductivityReportInputSchemaUnion,
+  GetUserReportInputSchemaUnion,
+  GetHappinessReportInputSchemaUnion,
+  GetChannelReportInputSchemaUnion,
   GetDocsReportInputSchema,
-  GetChatReportInputSchema,
-  GetEmailReportInputSchema,
-  GetPhoneReportInputSchema,
-  GetProductivityReportInputSchema,
-  GetProductivityFirstResponseTimeReportInputSchema,
-  GetProductivityRepliesSentReportInputSchema,
-  GetProductivityResolutionTimeReportInputSchema,
-  GetProductivityResolvedReportInputSchema,
-  GetProductivityResponseTimeReportInputSchema,
-  GetUserReportInputSchema,
-  GetUserConversationHistoryReportInputSchema,
-  GetUserCustomersHelpedReportInputSchema,
-  GetUserDrilldownReportInputSchema,
-  GetUserHappinessReportInputSchema,
-  GetUserRatingsReportInputSchema,
-  GetUserRepliesReportInputSchema,
-  GetUserResolutionsReportInputSchema,
-  GetUserChatReportInputSchema,
   ListDocsSitesInputSchema,
   GetDocsSiteInputSchema,
-  GetDocsSiteRestrictionsInputSchema,
   ListDocsCollectionsInputSchema,
   GetDocsCollectionInputSchema,
   ListDocsCategoriesInputSchema,
@@ -193,15 +145,6 @@ export class ToolHandler {
   }
 
   /**
-   * Escape special characters in Help Scout query syntax to prevent injection
-   * Help Scout uses double quotes for exact phrases, so we need to escape them
-   */
-  private escapeQueryTerm(term: string): string {
-    // Escape backslashes first, then double quotes
-    return term.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  }
-
-  /**
    * Append a createdAt date range to an existing Help Scout query string.
    * Help Scout has no native createdAfter/createdBefore URL params, so we
    * use query syntax: (createdAt:[start TO end]).
@@ -234,10 +177,6 @@ export class ToolHandler {
 
   private normalizeApiDateParam(date: string | undefined): string | undefined {
     return date?.replace(/\.\d{3}(Z|[+-]\d{2}:\d{2})$/, '$1');
-  }
-
-  private appendQueryClause(existingQuery: string | undefined, clause: string): string {
-    return existingQuery ? `(${existingQuery}) AND (${clause})` : `(${clause})`;
   }
 
   private buildReportQueryParams(input: ReportBaseInput): Record<string, string | number> {
@@ -392,6 +331,18 @@ export class ToolHandler {
     return processedConversation;
   }
 
+  // Apply the optional message-content trim to a list of conversations. List and
+  // search endpoints return a `preview` snippet of the latest message body, so
+  // when REDACT_MESSAGE_CONTENT is on these results must be trimmed too,
+  // consistent with the single-conversation detail tools. No-op when off.
+  private redactConversationListContent<T>(conversations: T[]): T[] {
+    if (!config.security.redactMessageContent) return conversations;
+    return conversations.map(
+      (conversation) =>
+        this.redactConversationMessageContent(conversation as Record<string, unknown>) as unknown as T,
+    );
+  }
+
   private getResponseHeader(headers: Record<string, unknown>, name: string): string | undefined {
     const value = headers[name.toLowerCase()] ?? headers[name];
     if (Array.isArray(value)) return value.join(', ');
@@ -425,56 +376,71 @@ export class ToolHandler {
   }
 
   async listTools(): Promise<Tool[]> {
-    return [
-      {
-        name: 'searchInboxes',
-        description: 'List or search inboxes by name. Deprecated: inbox IDs now in server instructions. Only needed to refresh list mid-session.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: 'Search query to match inbox names. Use empty string "" to list ALL inboxes. This is case-insensitive substring matching.',
-            },
-            limit: {
-              type: 'number',
-              description: `Maximum number of results (1-${TOOL_CONSTANTS.MAX_PAGE_SIZE})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
-            },
-            page: {
-              type: 'number',
-              minimum: 1,
-              default: 1,
-              description: 'Page number',
-            },
-          },
-          required: ['query'],
-        },
-      },
+    const tools: Tool[] = [
       {
         name: 'searchConversations',
-        description: 'List conversations by status, date range, inbox, or tags. Searches all statuses by default. For keyword content search, use comprehensiveConversationSearch.',
+        description: 'Search and list conversations. Filter by status, date range, inbox, or tags, and search content with contentTerms/subjectTerms, email/emailDomain, customerIds, assignedTo, folderId, or conversationNumber. Searches all statuses by default.',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'HelpScout query syntax. Omit to list all. Example: (body:"keyword")',
+              description: 'Raw HelpScout query syntax (power users). The convenience filters below are compiled into this automatically. Example: (body:"keyword")',
+            },
+            contentTerms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Match these terms in the message body (compiled to body:"term")',
+            },
+            subjectTerms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Match these terms in the subject (compiled to subject:"term")',
+            },
+            email: {
+              type: 'string',
+              description: 'Match conversations involving this email (to/cc/bcc or customer)',
+            },
+            emailDomain: {
+              type: 'string',
+              description: 'Match conversations involving any email at this domain',
+            },
+            customerIds: {
+              type: 'array',
+              items: { type: 'integer', minimum: 0 },
+              description: 'Conversations belonging to these customer IDs (the customer->conversations bridge)',
+            },
+            hasAttachments: {
+              type: 'boolean',
+              description: 'Only conversations that have attachments',
             },
             inboxId: {
               type: 'string',
-              description: 'Inbox ID from server instructions',
+              description: 'Inbox (mailbox) ID from server instructions',
+            },
+            folderId: {
+              type: 'integer',
+              minimum: 0,
+              description: 'Filter by folder ID',
             },
             tag: {
               type: 'string',
-              description: 'Filter by tag name',
+              description: 'Filter by tag name (comma-separated for multiple)',
+            },
+            assignedTo: {
+              type: 'integer',
+              minimum: -1,
+              description: 'Filter by assignee user ID (-1 for unassigned)',
+            },
+            conversationNumber: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Look up by conversation number',
             },
             status: {
               type: 'string',
-              enum: [TOOL_CONSTANTS.STATUSES.ACTIVE, TOOL_CONSTANTS.STATUSES.PENDING, TOOL_CONSTANTS.STATUSES.CLOSED, TOOL_CONSTANTS.STATUSES.SPAM],
-              description: 'Filter by status. Defaults to all (active, pending, closed)',
+              enum: ['active', 'pending', 'closed', 'open', 'spam', 'all'],
+              description: 'Filter by status. Omit to search active+pending+closed (excludes spam).',
             },
             createdAfter: {
               type: 'string',
@@ -486,22 +452,27 @@ export class ToolHandler {
               format: 'date-time',
               description: 'Filter conversations created before this timestamp (ISO8601)',
             },
+            modifiedSince: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Filter conversations modified after this timestamp (ISO8601)',
+            },
             limit: {
-              type: 'number',
-              description: `Maximum number of results (1-${TOOL_CONSTANTS.MAX_PAGE_SIZE})`,
+              type: 'integer',
+              description: 'Maximum number of results (1-200)',
               minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
+              maximum: 200,
               default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
             },
             page: {
-              type: 'number',
+              type: 'integer',
               minimum: 1,
               default: 1,
               description: 'Page number',
             },
             sort: {
               type: 'string',
-              enum: ['createdAt', 'modifiedAt', 'number'],
+              enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxid', 'status', 'subject', 'score'],
               default: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
               description: 'Sort field',
             },
@@ -521,7 +492,7 @@ export class ToolHandler {
       },
       {
         name: 'getConversation',
-        description: 'Get the raw Help Scout conversation object by ID. Optionally embeds threads for direct API parity; use getThreads when full thread pagination is needed.',
+        description: 'Get the raw Help Scout conversation object by ID. Optionally embeds threads for direct API parity; use getThreads when full thread pagination is needed. Set includeSystemActors to distinguish user, team, and system_user person types.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -534,24 +505,10 @@ export class ToolHandler {
               enum: ['threads'],
               description: 'Optional sub-entity to embed. Help Scout currently supports "threads".',
             },
-          },
-          required: ['conversationId'],
-        },
-      },
-      {
-        name: 'getConversationV3',
-        description: 'Get the v3 Help Scout conversation object by ID, preserving system_user and team person types.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            conversationId: {
-              type: 'string',
-              description: 'The conversation ID to retrieve',
-            },
-            embed: {
-              type: 'string',
-              enum: ['threads'],
-              description: 'Optional sub-entity to embed. Help Scout currently supports "threads".',
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 conversation endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user).',
             },
           },
           required: ['conversationId'],
@@ -573,7 +530,7 @@ export class ToolHandler {
       },
       {
         name: 'getThreads',
-        description: 'Retrieve full message history for a conversation. Returns all thread messages.',
+        description: 'Retrieve full message history for a conversation. Returns all thread messages. Set includeSystemActors to distinguish user, team, and system_user person types.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -594,32 +551,10 @@ export class ToolHandler {
               default: 1,
               description: 'Page number',
             },
-          },
-          required: ['conversationId'],
-        },
-      },
-      {
-        name: 'getThreadsV3',
-        description: 'Retrieve v3 thread history for a conversation, preserving system_user and team person types.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            conversationId: {
-              type: 'string',
-              description: 'The conversation ID to get threads for',
-            },
-            limit: {
-              type: 'number',
-              description: `Maximum number of threads (1-${TOOL_CONSTANTS.MAX_THREAD_SIZE})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_THREAD_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_THREAD_SIZE,
-            },
-            page: {
-              type: 'number',
-              minimum: 1,
-              default: 1,
-              description: 'Page number',
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 threads endpoint, which preserves the user, team, and system_user person types (v2 collapses system_user into user).',
             },
           },
           required: ['conversationId'],
@@ -635,7 +570,7 @@ export class ToolHandler {
       },
       {
         name: 'listAllInboxes',
-        description: 'List all inboxes with IDs. Deprecated: inbox IDs now in server instructions. Only needed mid-session.',
+        description: 'List all inboxes with IDs. Pass nameContains to filter by a case-insensitive name substring. Deprecated: inbox IDs now in server instructions. Only needed mid-session.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -646,12 +581,16 @@ export class ToolHandler {
               maximum: 100,
               default: 100,
             },
+            nameContains: {
+              type: 'string',
+              description: 'Case-insensitive substring filter applied to inbox names after all pages are fetched. Omit to list every inbox.',
+            },
           },
         },
       },
       {
         name: 'getInbox',
-        description: 'Get one Help Scout inbox by ID, including inbox email and resource links.',
+        description: 'Get one Help Scout inbox by ID, including inbox email and resource links. Pass include to fan out and attach sub-resources in one call: "fields" (customFields with dropdown option IDs), "folders" (folder IDs and counts), and "routing" (rotation users and eligibility state). Each sub-resource is fetched from its own endpoint; a failure of one is reported under includeErrors without failing the whole call.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -659,163 +598,13 @@ export class ToolHandler {
               type: 'string',
               description: 'Inbox ID from listAllInboxes or server instructions',
             },
+            include: {
+              type: 'array',
+              items: { type: 'string', enum: ['fields', 'folders', 'routing'] },
+              description: 'Sub-resources to fetch and attach: "fields" -> customFields, "folders" -> folders, "routing" -> routing. Omit for just the inbox.',
+            },
           },
           required: ['inboxId'],
-        },
-      },
-      {
-        name: 'advancedConversationSearch',
-        description: 'Filter conversations by email domain, customer email, or multiple tags. Supports boolean logic for complex queries. For simple keyword search, use comprehensiveConversationSearch.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            contentTerms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Search terms to find in conversation body/content (will be OR combined)',
-            },
-            subjectTerms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Search terms to find in conversation subject (will be OR combined)',
-            },
-            customerEmail: {
-              type: 'string',
-              description: 'Exact customer email to search for',
-            },
-            emailDomain: {
-              type: 'string',
-              description: 'Email domain to search for (e.g., "company.com" to find all @company.com emails)',
-            },
-            tags: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Tag names to search for (will be OR combined)',
-            },
-            inboxId: {
-              type: 'string',
-              description: 'Filter by inbox ID',
-            },
-            status: {
-              type: 'string',
-              enum: [TOOL_CONSTANTS.STATUSES.ACTIVE, TOOL_CONSTANTS.STATUSES.PENDING, TOOL_CONSTANTS.STATUSES.CLOSED, TOOL_CONSTANTS.STATUSES.SPAM],
-              description: 'Filter by conversation status',
-            },
-            createdAfter: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Filter conversations created after this timestamp (ISO8601)',
-            },
-            createdBefore: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Filter conversations created before this timestamp (ISO8601)',
-            },
-            limit: {
-              type: 'number',
-              description: `Maximum number of results (1-${TOOL_CONSTANTS.MAX_PAGE_SIZE})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
-            },
-            page: {
-              type: 'number',
-              minimum: 1,
-              default: 1,
-              description: 'Page number',
-            },
-          },
-        },
-      },
-      {
-        name: 'comprehensiveConversationSearch',
-        description: 'Search conversation content by keywords. Searches subject and body across all statuses. Requires searchTerms parameter. For listing without keywords, use searchConversations.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            searchTerms: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Keywords to search for (OR logic). Example: ["billing", "refund"]',
-              minItems: 1,
-            },
-            inboxId: {
-              type: 'string',
-              description: 'Inbox ID from server instructions',
-            },
-            statuses: {
-              type: 'array',
-              items: { enum: ['active', 'pending', 'closed', 'spam'] },
-              description: 'Conversation statuses to search (defaults to active, pending, closed)',
-              default: ['active', 'pending', 'closed'],
-            },
-            searchIn: {
-              type: 'array',
-              items: { enum: ['body', 'subject', 'both'] },
-              description: 'Where to search for terms (defaults to both body and subject)',
-              default: ['both'],
-            },
-            timeframeDays: {
-              type: 'number',
-              description: `Number of days back to search (defaults to ${TOOL_CONSTANTS.DEFAULT_TIMEFRAME_DAYS})`,
-              minimum: 1,
-              maximum: 365,
-              default: TOOL_CONSTANTS.DEFAULT_TIMEFRAME_DAYS,
-            },
-            createdAfter: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Override timeframeDays with specific start date (ISO8601)',
-            },
-            createdBefore: {
-              type: 'string',
-              format: 'date-time',
-              description: 'End date for search range (ISO8601)',
-            },
-            limitPerStatus: {
-              type: 'number',
-              description: `Maximum results per status (defaults to ${TOOL_CONSTANTS.DEFAULT_LIMIT_PER_STATUS})`,
-              minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
-              default: TOOL_CONSTANTS.DEFAULT_LIMIT_PER_STATUS,
-            },
-          },
-          required: ['searchTerms'],
-        },
-      },
-      {
-        name: 'structuredConversationFilter',
-        description: 'Lookup conversation by ticket number or filter by assignee/customer/folder IDs. Use after discovering IDs from other searches. For initial searches, use searchConversations or comprehensiveConversationSearch.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            assignedTo: { type: 'number', description: 'User ID from previous_results[].assignee.id. Use -1 for unassigned.' },
-            folderId: { type: 'number', description: 'Folder ID from Help Scout UI (not in API responses)' },
-            customerIds: { type: 'array', items: { type: 'number' }, description: 'Customer IDs from previous_results[].customer.id' },
-            conversationNumber: { type: 'number', description: 'Ticket number from previous_results[].number or user reference' },
-            status: { type: 'string', enum: ['active', 'pending', 'closed', 'spam', 'all'], default: 'all' },
-            inboxId: { type: 'string', description: 'Inbox ID to combine with filters' },
-            tag: { type: 'string', description: 'Tag name to combine with filters' },
-            createdAfter: { type: 'string', format: 'date-time' },
-            createdBefore: { type: 'string', format: 'date-time' },
-            modifiedSince: { type: 'string', format: 'date-time', description: 'Filter by last modified (different from created)' },
-            sortBy: { type: 'string', enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxId', 'status', 'subject'], default: 'createdAt', description: 'waitingSince/customerName/customerEmail are unique to this tool' },
-            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
-            limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-          },
-          anyOf: [
-            { required: ['assignedTo'] },
-            { required: ['folderId'] },
-            { required: ['customerIds'] },
-            { required: ['conversationNumber'] },
-            {
-              required: ['sortBy'],
-              properties: {
-                sortBy: { type: 'string', enum: ['waitingSince', 'customerName', 'customerEmail'] },
-              },
-            },
-          ],
         },
       },
       // Customer tools (NAS-680, NAS-727, NAS-728)
@@ -835,34 +624,22 @@ export class ToolHandler {
       },
       {
         name: 'listCustomers',
-        description: 'List or search customers by name, query syntax, or modification date. Page-based pagination (v2 API).',
+        description: 'List or search customers by name, query syntax, or dates. Defaults to v2 page-based pagination. Set useV3 (or pass a cursor) to use the v3 Customers API with cursor pagination, which also enables the email and createdSince filters.',
         inputSchema: {
           type: 'object',
           properties: {
             firstName: { type: 'string', description: 'Filter by first name' },
             lastName: { type: 'string', description: 'Filter by last name' },
             query: { type: 'string', description: 'Advanced query syntax, e.g. (email:"john@example.com")' },
-            mailbox: { type: 'number', description: 'Filter by inbox ID' },
+            mailbox: { type: 'number', description: 'Filter by inbox ID (v2 page path only)' },
             modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
-            sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt' },
-            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number (API returns 50 results per page)' },
-          },
-        },
-      },
-      {
-        name: 'listCustomersV3',
-        description: 'List or search customers through the v3 Customers API. Supports first name, last name, email, created/modified dates, query syntax, and cursor-based pagination.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            firstName: { type: 'string', description: 'Filter by first name' },
-            lastName: { type: 'string', description: 'Filter by last name' },
-            email: { type: 'string', description: 'Filter by email address' },
-            createdSince: { type: 'string', description: 'ISO 8601 date - only customers created after this date' },
-            modifiedSince: { type: 'string', description: 'ISO 8601 date - only customers modified after this date' },
-            query: { type: 'string', description: 'Advanced v3 query syntax, e.g. (email:"john@example.com")' },
-            cursor: { type: 'string', description: 'Cursor for pagination (from nextCursor in previous response)' },
+            sortField: { type: 'string', enum: ['createdAt', 'firstName', 'lastName', 'modifiedAt'], default: 'createdAt', description: 'Sort field (v2 page path only)' },
+            sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc', description: 'Sort order (v2 page path only)' },
+            page: { type: 'number', minimum: 1, default: 1, description: 'Page number for the default v2 page-based pagination (API returns 50 results per page)' },
+            useV3: { type: 'boolean', default: false, description: 'Route to the v3 Customers endpoint (cursor-based pagination). Implied when a cursor is supplied.' },
+            cursor: { type: 'string', description: 'Cursor for v3 pagination (from nextCursor in a previous v3 response). Supplying this forces the v3 path.' },
+            email: { type: 'string', description: 'Filter by email address. v3 path only (requires useV3 or cursor).' },
+            createdSince: { type: 'string', description: 'ISO 8601 date - only customers created after this date. v3 path only (requires useV3 or cursor).' },
           },
         },
       },
@@ -894,72 +671,6 @@ export class ToolHandler {
               type: 'string',
               description: 'Customer ID',
             },
-          },
-          required: ['customerId'],
-        },
-      },
-      {
-        name: 'getCustomerAddress',
-        description: 'Get the address sub-resource for a customer by customer ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
-          },
-          required: ['customerId'],
-        },
-      },
-      {
-        name: 'listCustomerEmails',
-        description: 'List email contact sub-resources for a customer by customer ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
-          },
-          required: ['customerId'],
-        },
-      },
-      {
-        name: 'listCustomerPhones',
-        description: 'List phone contact sub-resources for a customer by customer ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
-          },
-          required: ['customerId'],
-        },
-      },
-      {
-        name: 'listCustomerChats',
-        description: 'List chat handle contact sub-resources for a customer by customer ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
-          },
-          required: ['customerId'],
-        },
-      },
-      {
-        name: 'listCustomerSocialProfiles',
-        description: 'List social profile contact sub-resources for a customer by customer ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
-          },
-          required: ['customerId'],
-        },
-      },
-      {
-        name: 'listCustomerWebsites',
-        description: 'List website contact sub-resources for a customer by customer ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            customerId: { type: 'string', description: 'Customer ID from getCustomer, listCustomers, or searchCustomersByEmail' },
           },
           required: ['customerId'],
         },
@@ -1065,65 +776,43 @@ export class ToolHandler {
       },
       {
         name: 'listUsers',
-        description: 'List Help Scout users with optional exact email or inbox filter. Use to discover assignee IDs, mentions, and roles.',
+        description: 'List Help Scout users with optional exact email or inbox filter. Use to discover assignee IDs, mentions, and roles. Set includeStatuses to attach all user availability statuses; set includeSystemActors to list v3 system users (AI agents, integrations) instead.',
         inputSchema: {
           type: 'object',
           properties: {
             email: { type: 'string', description: 'Exact user email filter' },
             inboxId: { type: 'string', description: 'Inbox ID to find users with access to that inbox' },
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            includeStatuses: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, additionally calls /users/status once and attaches all user email/chat availability statuses under "statuses" (not fanned out per user).',
+            },
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 /system-users endpoint, returning system actors (AI agents, integration users) instead of standard users. Emits apiVersion: "v3". Ignores includeStatuses.',
+            },
           },
         },
       },
       {
         name: 'getUser',
-        description: 'Get a Help Scout user by ID, or pass "me" to get the authenticated resource owner.',
+        description: 'Get a Help Scout user by ID, or pass "me" to get the authenticated resource owner. Set includeStatus to attach the user availability status; set includeSystemActors to fetch the v3 system-user record instead.',
         inputSchema: {
           type: 'object',
           properties: {
             userId: { type: 'string', description: 'User ID from listUsers, or "me" for the authenticated resource owner' },
-          },
-          required: ['userId'],
-        },
-      },
-      {
-        name: 'listSystemUsers',
-        description: 'List Help Scout system users such as AI agents and integration users. Uses the v3 API and page-based pagination.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-          },
-        },
-      },
-      {
-        name: 'getSystemUser',
-        description: 'Get one Help Scout system user by ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            systemUserId: { type: 'string', description: 'System user ID from listSystemUsers' },
-          },
-          required: ['systemUserId'],
-        },
-      },
-      {
-        name: 'listUserStatuses',
-        description: 'List Help Scout user email and chat availability statuses.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-          },
-        },
-      },
-      {
-        name: 'getUserStatus',
-        description: 'Get one Help Scout user email and chat availability status by numeric user ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string', description: 'Numeric user ID from listUsers or getUser' },
+            includeStatus: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, also fetches /users/{id}/status and attaches the email/chat availability status under "status". Ignored when includeSystemActors is true.',
+            },
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 /system-users/{id} endpoint, returning the system actor record instead of a standard user. Emits apiVersion: "v3". Takes precedence over includeStatus.',
+            },
           },
           required: ['userId'],
         },
@@ -1148,39 +837,6 @@ export class ToolHandler {
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
           },
           required: ['teamId'],
-        },
-      },
-      {
-        name: 'listInboxCustomFields',
-        description: 'List custom field definitions for an inbox, including dropdown option IDs used by conversation filters and updates.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
-          },
-          required: ['inboxId'],
-        },
-      },
-      {
-        name: 'listInboxFolders',
-        description: 'List Help Scout folders for an inbox. Use to discover folder IDs and counts before folder-scoped lookups.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
-          },
-          required: ['inboxId'],
-        },
-      },
-      {
-        name: 'getInboxRouting',
-        description: 'Get Help Scout routing configuration for an inbox, including rotation users and eligibility state when routing is enabled.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
-          },
-          required: ['inboxId'],
         },
       },
       {
@@ -1209,24 +865,13 @@ export class ToolHandler {
       },
       {
         name: 'getOriginalSource',
-        description: 'Get the original source JSON for a Help Scout conversation thread.',
+        description: 'Get the original source for a Help Scout conversation thread. Set format to "rfc822" for raw email source, or "json" (default) for parsed source.',
         inputSchema: {
           type: 'object',
           properties: {
             conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
             threadId: { type: 'string', description: 'Thread ID from getThreads' },
-          },
-          required: ['conversationId', 'threadId'],
-        },
-      },
-      {
-        name: 'getOriginalSourceRfc822',
-        description: 'Get the original source for a Help Scout conversation thread as message/rfc822 text.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
-            threadId: { type: 'string', description: 'Thread ID from getThreads or getThreadsV3' },
+            format: { type: 'string', enum: ['json', 'rfc822'], default: 'json', description: "Source format: 'json' (parsed) or 'rfc822' (raw email source)" },
           },
           required: ['conversationId', 'threadId'],
         },
@@ -1299,67 +944,59 @@ export class ToolHandler {
       },
       {
         name: 'getCompanyReport',
-        description: 'Get the Help Scout company overall report for a bounded time range.',
+        description: 'Get a Help Scout company report for a bounded time range. report=overall (/reports/company), customers-helped (/reports/company/customers-helped), or drilldown (/reports/company/drilldown).',
         inputSchema: {
           type: 'object',
           properties: {
+            report: { type: 'string', enum: ['overall', 'customers-helped', 'drilldown'], default: 'overall', description: 'Which company report to fetch' },
             start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
             end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601 (overall, customers-helped)' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601 (overall, customers-helped)' },
             mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
             tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
             types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
             folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], description: 'Report granularity (customers-helped only)' },
+            page: { type: 'number', minimum: 1, description: 'Drilldown page number (drilldown only)' },
+            rows: { type: 'number', minimum: 1, maximum: 50, description: 'Drilldown rows per page, max 50 (drilldown only)' },
+            range: { type: 'string', enum: ['replies', 'firstReplyResolved', 'resolved', 'responseTime', 'firstResponseTime', 'handleTime'], description: 'Drilldown range filter (required for drilldown)' },
+            rangeId: { type: 'number', minimum: 1, maximum: 10, description: 'Drilldown range bucket ID (drilldown only)' },
           },
           required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getCompanyCustomersHelpedReport',
-        description: 'Get Help Scout company customers helped time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getCompanyDrilldownReport',
-        description: 'Get Help Scout company drilldown conversation rows for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
-            range: { type: 'string', enum: ['replies', 'firstReplyResolved', 'resolved', 'responseTime', 'firstResponseTime', 'handleTime'], description: 'Required drilldown range filter' },
-            rangeId: { type: 'number', minimum: 1, maximum: 10, description: 'Optional documented drilldown range bucket ID' },
-          },
-          required: ['start', 'end', 'range'],
         },
       },
       {
         name: 'getConversationsReport',
-        description: 'Get the Help Scout conversations overall report for a bounded time range.',
+        description: 'Get a Help Scout conversations report for a bounded time range. report selects /reports/conversations[/<report>]: overall, volume-by-channel, busy-times, drilldown, fields-drilldown, new, new-drilldown, received-messages.',
         inputSchema: {
           type: 'object',
           properties: {
+            report: { type: 'string', enum: ['overall', 'volume-by-channel', 'busy-times', 'drilldown', 'fields-drilldown', 'new', 'new-drilldown', 'received-messages'], default: 'overall', description: 'Which conversations report to fetch' },
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601 (non-drilldown reports)' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601 (non-drilldown reports)' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], description: 'Report granularity (volume-by-channel, new, received-messages)' },
+            page: { type: 'number', minimum: 1, description: 'Drilldown page number (drilldown reports)' },
+            rows: { type: 'number', minimum: 1, maximum: 50, description: 'Drilldown rows per page, max 50 (drilldown reports)' },
+            field: { type: 'string', enum: ['tagid', 'replyid', 'workflowid', 'customerid'], description: 'Field to drill into (required for fields-drilldown)' },
+            fieldid: { type: 'string', description: 'Field value identifier (required for fields-drilldown)' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityReport',
+        description: 'Get a Help Scout productivity report for a bounded time range. report selects /reports/productivity[/<report>]: overall, first-response-time, replies-sent, resolved, response-time, resolution-time.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            report: { type: 'string', enum: ['overall', 'first-response-time', 'replies-sent', 'resolved', 'response-time', 'resolution-time'], default: 'overall', description: 'Which productivity report to fetch' },
             start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
             end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
             previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
@@ -1368,16 +1005,20 @@ export class ToolHandler {
             tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
             types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
             folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], description: 'Report granularity (timeline reports only)' },
           },
           required: ['start', 'end'],
         },
       },
       {
-        name: 'getConversationVolumeByChannelReport',
-        description: 'Get Help Scout conversation volume by channel time series for a bounded time range.',
+        name: 'getUserReport',
+        description: 'Get a Help Scout user or team report for a bounded time range. report selects /reports/user[/<report>]: overall, conversation-history, customers-helped, drilldown, happiness, ratings, replies, resolutions, chat.',
         inputSchema: {
           type: 'object',
           properties: {
+            user: { type: 'number', description: 'User ID or team ID for the report' },
+            report: { type: 'string', enum: ['overall', 'conversation-history', 'customers-helped', 'drilldown', 'happiness', 'ratings', 'replies', 'resolutions', 'chat'], default: 'overall', description: 'Which user report to fetch' },
             start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
             end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
             previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
@@ -1386,121 +1027,58 @@ export class ToolHandler {
             tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
             types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
             folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration (overall, conversation-history, chat)' },
+            viewBy: { type: 'string', enum: ['day', 'week', 'month'], description: 'Report granularity (customers-helped, replies, resolutions)' },
+            status: { type: 'string', enum: ['active', 'pending', 'closed'], description: 'Conversation status filter (conversation-history only)' },
+            page: { type: 'number', minimum: 1, description: 'Page number (drilldown, ratings, conversation-history)' },
+            rows: { type: 'number', minimum: 1, maximum: 50, description: 'Rows per page, max 50 (drilldown only)' },
+            sortField: { type: 'string', description: 'Sort field (conversation-history, ratings)' },
+            sortOrder: { type: 'string', enum: ['ASC', 'DESC', 'asc', 'desc'], description: 'Sort order (conversation-history, ratings)' },
+            rating: { type: 'string', enum: ['great', 'ok', 'all', 'not-good'], description: 'Rating filter (ratings only)' },
+          },
+          required: ['user', 'start', 'end'],
+        },
+      },
+      {
+        name: 'getHappinessReport',
+        description: 'Get a Help Scout happiness report for a bounded time range. report=overall (/reports/happiness) or ratings (/reports/happiness/ratings).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            report: { type: 'string', enum: ['overall', 'ratings'], default: 'overall', description: 'Which happiness report to fetch' },
+            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
+            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
+            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601 (overall only)' },
+            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601 (overall only)' },
+            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
+            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
+            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            page: { type: 'number', minimum: 1, description: 'Page number (ratings only)' },
+            sortField: { type: 'string', enum: ['number', 'modifiedAt', 'rating'], description: 'Sort field (ratings only)' },
+            sortOrder: { type: 'string', enum: ['ASC', 'DESC', 'asc', 'desc'], description: 'Sort order (ratings only)' },
+            rating: { type: 'string', enum: ['great', 'ok', 'all', 'not-good'], description: 'Rating filter (ratings only)' },
           },
           required: ['start', 'end'],
         },
       },
       {
-        name: 'getConversationBusyTimesReport',
-        description: 'Get Help Scout busiest time of day conversation report for a bounded time range.',
+        name: 'getChannelReport',
+        description: 'Get a Help Scout channel report for a bounded time range. channel selects /reports/chat, /reports/email, or /reports/phone.',
         inputSchema: {
           type: 'object',
           properties: {
+            channel: { type: 'string', enum: ['chat', 'email', 'phone'], description: 'Which channel report to fetch' },
             start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
             end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
             previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
             previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
             mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
             tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
             folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
+            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
           },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getConversationDrilldownReport',
-        description: 'Get Help Scout conversation drilldown rows for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getConversationFieldDrilldownReport',
-        description: 'Get Help Scout conversation drilldown rows for a tag, saved reply, workflow, or customer field value.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            field: { type: 'string', enum: ['tagid', 'replyid', 'workflowid', 'customerid'], description: 'Field to drill into' },
-            fieldid: { type: 'string', description: 'Identifier for the selected field value' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
-          },
-          required: ['start', 'end', 'field', 'fieldid'],
-        },
-      },
-      {
-        name: 'getConversationNewReport',
-        description: 'Get Help Scout new conversations time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getConversationNewDrilldownReport',
-        description: 'Get Help Scout new conversation drilldown rows for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getConversationReceivedMessagesReport',
-        description: 'Get Help Scout received customer messages time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
+          required: ['channel', 'start', 'end'],
         },
       },
       {
@@ -1519,402 +1097,6 @@ export class ToolHandler {
         },
       },
       {
-        name: 'getHappinessReport',
-        description: 'Get the Help Scout happiness overall report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getHappinessRatingsReport',
-        description: 'Get Help Scout happiness rating rows for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            sortField: { type: 'string', enum: ['number', 'modifiedAt', 'rating'], default: 'modifiedAt' },
-            sortOrder: { type: 'string', enum: ['ASC', 'DESC'], default: 'DESC' },
-            rating: { type: 'string', enum: ['great', 'ok', 'all', 'not-good'], description: 'Rating value filter' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getProductivityReport',
-        description: 'Get the Help Scout productivity overall report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getProductivityFirstResponseTimeReport',
-        description: 'Get Help Scout productivity first response time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getProductivityRepliesSentReport',
-        description: 'Get Help Scout productivity replies sent time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getProductivityResolutionTimeReport',
-        description: 'Get Help Scout productivity resolution time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getProductivityResolvedReport',
-        description: 'Get Help Scout productivity resolved conversations time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getProductivityResponseTimeReport',
-        description: 'Get Help Scout productivity response time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getUserReport',
-        description: 'Get the Help Scout user or team overall report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserConversationHistoryReport',
-        description: 'Get Help Scout user conversation history rows for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            status: { type: 'string', enum: ['active', 'pending', 'closed'], description: 'Conversation status filter' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            sortField: { type: 'string', enum: ['number', 'repliesSent', 'responseTime', 'resolveTime'], default: 'number' },
-            sortOrder: { type: 'string', enum: ['ASC', 'DESC', 'asc', 'desc'], default: 'DESC' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserCustomersHelpedReport',
-        description: 'Get Help Scout user customers helped time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserDrilldownReport',
-        description: 'Get Help Scout user report drilldown conversations for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            rows: { type: 'number', minimum: 1, maximum: 50, default: 25, description: 'Rows per page' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserHappinessReport',
-        description: 'Get Help Scout user happiness report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserRatingsReport',
-        description: 'Get Help Scout user happiness rating rows for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-            sortField: { type: 'string', enum: ['number', 'modifiedAt', 'rating'] },
-            sortOrder: { type: 'string', enum: ['ASC', 'DESC', 'asc', 'desc'] },
-            rating: { type: 'string', enum: ['great', 'ok', 'all', 'not-good'], description: 'Rating filter' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserRepliesReport',
-        description: 'Get Help Scout user replies time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserResolutionsReport',
-        description: 'Get Help Scout user resolutions time series for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            types: { type: 'array', items: { type: 'string', enum: ['email', 'chat', 'phone'] }, description: 'Conversation types to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            viewBy: { type: 'string', enum: ['day', 'week', 'month'], default: 'day', description: 'Report granularity' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getUserChatReport',
-        description: 'Get Help Scout user or team chat report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            user: { type: 'string', description: 'User ID or team ID for the report' },
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-          },
-          required: ['user', 'start', 'end'],
-        },
-      },
-      {
-        name: 'getChatReport',
-        description: 'Get the Help Scout chat report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getEmailReport',
-        description: 'Get the Help Scout email report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
-        name: 'getPhoneReport',
-        description: 'Get the Help Scout phone report for a bounded time range.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            start: { type: 'string', description: 'Start of the reporting interval, ISO 8601' },
-            end: { type: 'string', description: 'End of the reporting interval, ISO 8601' },
-            previousStart: { type: 'string', description: 'Optional comparison interval start, ISO 8601' },
-            previousEnd: { type: 'string', description: 'Optional comparison interval end, ISO 8601' },
-            mailboxes: { type: 'array', items: { type: 'string' }, description: 'Inbox IDs to filter by' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Tag IDs to filter by' },
-            folders: { type: 'array', items: { type: 'string' }, description: 'Folder IDs to filter by' },
-            officeHours: { type: 'boolean', description: 'Whether to take office hours into consideration' },
-          },
-          required: ['start', 'end'],
-        },
-      },
-      {
         name: 'listDocsSites',
         description: 'List Help Scout Docs sites using the Docs API v1.',
         inputSchema: {
@@ -1926,22 +1108,16 @@ export class ToolHandler {
       },
       {
         name: 'getDocsSite',
-        description: 'Get one Help Scout Docs site by ID.',
+        description: 'Get one Help Scout Docs site by ID. Set includeRestrictions to also attach the restricted-site settings (secrets redacted).',
         inputSchema: {
           type: 'object',
           properties: {
             siteId: { type: 'string', description: 'Docs site ID' },
-          },
-          required: ['siteId'],
-        },
-      },
-      {
-        name: 'getDocsSiteRestrictions',
-        description: 'Get Help Scout Docs restricted-site settings by site ID, with secrets redacted.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            siteId: { type: 'string', description: 'Docs site ID from listDocsSites' },
+            includeRestrictions: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, also fetches the restricted-site settings (/sites/{id}/restricted) and attaches them under "restrictions" with shared secrets redacted.',
+            },
           },
           required: ['siteId'],
         },
@@ -2114,6 +1290,16 @@ export class ToolHandler {
         },
       },
     ];
+
+    // Every tool in this server is a read-only GET wrapper over the external
+    // Help Scout API. Advertise MCP tool annotations so clients (e.g. Claude
+    // CoWork) can auto-approve reads and skip "may modify data" confirmations.
+    // openWorldHint is true because results depend on an external service.
+    // A tool may still override by declaring its own `annotations`.
+    return tools.map((tool) => ({
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      ...tool,
+    }));
   }
 
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -2174,26 +1360,17 @@ export class ToolHandler {
       let result: CallToolResult;
 
       switch (request.params.name) {
-        case 'searchInboxes':
-          result = await this.searchInboxes(request.params.arguments || {});
-          break;
         case 'searchConversations':
           result = await this.searchConversations(request.params.arguments || {});
           break;
         case 'getConversation':
           result = await this.getConversation(request.params.arguments || {});
           break;
-        case 'getConversationV3':
-          result = await this.getConversationV3(request.params.arguments || {});
-          break;
         case 'getConversationSummary':
           result = await this.getConversationSummary(request.params.arguments || {});
           break;
         case 'getThreads':
           result = await this.getThreads(request.params.arguments || {});
-          break;
-        case 'getThreadsV3':
-          result = await this.getThreadsV3(request.params.arguments || {});
           break;
         case 'getServerTime':
           result = await this.getServerTime();
@@ -2204,47 +1381,17 @@ export class ToolHandler {
         case 'getInbox':
           result = await this.getInbox(request.params.arguments || {});
           break;
-        case 'advancedConversationSearch':
-          result = await this.advancedConversationSearch(request.params.arguments || {});
-          break;
-        case 'comprehensiveConversationSearch':
-          result = await this.comprehensiveConversationSearch(request.params.arguments || {});
-          break;
-        case 'structuredConversationFilter':
-          result = await this.structuredConversationFilter(request.params.arguments || {});
-          break;
         case 'getCustomer':
           result = await this.getCustomer(request.params.arguments || {});
           break;
         case 'listCustomers':
           result = await this.listCustomers(request.params.arguments || {});
           break;
-        case 'listCustomersV3':
-          result = await this.listCustomersV3(request.params.arguments || {});
-          break;
         case 'searchCustomersByEmail':
           result = await this.searchCustomersByEmail(request.params.arguments || {});
           break;
         case 'getCustomerContacts':
           result = await this.getCustomerContacts(request.params.arguments || {});
-          break;
-        case 'getCustomerAddress':
-          result = await this.getCustomerAddress(request.params.arguments || {});
-          break;
-        case 'listCustomerEmails':
-          result = await this.listCustomerEmails(request.params.arguments || {});
-          break;
-        case 'listCustomerPhones':
-          result = await this.listCustomerPhones(request.params.arguments || {});
-          break;
-        case 'listCustomerChats':
-          result = await this.listCustomerChats(request.params.arguments || {});
-          break;
-        case 'listCustomerSocialProfiles':
-          result = await this.listCustomerSocialProfiles(request.params.arguments || {});
-          break;
-        case 'listCustomerWebsites':
-          result = await this.listCustomerWebsites(request.params.arguments || {});
           break;
         case 'getOrganization':
           result = await this.getOrganization(request.params.arguments || {});
@@ -2279,32 +1426,11 @@ export class ToolHandler {
         case 'getUser':
           result = await this.getUser(request.params.arguments || {});
           break;
-        case 'listSystemUsers':
-          result = await this.listSystemUsers(request.params.arguments || {});
-          break;
-        case 'getSystemUser':
-          result = await this.getSystemUser(request.params.arguments || {});
-          break;
-        case 'listUserStatuses':
-          result = await this.listUserStatuses(request.params.arguments || {});
-          break;
-        case 'getUserStatus':
-          result = await this.getUserStatus(request.params.arguments || {});
-          break;
         case 'listTeams':
           result = await this.listTeams(request.params.arguments || {});
           break;
         case 'getTeamMembers':
           result = await this.getTeamMembers(request.params.arguments || {});
-          break;
-        case 'listInboxCustomFields':
-          result = await this.listInboxCustomFields(request.params.arguments || {});
-          break;
-        case 'listInboxFolders':
-          result = await this.listInboxFolders(request.params.arguments || {});
-          break;
-        case 'getInboxRouting':
-          result = await this.getInboxRouting(request.params.arguments || {});
           break;
         case 'listSavedReplies':
           result = await this.listSavedReplies(request.params.arguments || {});
@@ -2314,9 +1440,6 @@ export class ToolHandler {
           break;
         case 'getOriginalSource':
           result = await this.getOriginalSource(request.params.arguments || {});
-          break;
-        case 'getOriginalSourceRfc822':
-          result = await this.getOriginalSourceRfc822(request.params.arguments || {});
           break;
         case 'getAttachment':
           result = await this.getAttachment(request.params.arguments || {});
@@ -2339,107 +1462,29 @@ export class ToolHandler {
         case 'getCompanyReport':
           result = await this.getCompanyReport(request.params.arguments || {});
           break;
-        case 'getCompanyCustomersHelpedReport':
-          result = await this.getCompanyCustomersHelpedReport(request.params.arguments || {});
-          break;
-        case 'getCompanyDrilldownReport':
-          result = await this.getCompanyDrilldownReport(request.params.arguments || {});
-          break;
         case 'getConversationsReport':
           result = await this.getConversationsReport(request.params.arguments || {});
-          break;
-        case 'getConversationVolumeByChannelReport':
-          result = await this.getConversationVolumeByChannelReport(request.params.arguments || {});
-          break;
-        case 'getConversationBusyTimesReport':
-          result = await this.getConversationBusyTimesReport(request.params.arguments || {});
-          break;
-        case 'getConversationDrilldownReport':
-          result = await this.getConversationDrilldownReport(request.params.arguments || {});
-          break;
-        case 'getConversationFieldDrilldownReport':
-          result = await this.getConversationFieldDrilldownReport(request.params.arguments || {});
-          break;
-        case 'getConversationNewReport':
-          result = await this.getConversationNewReport(request.params.arguments || {});
-          break;
-        case 'getConversationNewDrilldownReport':
-          result = await this.getConversationNewDrilldownReport(request.params.arguments || {});
-          break;
-        case 'getConversationReceivedMessagesReport':
-          result = await this.getConversationReceivedMessagesReport(request.params.arguments || {});
-          break;
-        case 'getDocsReport':
-          result = await this.getDocsReport(request.params.arguments || {});
-          break;
-        case 'getHappinessReport':
-          result = await this.getHappinessReport(request.params.arguments || {});
-          break;
-        case 'getHappinessRatingsReport':
-          result = await this.getHappinessRatingsReport(request.params.arguments || {});
           break;
         case 'getProductivityReport':
           result = await this.getProductivityReport(request.params.arguments || {});
           break;
-        case 'getProductivityFirstResponseTimeReport':
-          result = await this.getProductivityFirstResponseTimeReport(request.params.arguments || {});
-          break;
-        case 'getProductivityRepliesSentReport':
-          result = await this.getProductivityRepliesSentReport(request.params.arguments || {});
-          break;
-        case 'getProductivityResolutionTimeReport':
-          result = await this.getProductivityResolutionTimeReport(request.params.arguments || {});
-          break;
-        case 'getProductivityResolvedReport':
-          result = await this.getProductivityResolvedReport(request.params.arguments || {});
-          break;
-        case 'getProductivityResponseTimeReport':
-          result = await this.getProductivityResponseTimeReport(request.params.arguments || {});
-          break;
         case 'getUserReport':
           result = await this.getUserReport(request.params.arguments || {});
           break;
-        case 'getUserConversationHistoryReport':
-          result = await this.getUserConversationHistoryReport(request.params.arguments || {});
+        case 'getHappinessReport':
+          result = await this.getHappinessReport(request.params.arguments || {});
           break;
-        case 'getUserCustomersHelpedReport':
-          result = await this.getUserCustomersHelpedReport(request.params.arguments || {});
+        case 'getChannelReport':
+          result = await this.getChannelReport(request.params.arguments || {});
           break;
-        case 'getUserDrilldownReport':
-          result = await this.getUserDrilldownReport(request.params.arguments || {});
-          break;
-        case 'getUserHappinessReport':
-          result = await this.getUserHappinessReport(request.params.arguments || {});
-          break;
-        case 'getUserRatingsReport':
-          result = await this.getUserRatingsReport(request.params.arguments || {});
-          break;
-        case 'getUserRepliesReport':
-          result = await this.getUserRepliesReport(request.params.arguments || {});
-          break;
-        case 'getUserResolutionsReport':
-          result = await this.getUserResolutionsReport(request.params.arguments || {});
-          break;
-        case 'getUserChatReport':
-          result = await this.getUserChatReport(request.params.arguments || {});
-          break;
-        case 'getChatReport':
-          result = await this.getChatReport(request.params.arguments || {});
-          break;
-        case 'getEmailReport':
-          result = await this.getEmailReport(request.params.arguments || {});
-          break;
-        case 'getPhoneReport':
-          result = await this.getPhoneReport(request.params.arguments || {});
+        case 'getDocsReport':
+          result = await this.getDocsReport(request.params.arguments || {});
           break;
         case 'listDocsSites':
           result = await this.listDocsSites(request.params.arguments || {});
           break;
         case 'getDocsSite':
           result = await this.getDocsSite(request.params.arguments || {});
-          break;
-        case 'getDocsSiteRestrictions':
-          result = await this.getDocsSiteRestrictions(request.params.arguments || {});
           break;
         case 'listDocsCollections':
           result = await this.listDocsCollections(request.params.arguments || {});
@@ -2546,61 +1591,39 @@ export class ToolHandler {
     }
   }
 
-  private async searchInboxes(args: unknown): Promise<CallToolResult> {
-    const input = SearchInboxesInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-      page: input.page,
-      size: input.limit,
-    });
-
-    const inboxes = response._embedded?.mailboxes || [];
-    const filteredInboxes = inboxes.filter(inbox => 
-      inbox.name.toLowerCase().includes(input.query.toLowerCase())
-    );
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            results: filteredInboxes.map(inbox => ({
-              id: inbox.id,
-              name: inbox.name,
-              email: inbox.email,
-              createdAt: inbox.createdAt,
-              updatedAt: inbox.updatedAt,
-            })),
-            query: input.query,
-            totalFound: filteredInboxes.length,
-            totalAvailable: response.page?.totalElements ?? inboxes.length,
-            pagination: response.page,
-            nextPage: getNextPage(response.page),
-            usage: filteredInboxes.length > 0 ? 
-              'NEXT STEP: Use the "id" field from these results in your conversation search tools (comprehensiveConversationSearch or searchConversations)' : 
-              'No inboxes matched your query. Try a different search term or use empty string "" to list all inboxes.',
-            example: filteredInboxes.length > 0 ? 
-              `comprehensiveConversationSearch({ searchTerms: ["your search"], inboxId: "${filteredInboxes[0].id}" })` : 
-              null,
-          }, null, 2),
-        },
-      ],
-    };
-  }
 
   private async searchConversations(args: unknown): Promise<CallToolResult> {
     const input = SearchConversationsInputSchema.parse(args);
 
     const baseParams: Record<string, unknown> = {
       page: input.page,
-      size: input.limit,
       sortField: input.sort,
       sortOrder: input.order,
     };
 
-    // Add HelpScout query parameter for content/body search
-    if (input.query) {
-      baseParams.query = input.query;
+    // Compile the convenience filters into the documented query=() mini-language,
+    // then AND them with any raw `query` the caller supplied. This absorbs what
+    // the old advanced/comprehensive/structured search tools did, so callers get
+    // one tool instead of four.
+    const esc = (t: string): string => t.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const clauses: string[] = [];
+    if (input.query) clauses.push(input.query);
+    if (input.contentTerms?.length) clauses.push(input.contentTerms.map(t => `body:"${esc(t)}"`).join(' OR '));
+    if (input.subjectTerms?.length) clauses.push(input.subjectTerms.map(t => `subject:"${esc(t)}"`).join(' OR '));
+    if (input.email) clauses.push(`email:"${esc(input.email)}"`);
+    if (input.emailDomain) clauses.push(`email:"${esc(input.emailDomain.replace(/^@/, ''))}"`);
+    if (input.customerIds?.length) clauses.push(input.customerIds.map(id => `customerIds:${id}`).join(' OR '));
+    if (input.hasAttachments) clauses.push('attachments:true');
+    if (input.assignedTo === -1) clauses.push('assigned:"Unassigned"');
+    if (clauses.length) {
+      baseParams.query = clauses.length === 1 ? clauses[0] : clauses.map(c => `(${c})`).join(' AND ');
     }
+
+    // Documented top-level structured filters.
+    if (input.folderId !== undefined) baseParams.folder = input.folderId;
+    if (typeof input.assignedTo === 'number' && input.assignedTo >= 0) baseParams.assigned_to = input.assignedTo;
+    if (input.conversationNumber !== undefined) baseParams.number = input.conversationNumber;
+    if (input.modifiedSince) baseParams.modifiedSince = input.modifiedSince;
 
     // Apply inbox scoping: explicit inboxId > default > all inboxes
     const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
@@ -2700,7 +1723,7 @@ export class ToolHandler {
     }
 
     const results = {
-      results: conversations,
+      results: this.redactConversationListContent(conversations),
       pagination,
       nextPage: input.status ? getNextPage(originalPagination as { number?: number; totalPages?: number } | undefined) : null,
       searchInfo: {
@@ -2733,12 +1756,25 @@ export class ToolHandler {
   private async getConversation(args: unknown): Promise<CallToolResult> {
     const input = GetConversationInputSchema.parse(args);
     const params = input.embed ? { embed: input.embed } : undefined;
+
+    // includeSystemActors routes to the v3 conversation endpoint, which
+    // preserves the user/team/system_user person types (v2 collapses
+    // system_user into user).
     const conversation = await helpScoutClient.get<Record<string, unknown>>(
-      `/conversations/${input.conversationId}`,
+      input.includeSystemActors
+        ? this.buildV3ApiUrl(`/conversations/${input.conversationId}`)
+        : `/conversations/${input.conversationId}`,
       params
     );
 
     const processedConversation = this.redactConversationMessageContent(conversation);
+
+    const embedUsage = input.includeSystemActors
+      ? 'Embedded threads are included for API parity; use getThreads(includeSystemActors:true) for pagination.'
+      : 'Embedded threads are included for API parity; use getThreads for pagination or full chat thread retrieval.';
+    const plainUsage = input.includeSystemActors
+      ? 'This v3 view distinguishes user, team, and system_user in createdBy/assignee. Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.'
+      : 'Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.';
 
     return {
       content: [{
@@ -2746,36 +1782,9 @@ export class ToolHandler {
         text: JSON.stringify({
           conversationId: input.conversationId,
           embedded: input.embed,
+          ...(input.includeSystemActors ? { apiVersion: 'v3' } : {}),
           conversation: processedConversation,
-          usage: input.embed === 'threads'
-            ? 'Embedded threads are included for API parity; use getThreads for pagination or full chat thread retrieval.'
-            : 'Use getThreads for full message history, getOriginalSource for raw thread source, or getAttachment for attachment data.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getConversationV3(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationV3InputSchema.parse(args);
-    const params = input.embed ? { embed: input.embed } : undefined;
-    const conversation = await helpScoutClient.get<Record<string, unknown>>(
-      this.buildV3ApiUrl(`/conversations/${input.conversationId}`),
-      params
-    );
-
-    const processedConversation = this.redactConversationMessageContent(conversation);
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          conversationId: input.conversationId,
-          embedded: input.embed,
-          apiVersion: 'v3',
-          conversation: processedConversation,
-          usage: input.embed === 'threads'
-            ? 'Embedded threads are included for API parity; use getThreadsV3 for pagination.'
-            : 'Use this v3 view when createdBy or assignee person type must distinguish user, team, and system_user.',
+          usage: input.embed === 'threads' ? embedUsage : plainUsage,
         }, null, 2),
       }],
     };
@@ -2787,13 +1796,14 @@ export class ToolHandler {
     // Get conversation details
     const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
     
-    // Get threads to find first customer message and latest staff reply
-    const threadsResponse = await helpScoutClient.get<PaginatedResponse<Thread>>(
+    // Get ALL threads to find first customer message and latest staff reply.
+    // The endpoint is 25/page and ignores `size`, so a single call would only
+    // see the first 25 threads and pick the wrong "first"/"latest" on long
+    // conversations. Loop pages for a correct summary.
+    const { items: threads } = await helpScoutClient.getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
-      { page: 1, size: 50 }
+      'threads',
     );
-    
-    const threads = threadsResponse._embedded?.threads || [];
     const customerThreads = threads.filter(t => t.type === 'customer');
     const staffThreads = threads.filter(t => t.type === 'message' && t.createdBy);
     
@@ -2842,17 +1852,50 @@ export class ToolHandler {
 
   private async getThreads(args: unknown): Promise<CallToolResult> {
     const input = GetThreadsInputSchema.parse(args);
-    
-    const response = await helpScoutClient.get<PaginatedResponse<Thread>>(
+
+    // Threads ARE the messages. Both the v2 and v3 threads endpoints are
+    // page-based and ignore `size`, so loop pages (getAllPages) to return the
+    // complete history up to `limit` instead of silently truncating.
+    //
+    // includeSystemActors routes to the v3 threads endpoint, which preserves the
+    // user/team/system_user person types (v2 collapses system_user into user).
+    if (input.includeSystemActors) {
+      const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Record<string, unknown>>(
+        this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
+        'threads',
+        { page: input.page },
+        input.limit,
+      );
+
+      const processedThreads = config.security.redactMessageContent
+        ? threads.map((thread) => this.redactThreadBody(thread))
+        : threads;
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              conversationId: input.conversationId,
+              apiVersion: 'v3',
+              threads: processedThreads,
+              returnedCount: processedThreads.length,
+              totalThreads: totalElements,
+              truncated,
+              usage: 'This v3 thread view distinguishes user, team, and system_user in createdBy/assignedTo.',
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
-      {
-        page: input.page,
-        size: input.limit,
-      }
+      'threads',
+      { page: input.page },
+      input.limit,
     );
 
-    const threads = (response._embedded?.threads || []).slice(0, input.limit);
-    
     // Redact message bodies if configured.
     const processedThreads = threads.map(thread => ({
       ...thread,
@@ -2866,41 +1909,9 @@ export class ToolHandler {
           text: JSON.stringify({
             conversationId: input.conversationId,
             threads: processedThreads,
-            pagination: response.page,
-            nextPage: getNextPage(response.page),
-          }, null, 2),
-        },
-      ],
-    };
-  }
-
-  private async getThreadsV3(args: unknown): Promise<CallToolResult> {
-    const input = GetThreadsV3InputSchema.parse(args);
-
-    const response = await helpScoutClient.get<PaginatedResponse<Record<string, unknown>>>(
-      this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
-      {
-        page: input.page,
-        size: input.limit,
-      }
-    );
-
-    const threads = (response._embedded?.threads || []).slice(0, input.limit);
-    const processedThreads = config.security.redactMessageContent
-      ? threads.map((thread) => this.redactThreadBody(thread))
-      : threads;
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            conversationId: input.conversationId,
-            apiVersion: 'v3',
-            threads: processedThreads,
-            pagination: response.page,
-            nextPage: getNextPage(response.page),
-            usage: 'Use this v3 thread view when createdBy or assignedTo person type must distinguish user, team, and system_user.',
+            returnedCount: processedThreads.length,
+            totalThreads: totalElements,
+            truncated,
           }, null, 2),
         },
       ],
@@ -2928,14 +1939,24 @@ export class ToolHandler {
 
   private async listAllInboxes(args: unknown): Promise<CallToolResult> {
     const input = ListAllInboxesInputSchema.parse(args);
-    const limit = input.limit || 100;
 
-    const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
-      page: 1,
-      size: limit,
-    });
+    // "List ALL inboxes" must mean all: /mailboxes is 50/page and ignores
+    // `size`, so loop pages up to `limit` instead of returning only the first 50
+    // and mislabeling it as the total.
+    const { items: allInboxes, totalElements, truncated } = await helpScoutClient.getAllPages<Inbox>(
+      '/mailboxes',
+      'mailboxes',
+      {},
+      input.limit,
+    );
 
-    const inboxes = response._embedded?.mailboxes || [];
+    // /mailboxes has no name filter, so the nameContains match is done
+    // client-side over ALL fully-paged inboxes (case-insensitive substring).
+    const inboxes = input.nameContains
+      ? allInboxes.filter(inbox =>
+          inbox.name.toLowerCase().includes(input.nameContains!.toLowerCase())
+        )
+      : allInboxes;
 
     return {
       content: [
@@ -2949,10 +1970,13 @@ export class ToolHandler {
               createdAt: inbox.createdAt,
               updatedAt: inbox.updatedAt,
             })),
-            totalInboxes: inboxes.length,
+            ...(input.nameContains ? { nameContains: input.nameContains } : {}),
+            totalInboxes: totalElements,
+            returnedCount: inboxes.length,
+            truncated,
             usage: 'Use the "id" field from these results in your conversation searches',
             nextSteps: [
-              'To search in a specific inbox, use the inbox ID with comprehensiveConversationSearch or searchConversations',
+              'To search in a specific inbox, use the inbox ID with searchConversations',
               'To search across all inboxes, omit the inboxId parameter',
             ],
           }, null, 2),
@@ -2965,15 +1989,80 @@ export class ToolHandler {
     const input = GetInboxInputSchema.parse(args);
     const inbox = await helpScoutClient.get<Inbox>(`/mailboxes/${input.inboxId}`);
 
+    const payload: Record<string, unknown> = {
+      inbox,
+      usage: 'Use inbox.id with conversation searches, saved reply tools, or call getInbox again with include: ["fields","folders","routing"] to attach inbox sub-resources.',
+    };
+
+    const include = input.include ? Array.from(new Set(input.include)) : [];
+    if (include.length > 0) {
+      const includeErrors: Record<string, string> = {};
+
+      const settled = await Promise.allSettled(
+        include.map(part => this.fetchInboxSubResource(input.inboxId, part))
+      );
+
+      settled.forEach((outcome, index) => {
+        const part = include[index];
+        if (outcome.status === 'fulfilled') {
+          Object.assign(payload, outcome.value);
+        } else {
+          const reason = outcome.reason;
+          includeErrors[part] = reason instanceof Error ? reason.message : String(reason);
+        }
+      });
+
+      if (Object.keys(includeErrors).length > 0) {
+        payload.includeErrors = includeErrors;
+      }
+    }
+
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          inbox,
-          usage: 'Use inbox.id with conversation searches, listInboxFolders, listInboxCustomFields, getInboxRouting, or saved reply tools.',
-        }, null, 2),
+        text: JSON.stringify(payload, null, 2),
       }],
     };
+  }
+
+  /**
+   * Fetch a single inbox sub-resource from its dedicated Help Scout endpoint and
+   * return the response fragment to merge into the getInbox payload. Each sub-resource
+   * lives at its own endpoint (the API does not embed them on the inbox), so getInbox
+   * fans these out server-side when requested via the include parameter.
+   */
+  private async fetchInboxSubResource(
+    inboxId: string,
+    part: 'fields' | 'folders' | 'routing'
+  ): Promise<Record<string, unknown>> {
+    switch (part) {
+      case 'fields': {
+        const response = await helpScoutClient.get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${inboxId}/fields`);
+        const fields = response._embedded?.fields || [];
+        return {
+          customFields: {
+            fields,
+            totalFields: fields.length,
+            pagination: response.page,
+          },
+        };
+      }
+      case 'folders': {
+        const response = await helpScoutClient.get<PaginatedResponse<InboxFolder>>(`/mailboxes/${inboxId}/folders`);
+        const folders = response._embedded?.folders || [];
+        return {
+          folders: {
+            folders,
+            totalFolders: folders.length,
+            pagination: response.page,
+          },
+        };
+      }
+      case 'routing': {
+        const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${inboxId}/routing`, undefined, { ttl: 300 });
+        return { routing };
+      }
+    }
   }
 
   private async listTags(args: unknown): Promise<CallToolResult> {
@@ -3081,125 +2170,154 @@ export class ToolHandler {
 
   private async listUsers(args: unknown): Promise<CallToolResult> {
     const input = ListUsersInputSchema.parse(args);
+
+    // includeSystemActors routes to the v3 /system-users endpoint, which
+    // returns system actors (AI agents, integration users) that v2 /users
+    // does not expose. It supersedes the standard-user listing and ignores
+    // includeStatuses (statuses do not apply to system actors).
+    if (input.includeSystemActors) {
+      const response = await helpScoutClient.get<PaginatedResponse<SystemUser>>(
+        this.buildV3ApiUrl('/system-users'),
+        { page: input.page }
+      );
+      const systemUsers = response._embedded?.system_users || response._embedded?.systemUsers || [];
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            apiVersion: 'v3',
+            systemUsers,
+            totalSystemUsers: systemUsers.length,
+            pagination: response.page,
+            nextPage: getNextPage(response.page),
+            usage: systemUsers.length > 0
+              ? 'Use getUser(userId, includeSystemActors:true) when you need the full system-user record.'
+              : 'No system users returned for this Help Scout account.',
+          }, null, 2),
+        }],
+      };
+    }
+
     const params: Record<string, unknown> = { page: input.page };
     if (input.email) params.email = input.email;
     if (input.inboxId) params.mailbox = Number(input.inboxId);
 
-    const response = await helpScoutClient.get<PaginatedResponse<User>>('/users', params);
+    // includeStatuses additionally calls /users/status ONCE (it returns all
+    // user statuses in a single call). We never fan out per user.
+    const [usersResponse, statusesResult] = await Promise.allSettled([
+      helpScoutClient.get<PaginatedResponse<User>>('/users', params),
+      input.includeStatuses
+        ? helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', { page: 1 })
+        : Promise.resolve(null),
+    ]);
+
+    if (usersResponse.status === 'rejected') {
+      throw usersResponse.reason;
+    }
+
+    const response = usersResponse.value;
     const users = response._embedded?.users || [];
+
+    const result: Record<string, unknown> = {
+      users,
+      filters: {
+        email: input.email,
+        inboxId: input.inboxId,
+      },
+      totalUsers: users.length,
+      pagination: response.page,
+      nextPage: getNextPage(response.page),
+      usage: users.length > 0
+        ? 'Use user.id for assignee filters and user.mention when composing Help Scout note/reply text.'
+        : 'No users matched these filters. Try omitting email or inboxId.',
+    };
+
+    if (input.includeStatuses) {
+      if (statusesResult.status === 'fulfilled' && statusesResult.value) {
+        const statusEnvelope = statusesResult.value;
+        result.statuses = statusEnvelope._embedded?.userStatuses || statusEnvelope._embedded?.user_statuses || [];
+      } else {
+        const reason = statusesResult.status === 'rejected' ? statusesResult.reason : new Error('Unknown error');
+        const errorMessage = reason instanceof Error ? reason.message : String(reason);
+        logger.error('User status fetch failed for listUsers', { error: errorMessage });
+        result.statusesError = `Status lookup failed: ${errorMessage}`;
+      }
+    }
 
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          users,
-          filters: {
-            email: input.email,
-            inboxId: input.inboxId,
-          },
-          totalUsers: users.length,
-          pagination: response.page,
-          nextPage: getNextPage(response.page),
-          usage: users.length > 0
-            ? 'Use user.id for assignee filters and user.mention when composing Help Scout note/reply text.'
-            : 'No users matched these filters. Try omitting email or inboxId.',
-        }, null, 2),
+        text: JSON.stringify(result, null, 2),
       }],
     };
   }
 
   private async getUser(args: unknown): Promise<CallToolResult> {
     const input = GetUserInputSchema.parse(args);
+
+    // includeSystemActors routes to the v3 /system-users/{id} endpoint, which
+    // returns the system actor record (v2 /users collapses these). It takes
+    // precedence over includeStatus, which does not apply to system actors.
+    if (input.includeSystemActors) {
+      const systemUser = await helpScoutClient.get<SystemUser>(
+        this.buildV3ApiUrl(`/system-users/${input.userId}`)
+      );
+
+      const result: Record<string, unknown> = {
+        apiVersion: 'v3',
+        systemUser,
+        usage: 'System users identify non-human or integration actors in Help Scout account data.',
+      };
+      if (input.includeStatus) {
+        result.statusNote = 'includeStatus is ignored for system users; availability statuses apply only to standard users.';
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        }],
+      };
+    }
+
     const path = input.userId === 'me' ? '/users/me' : `/users/${input.userId}`;
-    const user = await helpScoutClient.get<User>(path);
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          user,
-          usage: 'Use user.id for assignment, assignee filters, and user/team report filters.',
-        }, null, 2),
-      }],
+    // includeStatus adds the /users/{id}/status sub-fetch. Surface a per-call
+    // error rather than failing the whole call if only the status lookup fails.
+    const [userResult, statusResult] = await Promise.allSettled([
+      helpScoutClient.get<User>(path),
+      input.includeStatus
+        ? helpScoutClient.get<UserStatus>(
+            input.userId === 'me' ? '/users/me/status' : `/users/${input.userId}/status`
+          )
+        : Promise.resolve(null),
+    ]);
+
+    if (userResult.status === 'rejected') {
+      throw userResult.reason;
+    }
+
+    const result: Record<string, unknown> = {
+      user: userResult.value,
+      usage: 'Use user.id for assignment, assignee filters, and user/team report filters.',
     };
-  }
 
-  private async listSystemUsers(args: unknown): Promise<CallToolResult> {
-    const input = ListSystemUsersInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<SystemUser>>(
-      this.buildV3ApiUrl('/system-users'),
-      { page: input.page }
-    );
-    const systemUsers = response._embedded?.system_users || response._embedded?.systemUsers || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          systemUsers,
-          totalSystemUsers: systemUsers.length,
-          pagination: response.page,
-          nextPage: getNextPage(response.page),
-          usage: systemUsers.length > 0
-            ? 'Use systemUser.id with getSystemUser when you need the full system-user record.'
-            : 'No system users returned for this Help Scout account.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getSystemUser(args: unknown): Promise<CallToolResult> {
-    const input = GetSystemUserInputSchema.parse(args);
-    const systemUser = await helpScoutClient.get<SystemUser>(
-      this.buildV3ApiUrl(`/system-users/${input.systemUserId}`)
-    );
+    if (input.includeStatus) {
+      if (statusResult.status === 'fulfilled' && statusResult.value) {
+        result.status = statusResult.value;
+      } else {
+        const reason = statusResult.status === 'rejected' ? statusResult.reason : new Error('Unknown error');
+        const errorMessage = reason instanceof Error ? reason.message : String(reason);
+        logger.error('User status fetch failed for getUser', { userId: input.userId, error: errorMessage });
+        result.statusError = `Status lookup failed: ${errorMessage}`;
+      }
+    }
 
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          systemUser,
-          usage: 'System users identify non-human or integration actors in Help Scout account data.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listUserStatuses(args: unknown): Promise<CallToolResult> {
-    const input = ListUserStatusesInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', {
-      page: input.page,
-    });
-    const userStatuses = response._embedded?.userStatuses || response._embedded?.user_statuses || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          userStatuses,
-          totalUserStatuses: userStatuses.length,
-          pagination: response.page,
-          nextPage: getNextPage(response.page),
-          usage: userStatuses.length > 0
-            ? 'Use userStatus.userId with getUserStatus or user-scoped report filters.'
-            : 'No user statuses returned for this Help Scout account.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getUserStatus(args: unknown): Promise<CallToolResult> {
-    const input = GetUserStatusInputSchema.parse(args);
-    const userStatus = await helpScoutClient.get<UserStatus>(`/users/${input.userId}/status`);
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          userId: input.userId,
-          userStatus,
-          usage: 'Use user status to interpret availability and routing context; this tool does not change status.',
-        }, null, 2),
+        text: JSON.stringify(result, null, 2),
       }],
     };
   }
@@ -3246,66 +2364,6 @@ export class ToolHandler {
           usage: members.length > 0
             ? 'Use member.id for assignee filters or user report filters.'
             : 'No users returned for this team.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listInboxCustomFields(args: unknown): Promise<CallToolResult> {
-    const input = ListInboxCustomFieldsInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${input.inboxId}/fields`);
-    const fields = response._embedded?.fields || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          inboxId: input.inboxId,
-          fields,
-          totalFields: fields.length,
-          pagination: response.page,
-          usage: fields.length > 0
-            ? 'Use field.id and dropdown option IDs when filtering or interpreting custom field values.'
-            : 'No custom fields returned for this inbox.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listInboxFolders(args: unknown): Promise<CallToolResult> {
-    const input = ListInboxFoldersInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<InboxFolder>>(`/mailboxes/${input.inboxId}/folders`);
-    const folders = response._embedded?.folders || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          inboxId: input.inboxId,
-          folders,
-          totalFolders: folders.length,
-          pagination: response.page,
-          usage: folders.length > 0
-            ? 'Use folder.id with structuredConversationFilter for folder-scoped lookups.'
-            : 'No folders returned for this inbox.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getInboxRouting(args: unknown): Promise<CallToolResult> {
-    const input = GetInboxRoutingInputSchema.parse(args);
-    const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${input.inboxId}/routing`, undefined, { ttl: 300 });
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          inboxId: input.inboxId,
-          routing,
-          usage: routing.state === 'enabled'
-            ? 'Use routing.userIds and routing.rotation to understand current assignment rotation state.'
-            : 'Routing is disabled for this inbox; userIds may be empty.',
         }, null, 2),
       }],
     };
@@ -3358,6 +2416,8 @@ export class ToolHandler {
 
   private async getOriginalSource(args: unknown): Promise<CallToolResult> {
     const input = GetOriginalSourceInputSchema.parse(args);
+    const endpoint = `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`;
+
     if (config.security.redactMessageContent) {
       return {
         content: [{
@@ -3365,6 +2425,7 @@ export class ToolHandler {
           text: JSON.stringify({
             conversationId: input.conversationId,
             threadId: input.threadId,
+            format: input.format,
             originalSource: REDACTED_MESSAGE_BODY,
             usage: 'Original source content is hidden because REDACT_MESSAGE_CONTENT is enabled.',
           }, null, 2),
@@ -3372,60 +2433,39 @@ export class ToolHandler {
       };
     }
 
-    const originalSource = await helpScoutClient.get<Record<string, unknown>>(
-      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`
-    );
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          conversationId: input.conversationId,
-          threadId: input.threadId,
-          originalSource,
-          usage: 'Use original source for read-only inspection of raw thread content when rendered thread fields are insufficient.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getOriginalSourceRfc822(args: unknown): Promise<CallToolResult> {
-    const input = GetOriginalSourceRfc822InputSchema.parse(args);
-    if (config.security.redactMessageContent) {
+    // The Help Scout endpoint selects format via the Accept header.
+    if (input.format === 'rfc822') {
+      const response = await helpScoutClient.getRaw<string>(endpoint, undefined, {
+        responseType: 'text',
+        headers: { Accept: 'message/rfc822' },
+      });
+      const headers = response.headers as Record<string, unknown>;
       return {
         content: [{
           type: 'text',
           text: JSON.stringify({
             conversationId: input.conversationId,
             threadId: input.threadId,
+            format: 'rfc822',
             sourceFormat: 'message/rfc822',
-            originalSource: REDACTED_MESSAGE_BODY,
-            usage: 'RFC 822 source content is hidden because REDACT_MESSAGE_CONTENT is enabled.',
+            contentType: this.getResponseHeader(headers, 'content-type') ?? 'message/rfc822',
+            originalSource: response.data,
+            usage: 'Use RFC 822 source for read-only inspection of raw email source when JSON original source is insufficient.',
           }, null, 2),
         }],
       };
     }
 
-    const response = await helpScoutClient.getRaw<string>(
-      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`,
-      undefined,
-      {
-        responseType: 'text',
-        headers: { Accept: 'message/rfc822' },
-      }
-    );
-    const headers = response.headers as Record<string, unknown>;
-
+    const originalSource = await helpScoutClient.get<Record<string, unknown>>(endpoint);
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
           conversationId: input.conversationId,
           threadId: input.threadId,
-          sourceFormat: 'message/rfc822',
-          contentType: this.getResponseHeader(headers, 'content-type') ?? 'message/rfc822',
-          originalSource: response.data,
-          usage: 'Use RFC 822 source for read-only inspection of raw email source when JSON original source is insufficient.',
+          format: 'json',
+          originalSource,
+          usage: 'Use original source for read-only inspection of raw thread content when rendered thread fields are insufficient.',
         }, null, 2),
       }],
     };
@@ -3567,91 +2607,132 @@ export class ToolHandler {
   }
 
   private async getCompanyReport(args: unknown): Promise<CallToolResult> {
-    const input = GetCompanyReportInputSchema.parse(args);
-    const params = this.buildReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/company', params);
-
-    return this.formatReportResult('company', params, report);
-  }
-
-  private async getCompanyCustomersHelpedReport(args: unknown): Promise<CallToolResult> {
-    const input = GetCompanyCustomersHelpedReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/company/customers-helped', params);
-
-    return this.formatReportResult('companyCustomersHelped', params, report);
-  }
-
-  private async getCompanyDrilldownReport(args: unknown): Promise<CallToolResult> {
-    const input = GetCompanyDrilldownReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows', 'range', 'rangeId']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/company/drilldown', params);
-
-    return this.formatReportResult('companyDrilldown', params, report);
+    const input = GetCompanyReportInputSchemaUnion.parse(args);
+    switch (input.report) {
+      case 'customers-helped': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/company/customers-helped', params);
+        return this.formatReportResult('companyCustomersHelped', params, report);
+      }
+      case 'drilldown': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows', 'range', 'rangeId']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/company/drilldown', params);
+        return this.formatReportResult('companyDrilldown', params, report);
+      }
+      case 'overall':
+      default: {
+        const params = this.buildReportQueryParams(input);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/company', params);
+        return this.formatReportResult('company', params, report);
+      }
+    }
   }
 
   private async getConversationsReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationsReportInputSchema.parse(args);
+    const input = GetConversationsReportInputSchemaUnion.parse(args);
+    switch (input.report) {
+      case 'volume-by-channel': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/volume-by-channel', params);
+        return this.formatReportResult('conversationVolumeByChannel', params, report);
+      }
+      case 'busy-times': {
+        const params = this.buildReportQueryParams(input);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/busy-times', params);
+        return this.formatReportResult('conversationBusyTimes', params, report);
+      }
+      case 'drilldown': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/drilldown', params);
+        return this.formatReportResult('conversationDrilldown', params, report);
+      }
+      case 'fields-drilldown': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['field', 'fieldid', 'page', 'rows']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/fields-drilldown', params);
+        return this.formatReportResult('conversationFieldDrilldown', params, report);
+      }
+      case 'new': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new', params);
+        return this.formatReportResult('conversationNew', params, report);
+      }
+      case 'new-drilldown': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new-drilldown', params);
+        return this.formatReportResult('conversationNewDrilldown', params, report);
+      }
+      case 'received-messages': {
+        const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/received-messages', params);
+        return this.formatReportResult('conversationReceivedMessages', params, report);
+      }
+      case 'overall':
+      default: {
+        const params = this.buildReportQueryParams(input);
+        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations', params);
+        return this.formatReportResult('conversations', params, report);
+      }
+    }
+  }
+
+  private async getProductivityReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityReportInputSchemaUnion.parse(args);
+    const params = this.buildProductivityReportQueryParams(input);
+    const map: Record<string, { path: string; reportType: string }> = {
+      'first-response-time': { path: '/reports/productivity/first-response-time', reportType: 'productivityFirstResponseTime' },
+      'replies-sent': { path: '/reports/productivity/replies-sent', reportType: 'productivityRepliesSent' },
+      'resolved': { path: '/reports/productivity/resolved', reportType: 'productivityResolved' },
+      'response-time': { path: '/reports/productivity/response-time', reportType: 'productivityResponseTime' },
+      'resolution-time': { path: '/reports/productivity/resolution-time', reportType: 'productivityResolutionTime' },
+      'overall': { path: '/reports/productivity', reportType: 'productivity' },
+    };
+    const { path, reportType } = map[input.report] ?? map.overall;
+    const report = await helpScoutClient.get<ReportResponse>(path, params);
+    return this.formatReportResult(reportType, params, report);
+  }
+
+  private async getUserReport(args: unknown): Promise<CallToolResult> {
+    const input = GetUserReportInputSchemaUnion.parse(args);
+    const params = this.buildUserReportQueryParams(input);
+    const map: Record<string, { path: string; reportType: string }> = {
+      'conversation-history': { path: '/reports/user/conversation-history', reportType: 'userConversationHistory' },
+      'customers-helped': { path: '/reports/user/customers-helped', reportType: 'userCustomersHelped' },
+      'drilldown': { path: '/reports/user/drilldown', reportType: 'userDrilldown' },
+      'happiness': { path: '/reports/user/happiness', reportType: 'userHappiness' },
+      'ratings': { path: '/reports/user/ratings', reportType: 'userRatings' },
+      'replies': { path: '/reports/user/replies', reportType: 'userReplies' },
+      'resolutions': { path: '/reports/user/resolutions', reportType: 'userResolutions' },
+      'chat': { path: '/reports/user/chat', reportType: 'userChat' },
+      'overall': { path: '/reports/user', reportType: 'user' },
+    };
+    const { path, reportType } = map[input.report] ?? map.overall;
+    const report = await helpScoutClient.get<ReportResponse>(path, params);
+    return this.formatReportResult(reportType, params, report);
+  }
+
+  private async getHappinessReport(args: unknown): Promise<CallToolResult> {
+    const input = GetHappinessReportInputSchemaUnion.parse(args);
+    if (input.report === 'ratings') {
+      const params: Record<string, string | number> = {
+        ...this.buildReportQueryParams(input),
+        page: input.page ?? 1,
+        sortField: input.sortField ?? 'modifiedAt',
+        sortOrder: input.sortOrder ?? 'DESC',
+        ...(input.rating ? { rating: input.rating } : {}),
+      };
+      const report = await helpScoutClient.get<HappinessRatingsReport>('/reports/happiness/ratings', params);
+      return this.formatReportResult('happinessRatings', params, report);
+    }
     const params = this.buildReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations', params);
-
-    return this.formatReportResult('conversations', params, report);
+    const report = await helpScoutClient.get<ReportResponse>('/reports/happiness', params);
+    return this.formatReportResult('happiness', params, report);
   }
 
-  private async getConversationVolumeByChannelReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationVolumeByChannelReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/volume-by-channel', params);
-
-    return this.formatReportResult('conversationVolumeByChannel', params, report);
-  }
-
-  private async getConversationBusyTimesReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationBusyTimesReportInputSchema.parse(args);
-    const params = this.buildReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/busy-times', params);
-
-    return this.formatReportResult('conversationBusyTimes', params, report);
-  }
-
-  private async getConversationDrilldownReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationDrilldownReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/drilldown', params);
-
-    return this.formatReportResult('conversationDrilldown', params, report);
-  }
-
-  private async getConversationFieldDrilldownReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationFieldDrilldownReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['field', 'fieldid', 'page', 'rows']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/fields-drilldown', params);
-
-    return this.formatReportResult('conversationFieldDrilldown', params, report);
-  }
-
-  private async getConversationNewReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationNewReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new', params);
-
-    return this.formatReportResult('conversationNew', params, report);
-  }
-
-  private async getConversationNewDrilldownReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationNewDrilldownReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new-drilldown', params);
-
-    return this.formatReportResult('conversationNewDrilldown', params, report);
-  }
-
-  private async getConversationReceivedMessagesReport(args: unknown): Promise<CallToolResult> {
-    const input = GetConversationReceivedMessagesReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/received-messages', params);
-
-    return this.formatReportResult('conversationReceivedMessages', params, report);
+  private async getChannelReport(args: unknown): Promise<CallToolResult> {
+    const input = GetChannelReportInputSchemaUnion.parse(args);
+    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
+    const report = await helpScoutClient.get<ReportResponse>(`/reports/${input.channel}`, params);
+    return this.formatReportResult(input.channel, params, report);
   }
 
   private async getDocsReport(args: unknown): Promise<CallToolResult> {
@@ -3660,172 +2741,6 @@ export class ToolHandler {
     const report = await helpScoutClient.get<ReportResponse>('/reports/docs', params);
 
     return this.formatReportResult('docs', params, report);
-  }
-
-  private async getHappinessReport(args: unknown): Promise<CallToolResult> {
-    const input = GetHappinessReportInputSchema.parse(args);
-    const params = this.buildReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/happiness', params);
-
-    return this.formatReportResult('happiness', params, report);
-  }
-
-  private async getHappinessRatingsReport(args: unknown): Promise<CallToolResult> {
-    const input = GetHappinessRatingsReportInputSchema.parse(args);
-    const params = {
-      ...this.buildReportQueryParams(input),
-      page: input.page,
-      sortField: input.sortField,
-      sortOrder: input.sortOrder,
-      ...(input.rating ? { rating: input.rating } : {}),
-    };
-    const report = await helpScoutClient.get<HappinessRatingsReport>('/reports/happiness/ratings', params);
-
-    return this.formatReportResult('happinessRatings', params, report);
-  }
-
-  private async getProductivityReport(args: unknown): Promise<CallToolResult> {
-    const input = GetProductivityReportInputSchema.parse(args);
-    const params = this.buildProductivityReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity', params);
-
-    return this.formatReportResult('productivity', params, report);
-  }
-
-  private async getProductivityFirstResponseTimeReport(args: unknown): Promise<CallToolResult> {
-    const input = GetProductivityFirstResponseTimeReportInputSchema.parse(args);
-    const params = this.buildProductivityReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/first-response-time', params);
-
-    return this.formatReportResult('productivityFirstResponseTime', params, report);
-  }
-
-  private async getProductivityRepliesSentReport(args: unknown): Promise<CallToolResult> {
-    const input = GetProductivityRepliesSentReportInputSchema.parse(args);
-    const params = this.buildProductivityReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/replies-sent', params);
-
-    return this.formatReportResult('productivityRepliesSent', params, report);
-  }
-
-  private async getProductivityResolutionTimeReport(args: unknown): Promise<CallToolResult> {
-    const input = GetProductivityResolutionTimeReportInputSchema.parse(args);
-    const params = this.buildProductivityReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/resolution-time', params);
-
-    return this.formatReportResult('productivityResolutionTime', params, report);
-  }
-
-  private async getProductivityResolvedReport(args: unknown): Promise<CallToolResult> {
-    const input = GetProductivityResolvedReportInputSchema.parse(args);
-    const params = this.buildProductivityReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/resolved', params);
-
-    return this.formatReportResult('productivityResolved', params, report);
-  }
-
-  private async getProductivityResponseTimeReport(args: unknown): Promise<CallToolResult> {
-    const input = GetProductivityResponseTimeReportInputSchema.parse(args);
-    const params = this.buildProductivityReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/productivity/response-time', params);
-
-    return this.formatReportResult('productivityResponseTime', params, report);
-  }
-
-  private async getUserReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user', params);
-
-    return this.formatReportResult('user', params, report);
-  }
-
-  private async getUserConversationHistoryReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserConversationHistoryReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/conversation-history', params);
-
-    return this.formatReportResult('userConversationHistory', params, report);
-  }
-
-  private async getUserCustomersHelpedReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserCustomersHelpedReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/customers-helped', params);
-
-    return this.formatReportResult('userCustomersHelped', params, report);
-  }
-
-  private async getUserDrilldownReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserDrilldownReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/drilldown', params);
-
-    return this.formatReportResult('userDrilldown', params, report);
-  }
-
-  private async getUserHappinessReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserHappinessReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/happiness', params);
-
-    return this.formatReportResult('userHappiness', params, report);
-  }
-
-  private async getUserRatingsReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserRatingsReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/ratings', params);
-
-    return this.formatReportResult('userRatings', params, report);
-  }
-
-  private async getUserRepliesReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserRepliesReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/replies', params);
-
-    return this.formatReportResult('userReplies', params, report);
-  }
-
-  private async getUserResolutionsReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserResolutionsReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/resolutions', params);
-
-    return this.formatReportResult('userResolutions', params, report);
-  }
-
-  private async getUserChatReport(args: unknown): Promise<CallToolResult> {
-    const input = GetUserChatReportInputSchema.parse(args);
-    const params = this.buildUserReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/user/chat', params);
-
-    return this.formatReportResult('userChat', params, report);
-  }
-
-  private async getChatReport(args: unknown): Promise<CallToolResult> {
-    const input = GetChatReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/chat', params);
-
-    return this.formatReportResult('chat', params, report);
-  }
-
-  private async getEmailReport(args: unknown): Promise<CallToolResult> {
-    const input = GetEmailReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/email', params);
-
-    return this.formatReportResult('email', params, report);
-  }
-
-  private async getPhoneReport(args: unknown): Promise<CallToolResult> {
-    const input = GetPhoneReportInputSchema.parse(args);
-    const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/phone', params);
-
-    return this.formatReportResult('phone', params, report);
   }
 
   private formatReportResult(
@@ -3914,21 +2829,40 @@ export class ToolHandler {
 
   private async getDocsSite(args: unknown): Promise<CallToolResult> {
     const input = GetDocsSiteInputSchema.parse(args);
-    const response = await helpScoutDocsClient.get<{ site: Record<string, unknown> }>(`/sites/${input.siteId}`);
-    return this.docsTextResponse({
-      site: response.site,
-      usage: 'Use site.id with listDocsCollections, listDocsRedirects, and getDocsSiteRestrictions.',
-    });
-  }
 
-  private async getDocsSiteRestrictions(args: unknown): Promise<CallToolResult> {
-    const input = GetDocsSiteRestrictionsInputSchema.parse(args);
-    const response = await helpScoutDocsClient.get<Record<string, unknown>>(`/sites/${input.siteId}/restricted`);
-    return this.docsTextResponse({
-      siteId: input.siteId,
-      restrictions: this.redactDocsSiteRestrictions(response),
-      usage: 'Use restrictions.enabled and authentication to understand Docs access controls. callbackConfiguration.sharedSecret is always redacted.',
-    });
+    // includeRestrictions adds the /sites/{id}/restricted sub-fetch. Surface a
+    // per-call error rather than failing the whole call if only the
+    // restrictions lookup fails. Shared secrets are always redacted.
+    const [siteResult, restrictionsResult] = await Promise.allSettled([
+      helpScoutDocsClient.get<{ site: Record<string, unknown> }>(`/sites/${input.siteId}`),
+      input.includeRestrictions
+        ? helpScoutDocsClient.get<Record<string, unknown>>(`/sites/${input.siteId}/restricted`)
+        : Promise.resolve(null),
+    ]);
+
+    if (siteResult.status === 'rejected') {
+      throw siteResult.reason;
+    }
+
+    const payload: Record<string, unknown> = {
+      site: siteResult.value.site,
+      usage: input.includeRestrictions
+        ? 'Use site.id with listDocsCollections and listDocsRedirects. restrictions.callbackConfiguration.sharedSecret is always redacted.'
+        : 'Use site.id with listDocsCollections and listDocsRedirects. Set includeRestrictions to inspect access controls.',
+    };
+
+    if (input.includeRestrictions) {
+      if (restrictionsResult.status === 'fulfilled' && restrictionsResult.value) {
+        payload.restrictions = this.redactDocsSiteRestrictions(restrictionsResult.value);
+      } else {
+        const reason = restrictionsResult.status === 'rejected' ? restrictionsResult.reason : new Error('Unknown error');
+        const errorMessage = reason instanceof Error ? reason.message : String(reason);
+        logger.error('Docs site restrictions fetch failed for getDocsSite', { siteId: input.siteId, error: errorMessage });
+        payload.restrictionsError = `Restrictions lookup failed: ${errorMessage}`;
+      }
+    }
+
+    return this.docsTextResponse(payload);
   }
 
   private async listDocsCollections(args: unknown): Promise<CallToolResult> {
@@ -4107,308 +3041,6 @@ export class ToolHandler {
         ? 'Use redirectedUrl to follow the resolved Docs target.'
         : 'No redirect was found for this site and URL path.',
     });
-  }
-
-  private async advancedConversationSearch(args: unknown): Promise<CallToolResult> {
-    const input = AdvancedConversationSearchInputSchema.parse(args);
-
-    // Build HelpScout query syntax
-    const queryParts: string[] = [];
-
-    // Content/body search (with injection protection)
-    if (input.contentTerms && input.contentTerms.length > 0) {
-      const bodyQueries = input.contentTerms.map(term => `body:"${this.escapeQueryTerm(term)}"`);
-      queryParts.push(`(${bodyQueries.join(' OR ')})`);
-    }
-
-    // Subject search (with injection protection)
-    if (input.subjectTerms && input.subjectTerms.length > 0) {
-      const subjectQueries = input.subjectTerms.map(term => `subject:"${this.escapeQueryTerm(term)}"`);
-      queryParts.push(`(${subjectQueries.join(' OR ')})`);
-    }
-
-    // Email searches (with injection protection)
-    if (input.customerEmail) {
-      queryParts.push(`email:"${this.escapeQueryTerm(input.customerEmail)}"`);
-    }
-
-    // Handle email domain search (with injection protection)
-    if (input.emailDomain) {
-      const domain = input.emailDomain.replace('@', ''); // Remove @ if present
-      queryParts.push(`email:"${this.escapeQueryTerm(domain)}"`);
-    }
-
-    // Tag search (with injection protection)
-    if (input.tags && input.tags.length > 0) {
-      const tagQueries = input.tags.map(tag => `tag:"${this.escapeQueryTerm(tag)}"`);
-      queryParts.push(`(${tagQueries.join(' OR ')})`);
-    }
-
-    // Build final query
-    const queryString = queryParts.length > 0 ? queryParts.join(' AND ') : undefined;
-
-    // Set up query parameters
-    const queryParams: Record<string, unknown> = {
-      page: input.page,
-      size: input.limit || 50,
-      sortField: 'createdAt',
-      sortOrder: 'desc',
-    };
-
-    if (queryString) {
-      queryParams.query = queryString;
-    }
-
-    // Apply inbox scoping: explicit inboxId > default > all inboxes
-    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
-    if (effectiveInboxId) {
-      queryParams.mailbox = effectiveInboxId;
-    }
-
-    const queryWithDate = this.appendCreatedAtFilter(
-      queryParams.query as string | undefined,
-      input.createdAfter,
-      input.createdBefore
-    );
-    if (queryWithDate) queryParams.query = queryWithDate;
-
-    let conversations: Conversation[];
-    let paginationInfo: unknown;
-    let nextPage: number | null = null;
-    let searchedStatuses: string[];
-
-    if (input.status) {
-      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
-        ...queryParams,
-        status: input.status,
-      });
-      conversations = response._embedded?.conversations || [];
-      paginationInfo = response.page;
-      nextPage = getNextPage(response.page);
-      searchedStatuses = [input.status];
-    } else {
-      const statusResult = await this.searchConversationStatusSet(
-        queryParams,
-        DEFAULT_CONVERSATION_STATUSES,
-        input.limit || 50,
-      );
-      conversations = statusResult.conversations;
-      paginationInfo = statusResult.pagination;
-      searchedStatuses = statusResult.searchedStatuses;
-    }
-
-    let clientSideFiltered = false;
-    const originalCount = conversations.length;
-    if (input.createdBefore) {
-      const result = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'advancedConversationSearch');
-      conversations = result.filtered;
-      clientSideFiltered = result.wasFiltered;
-    }
-
-    if (clientSideFiltered) {
-      if (input.status) {
-        paginationInfo = this.buildFilteredPagination(
-          conversations.length,
-          paginationInfo as { totalElements?: number } | undefined,
-          true
-        );
-      } else {
-        const merged = paginationInfo as {
-          totalAvailable?: number;
-          totalByStatus?: Record<string, number>;
-          errors?: Array<{ status: string; message: string; code: string }>;
-          note?: string;
-        };
-        paginationInfo = {
-          totalResults: conversations.length,
-          totalAvailable: merged.totalAvailable,
-          totalByStatus: merged.totalByStatus,
-          errors: merged.errors,
-          note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged.totalAvailable}). ${merged.note || ''}`
-        };
-      }
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            results: conversations,
-            searchQuery: queryString,
-            inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
-            searchCriteria: {
-              contentTerms: input.contentTerms,
-              subjectTerms: input.subjectTerms,
-              customerEmail: input.customerEmail,
-              emailDomain: input.emailDomain,
-              tags: input.tags,
-              status: input.status,
-            },
-            statusesSearched: searchedStatuses,
-            pagination: paginationInfo,
-            nextPage,
-            clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
-            note: !effectiveInboxId ? 'Searching ALL inboxes. Set HELPSCOUT_DEFAULT_INBOX_ID for better LLM context.' : undefined,
-          }, null, 2),
-        },
-      ],
-    };
-  }
-
-  /**
-   * Performs comprehensive conversation search across multiple statuses
-   * @param args - Search parameters including search terms, statuses, and timeframe
-   * @returns Promise<CallToolResult> with search results organized by status
-   * @example
-   * comprehensiveConversationSearch({
-   *   searchTerms: ["urgent", "billing"],
-   *   timeframeDays: 30,
-   *   inboxId: "123456"
-   * })
-   */
-  private async comprehensiveConversationSearch(args: unknown): Promise<CallToolResult> {
-    const input = MultiStatusConversationSearchInputSchema.parse(args);
-    
-    const searchContext = this.buildComprehensiveSearchContext(input);
-    const searchResults = await this.executeMultiStatusSearch(searchContext);
-    const summary = this.formatComprehensiveSearchResults(searchResults, searchContext);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(summary, null, 2),
-        },
-      ],
-    };
-  }
-
-  /**
-   * Build search context from input parameters
-   */
-  private buildComprehensiveSearchContext(input: z.infer<typeof MultiStatusConversationSearchInputSchema>) {
-    const createdAfter = input.createdAfter || this.calculateTimeRange(input.timeframeDays);
-    const searchQuery = this.buildSearchQuery(input.searchTerms, input.searchIn);
-    // Apply inbox scoping: explicit inboxId > default > all inboxes
-    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
-
-    return {
-      input,
-      createdAfter,
-      searchQuery,
-      effectiveInboxId,
-    };
-  }
-
-  /**
-   * Calculate time range for search
-   * Note: Help Scout API requires ISO 8601 format WITHOUT milliseconds
-   */
-  private calculateTimeRange(timeframeDays: number): string {
-    const timeRange = new Date();
-    timeRange.setDate(timeRange.getDate() - timeframeDays);
-    // Strip milliseconds - Help Scout rejects dates with .xxx format
-    return timeRange.toISOString().replace(/\.\d{3}Z$/, 'Z');
-  }
-
-  /**
-   * Build Help Scout search query from terms and search locations (with injection protection)
-   */
-  private buildSearchQuery(terms: string[], searchIn: string[]): string {
-    const queries: string[] = [];
-
-    for (const term of terms) {
-      const termQueries: string[] = [];
-      const escapedTerm = this.escapeQueryTerm(term);
-
-      if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BODY) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`body:"${escapedTerm}"`);
-      }
-
-      if (searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.SUBJECT) || searchIn.includes(TOOL_CONSTANTS.SEARCH_LOCATIONS.BOTH)) {
-        termQueries.push(`subject:"${escapedTerm}"`);
-      }
-
-      if (termQueries.length > 0) {
-        queries.push(`(${termQueries.join(' OR ')})`);
-      }
-    }
-
-    return queries.join(' OR ');
-  }
-
-  /**
-   * Execute search across multiple statuses with error handling
-   */
-  private async executeMultiStatusSearch(context: {
-    input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
-    createdAfter: string;
-    searchQuery: string;
-    effectiveInboxId?: string;
-  }) {
-    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
-    const allResults: Array<{
-      status: string;
-      totalCount: number;
-      totalCountBeforeFilter?: number;
-      conversations: Conversation[];
-      searchQuery: string;
-      filteredByCreatedBefore?: boolean;
-      error?: string;
-    }> = [];
-
-    for (const status of input.statuses) {
-      try {
-        const result = await this.searchSingleStatus({
-          status,
-          searchQuery,
-          createdAfter,
-          limitPerStatus: input.limitPerStatus,
-          inboxId: effectiveInboxId,
-          createdBefore: input.createdBefore,
-        });
-        allResults.push(result);
-      } catch (error) {
-        // Use type guard instead of unsafe cast
-        if (!isApiError(error)) {
-          // Non-API errors (TypeError, network failures) should not be silently swallowed
-          logger.error('Unexpected non-API error in multi-status search', {
-            status,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-
-        // Critical API errors should fail the entire operation.
-        if (error.code === 'UNAUTHORIZED' || error.code === 'INVALID_INPUT') {
-          logger.error('Critical API error in multi-status search - aborting', {
-            status,
-            errorCode: error.code,
-            message: error.message
-          });
-          throw error;
-        }
-
-        // Non-critical API errors: log and include in response
-        logger.error('Status search failed - partial results will be returned', {
-          status,
-          errorCode: error.code,
-          message: error.message,
-          note: 'This status will be excluded from results'
-        });
-
-        allResults.push({
-          status,
-          totalCount: 0,
-          conversations: [],
-          searchQuery,
-          error: `Search failed (${error.code}): ${error.message}`,
-        });
-      }
-    }
-
-    return allResults;
   }
 
   /**
@@ -4621,239 +3253,6 @@ export class ToolHandler {
     return typeof value === 'string' ? value : '';
   }
 
-  /**
-   * Search conversations for a single status
-   */
-  private async searchSingleStatus(params: {
-    status: string;
-    searchQuery: string;
-    createdAfter: string;
-    limitPerStatus: number;
-    inboxId?: string;
-    createdBefore?: string;
-  }) {
-    const queryWithDate = this.appendCreatedAtFilter(
-      params.searchQuery,
-      params.createdAfter,
-      params.createdBefore
-    );
-
-    const queryParams: Record<string, unknown> = {
-      page: 1,
-      size: params.limitPerStatus,
-      sortField: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
-      sortOrder: TOOL_CONSTANTS.DEFAULT_SORT_ORDER,
-      query: queryWithDate || params.searchQuery,
-      status: params.status,
-    };
-
-    if (params.inboxId) {
-      queryParams.mailbox = params.inboxId;
-    }
-
-    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-    let conversations = response._embedded?.conversations || [];
-    const apiTotalElements = response.page?.totalElements || conversations.length;
-
-    let filteredByDate = false;
-    if (params.createdBefore) {
-      const result = this.applyCreatedBeforeFilter(conversations, params.createdBefore, `searchSingleStatus(${params.status})`);
-      conversations = result.filtered;
-      filteredByDate = result.wasFiltered;
-    }
-
-    return {
-      status: params.status,
-      totalCount: filteredByDate ? conversations.length : apiTotalElements,
-      totalCountBeforeFilter: filteredByDate ? apiTotalElements : undefined,
-      conversations,
-      searchQuery: params.searchQuery,
-      filteredByCreatedBefore: filteredByDate,
-    };
-  }
-
-  /**
-   * Format comprehensive search results into summary response
-   */
-  private formatComprehensiveSearchResults(
-    allResults: Array<{
-      status: string;
-      totalCount: number;
-      totalCountBeforeFilter?: number;
-      conversations: Conversation[];
-      searchQuery: string;
-      filteredByCreatedBefore?: boolean;
-      error?: string;
-    }>,
-    context: {
-      input: z.infer<typeof MultiStatusConversationSearchInputSchema>;
-      createdAfter: string;
-      searchQuery: string;
-      effectiveInboxId?: string;
-    }
-  ) {
-    const { input, createdAfter, searchQuery, effectiveInboxId } = context;
-    const totalConversations = allResults.reduce((sum, result) => sum + result.conversations.length, 0);
-    const totalAvailable = allResults.reduce((sum, result) => sum + result.totalCount, 0);
-    const hasClientSideFiltering = allResults.some(r => r.filteredByCreatedBefore);
-    const totalBeforeFilter = hasClientSideFiltering
-      ? allResults.reduce((sum, result) => sum + (result.totalCountBeforeFilter || result.totalCount), 0)
-      : undefined;
-
-    return {
-      searchTerms: input.searchTerms,
-      searchQuery,
-      searchIn: input.searchIn,
-      inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
-      timeframe: {
-        createdAfter,
-        createdBefore: input.createdBefore,
-        days: input.timeframeDays,
-      },
-      totalConversationsFound: totalConversations,
-      totalAvailableAcrossStatuses: totalAvailable,
-      totalBeforeClientSideFiltering: totalBeforeFilter,
-      clientSideFilteringApplied: hasClientSideFiltering ?
-        `createdBefore filter applied - totalConversationsFound (${totalConversations}) reflects filtered results, totalBeforeClientSideFiltering (${totalBeforeFilter}) shows pre-filter API totals` : undefined,
-      failedStatuses: allResults.filter(r => r.error).map(r => `[WARNING] Status "${r.status}" search failed: ${r.error}`),
-      resultsByStatus: allResults,
-      searchTips: totalConversations === 0 ? [
-        'Try broader search terms or increase the timeframe',
-        'Check if the inbox ID is correct',
-        'Consider searching without status restrictions first',
-        'Verify that conversations exist for the specified criteria',
-        !effectiveInboxId ? 'Set HELPSCOUT_DEFAULT_INBOX_ID to scope searches to your primary inbox' : undefined
-      ].filter(Boolean) : (!effectiveInboxId ? [
-        'Note: Searching ALL inboxes. For better LLM context, set HELPSCOUT_DEFAULT_INBOX_ID environment variable.'
-      ] : undefined),
-    };
-  }
-
-  private async structuredConversationFilter(args: unknown): Promise<CallToolResult> {
-    const input = StructuredConversationFilterInputSchema.parse(args);
-
-    const queryParams: Record<string, unknown> = {
-      page: input.page,
-      size: input.limit,
-      sortField: input.sortBy,
-      sortOrder: input.sortOrder,
-    };
-
-    // Apply unique structural filters
-    if (input.assignedTo !== undefined && input.assignedTo !== -1) {
-      queryParams.assigned_to = input.assignedTo;
-    }
-    if (input.folderId !== undefined) queryParams.folder = input.folderId;
-    if (input.conversationNumber !== undefined) queryParams.number = input.conversationNumber;
-
-    if (input.assignedTo === -1) {
-      queryParams.query = this.appendQueryClause(queryParams.query as string | undefined, 'assigned:"Unassigned"');
-    }
-
-    // Apply customerIds via query syntax if provided
-    if (input.customerIds && input.customerIds.length > 0) {
-      queryParams.query = this.appendQueryClause(
-        queryParams.query as string | undefined,
-        input.customerIds.map(id => `customerIds:${id}`).join(' OR ')
-      );
-    }
-
-    // Apply combination filters
-    const effectiveInboxId = input.inboxId || config.helpscout.defaultInboxId;
-    if (effectiveInboxId) queryParams.mailbox = effectiveInboxId;
-    const shouldSearchDefaultStatuses = input.status === 'all';
-    if (!shouldSearchDefaultStatuses) {
-      queryParams.status = input.status;
-    }
-    if (input.tag) queryParams.tag = input.tag;
-    if (input.modifiedSince) queryParams.modifiedSince = this.normalizeApiDateParam(input.modifiedSince);
-
-    const queryWithDate = this.appendCreatedAtFilter(
-      queryParams.query as string | undefined,
-      input.createdAfter,
-      input.createdBefore
-    );
-    if (queryWithDate) queryParams.query = queryWithDate;
-
-    let conversations: Conversation[];
-    let paginationInfo: unknown;
-    let nextPage: number | null = null;
-    let searchedStatuses: string[];
-
-    if (shouldSearchDefaultStatuses) {
-      const statusResult = await this.searchConversationStatusSet(
-        queryParams,
-        DEFAULT_CONVERSATION_STATUSES,
-        input.limit,
-      );
-      conversations = statusResult.conversations;
-      paginationInfo = statusResult.pagination;
-      searchedStatuses = statusResult.searchedStatuses;
-    } else {
-      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
-      conversations = response._embedded?.conversations || [];
-      paginationInfo = response.page;
-      nextPage = getNextPage(response.page);
-      searchedStatuses = [input.status];
-    }
-
-    let clientSideFiltered = false;
-    const originalCount = conversations.length;
-    if (input.createdBefore) {
-      const result = this.applyCreatedBeforeFilter(conversations, input.createdBefore, 'structuredConversationFilter');
-      conversations = result.filtered;
-      clientSideFiltered = result.wasFiltered;
-    }
-
-    if (clientSideFiltered) {
-      if (shouldSearchDefaultStatuses) {
-        const merged = paginationInfo as {
-          totalAvailable?: number;
-          totalByStatus?: Record<string, number>;
-          errors?: Array<{ status: string; message: string; code: string }>;
-          note?: string;
-        };
-        paginationInfo = {
-          totalResults: conversations.length,
-          totalAvailable: merged.totalAvailable,
-          totalByStatus: merged.totalByStatus,
-          errors: merged.errors,
-          note: `Client-side createdBefore filter applied to merged results. totalResults shows filtered count (${conversations.length}), totalAvailable shows pre-filter total (${merged.totalAvailable}). ${merged.note || ''}`
-        };
-      } else {
-        paginationInfo = this.buildFilteredPagination(
-          conversations.length,
-          paginationInfo as { totalElements?: number } | undefined,
-          true
-        );
-      }
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          results: conversations,
-          filterApplied: {
-            filterType: 'structural',
-            assignedTo: input.assignedTo,
-            folderId: input.folderId,
-            customerIds: input.customerIds,
-            conversationNumber: input.conversationNumber,
-            uniqueSorting: ['waitingSince', 'customerName', 'customerEmail'].includes(input.sortBy) ? input.sortBy : undefined,
-            status: input.status,
-          },
-          inboxScope: this.formatInboxScope(effectiveInboxId, input.inboxId),
-          statusesSearched: searchedStatuses,
-          pagination: paginationInfo,
-          nextPage,
-          clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
-          note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
-        }, null, 2),
-      }],
-    };
-  }
-
   // ── Customer Tools (NAS-680, NAS-727) ──
 
   private formatAddress(address: CustomerAddress): Record<string, unknown> {
@@ -4924,7 +3323,7 @@ export class ToolHandler {
         type: 'text',
         text: JSON.stringify({
           customer: result,
-          usage: 'NEXT STEPS: Use organizationId to explore their org with getOrganization. Use customer.id with structuredConversationFilter(customerIds) to find their conversations.',
+          usage: 'NEXT STEPS: Use organizationId to explore their org with getOrganization. Use customer.id with searchConversations(customerIds) to find their conversations.',
         }, null, 2),
       }],
     };
@@ -4932,6 +3331,38 @@ export class ToolHandler {
 
   private async listCustomers(args: unknown): Promise<CallToolResult> {
     const input = ListCustomersInputSchema.parse(args);
+
+    // v3 cursor path: requested explicitly via useV3 or implied by a cursor.
+    // The v3 Customers API uses cursor-based pagination (_links.next) and adds
+    // the email/createdSince filters that the v2 page path does not support.
+    if (input.useV3 || input.cursor) {
+      const v3Params: Record<string, unknown> = {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email,
+        query: input.query,
+        modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
+        createdSince: this.normalizeApiDateParam(input.createdSince),
+        cursor: input.cursor,
+      };
+
+      const { customers, links, nextCursor } = await this.fetchCustomersV3(v3Params);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            results: customers.map(c => this.formatCustomer(c)),
+            returnedCount: customers.length,
+            links,
+            nextCursor,
+            pagination: { type: 'cursor', hasNext: Boolean(nextCursor) },
+            note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
+            usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
+          }, null, 2),
+        }],
+      };
+    }
 
     // v2 API: page size is fixed at 50, 'size' param is not documented/supported
     const params: Record<string, unknown> = {
@@ -4970,7 +3401,7 @@ export class ToolHandler {
           returnedCount: customers.length,
           pagination: response.page,
           nextPage: getNextPage(response.page),
-          usage: 'Use customer.id with getCustomer for full profile (includes emails, phones, address, etc.), or with structuredConversationFilter(customerIds) for their conversations.',
+          usage: 'Use customer.id with getCustomer for full profile (includes emails, phones, address, etc.), or with searchConversations(customerIds) for their conversations.',
         }, null, 2),
       }],
     };
@@ -5009,37 +3440,6 @@ export class ToolHandler {
       customers,
       links: v3Response._links,
       nextCursor,
-    };
-  }
-
-  private async listCustomersV3(args: unknown): Promise<CallToolResult> {
-    const input = ListCustomersV3InputSchema.parse(args);
-
-    const params: Record<string, unknown> = {
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      query: input.query,
-      modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
-      createdSince: this.normalizeApiDateParam(input.createdSince),
-      cursor: input.cursor,
-    };
-
-    const { customers, links, nextCursor } = await this.fetchCustomersV3(params);
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          results: customers.map(c => this.formatCustomer(c)),
-          returnedCount: customers.length,
-          links,
-          nextCursor,
-          pagination: { type: 'cursor', hasNext: Boolean(nextCursor) },
-          note: 'v3 API uses cursor-based pagination. Pass nextCursor value back as cursor parameter for more results.',
-          usage: 'Use customer.id with getCustomer for full profile with sub-resources.',
-        }, null, 2),
-      }],
     };
   }
 
@@ -5160,91 +3560,6 @@ export class ToolHandler {
     };
   }
 
-  private async getCustomerAddress(args: unknown): Promise<CallToolResult> {
-    const input = GetCustomerAddressInputSchema.parse(args);
-    let address: CustomerAddress | null = null;
-    let note: string | undefined;
-
-    try {
-      address = await helpScoutClient.get<CustomerAddress>(`/customers/${input.customerId}/address`);
-    } catch (error) {
-      if (isApiError(error) && error.code === 'NOT_FOUND') {
-        note = 'No address on file for this customer.';
-      } else {
-        throw error;
-      }
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          customerId: input.customerId,
-          address: address ? this.formatAddress(address) : null,
-          ...(note ? { note } : {}),
-          usage: 'Use this when only the customer address is needed; use getCustomerContacts for the aggregate contact view.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listCustomerContactResource(
-    args: unknown,
-    schema: z.ZodType<{ customerId: string }>,
-    resourcePath: string,
-    embeddedKey: 'emails' | 'phones' | 'chats' | 'social-profiles' | 'social_profiles' | 'websites',
-    outputKey: 'emails' | 'phones' | 'chats' | 'socialProfiles' | 'websites',
-    label: string
-  ): Promise<CallToolResult> {
-    const input = schema.parse(args);
-    const response = await helpScoutClient.get<{
-      _embedded?: Record<string, Array<{ id: number; value: string; type?: string }>>;
-    }>(`/customers/${input.customerId}/${resourcePath}`);
-    const entries = embeddedKey === 'social-profiles'
-      ? this.extractContactEntries(response, 'social-profiles', 'social_profiles')
-      : this.extractContactEntries(response, embeddedKey);
-    const formatted = entries.map((entry) => this.formatContactEntry(entry));
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          customerId: input.customerId,
-          [outputKey]: formatted,
-          total: formatted.length,
-          usage: `Use these ${label} with getCustomer for profile context, or getCustomerContacts when the full contact bundle is needed.`,
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listCustomerEmails(args: unknown): Promise<CallToolResult> {
-    return this.listCustomerContactResource(args, ListCustomerEmailsInputSchema, 'emails', 'emails', 'emails', 'email contacts');
-  }
-
-  private async listCustomerPhones(args: unknown): Promise<CallToolResult> {
-    return this.listCustomerContactResource(args, ListCustomerPhonesInputSchema, 'phones', 'phones', 'phones', 'phone contacts');
-  }
-
-  private async listCustomerChats(args: unknown): Promise<CallToolResult> {
-    return this.listCustomerContactResource(args, ListCustomerChatsInputSchema, 'chats', 'chats', 'chats', 'chat handles');
-  }
-
-  private async listCustomerSocialProfiles(args: unknown): Promise<CallToolResult> {
-    return this.listCustomerContactResource(
-      args,
-      ListCustomerSocialProfilesInputSchema,
-      'social-profiles',
-      'social-profiles',
-      'socialProfiles',
-      'social profiles'
-    );
-  }
-
-  private async listCustomerWebsites(args: unknown): Promise<CallToolResult> {
-    return this.listCustomerContactResource(args, ListCustomerWebsitesInputSchema, 'websites', 'websites', 'websites', 'websites');
-  }
-
   // ── Organization Tools (NAS-684, NAS-712) ──
 
   private formatOrganization(org: Organization): Record<string, unknown> {
@@ -5322,7 +3637,7 @@ export class ToolHandler {
           returnedCount: customers.length,
           pagination: response.page,
           nextPage: getNextPage(response.page),
-          usage: 'Use customer.id with getCustomer for full profile or structuredConversationFilter(customerIds) for their conversations.',
+          usage: 'Use customer.id with getCustomer for full profile or searchConversations(customerIds) for their conversations.',
         }, null, 2),
       }],
     };

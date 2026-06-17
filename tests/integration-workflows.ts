@@ -260,13 +260,13 @@ async function scenario1_customerInvestigation(): Promise<void> {
     `Expected to find ${GOLDEN.customers.ariaChen.email} in contacts, got: ${emailValues.join(', ')}`,
   );
 
-  process.stderr.write('    structuredConversationFilter...\n');
-  const filterData = await callTool('structuredConversationFilter', {
+  process.stderr.write('    searchConversations (customer + status + tag)...\n');
+  const filterData = await callTool('searchConversations', {
     customerIds: [Number(customerId)],
     status: 'closed',
     tag: GOLDEN.tag,
-    sortBy: 'createdAt',
-    sortOrder: 'desc',
+    sort: 'createdAt',
+    order: 'desc',
     limit: 5,
   });
   const filterResults = filterData?.results ?? filterData?.conversations ?? [];
@@ -453,18 +453,18 @@ async function scenario4_keywordSearchThreadAnalysis(): Promise<void> {
   const createdAfter = new Date(parsedTime.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString();
   process.stderr.write(`    createdAfter=${createdAfter}\n`);
 
-  process.stderr.write('    comprehensiveConversationSearch ("rate limiting")...\n');
-  const searchData = await callTool('comprehensiveConversationSearch', {
-    searchTerms: ['rate limiting'],
-    timeframeDays: 365,
+  process.stderr.write('    searchConversations ("rate limiting", body OR subject)...\n');
+  const searchData = await callTool('searchConversations', {
+    query: '(body:"rate limiting" OR subject:"rate limiting")',
+    createdAfter,
+    status: 'all',
+    limit: 50,
   });
 
-  const totalFound: number = searchData?.totalConversationsFound ?? searchData?.total ?? 0;
-  const resultsByStatus: any[] = searchData?.resultsByStatus ?? [];
-  const allConvos: any[] = resultsByStatus.flatMap((s: any) => s.conversations ?? s.results ?? []);
+  const allConvos: any[] = searchData?.results ?? searchData?.conversations ?? [];
   assert(
-    totalFound >= 1 || allConvos.length >= 1,
-    `Expected at least 1 conversation for "rate limiting", got totalFound=${totalFound}, allConvos=${allConvos.length}`,
+    allConvos.length >= 1,
+    `Expected at least 1 conversation for "rate limiting", got ${allConvos.length}`,
   );
 
   const firstConvo = allConvos[0];
@@ -505,8 +505,8 @@ async function scenario4_keywordSearchThreadAnalysis(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function scenario5_domainInvestigation(): Promise<void> {
-  process.stderr.write('    advancedConversationSearch (emailDomain)...\n');
-  const searchData = await callTool('advancedConversationSearch', {
+  process.stderr.write('    searchConversations (emailDomain)...\n');
+  const searchData = await callTool('searchConversations', {
     emailDomain: GOLDEN.orgDomain,
     limit: 5,
   });
@@ -581,17 +581,17 @@ async function scenario6_ticketNumberLookup(): Promise<void> {
   assert(conversationNumber !== null, 'Could not extract conversation number');
   process.stderr.write(`    conversationId=${conversationId}, number=${conversationNumber}\n`);
 
-  process.stderr.write('    structuredConversationFilter (by number)...\n');
-  const filterData = await callTool('structuredConversationFilter', {
+  process.stderr.write('    searchConversations (by conversationNumber)...\n');
+  const filterData = await callTool('searchConversations', {
     conversationNumber: Number(conversationNumber),
   });
   const filterResults: any[] = filterData?.results ?? filterData?.conversations ?? [];
-  assert(filterResults.length >= 1, `structuredConversationFilter by number ${conversationNumber} returned 0 results`);
+  assert(filterResults.length >= 1, `searchConversations by number ${conversationNumber} returned 0 results`);
 
   const filteredId = String(filterResults[0]?.id ?? '');
   assert(
     filteredId === conversationId,
-    `ID mismatch: searchConversations returned ${conversationId}, structuredConversationFilter returned ${filteredId}`,
+    `ID mismatch: expected ${conversationId}, searchConversations(conversationNumber) returned ${filteredId}`,
   );
 
   process.stderr.write('    getConversationSummary...\n');
@@ -614,41 +614,29 @@ async function scenario6_ticketNumberLookup(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function scenario7_inboxSearchConsistency(): Promise<void> {
-  process.stderr.write('    searchInboxes (empty query)...\n');
-  const searchAllData = await callTool('searchInboxes', { query: '' });
-  const searchAllResults: any[] = searchAllData?.results ?? searchAllData?.inboxes ?? [];
-  assert(searchAllResults.length >= 1, 'searchInboxes (empty) returned no results');
-  const searchAllIds = new Set(searchAllResults.map((i: any) => String(i.id)));
-
-  process.stderr.write('    listAllInboxes...\n');
+  // searchInboxes was folded into listAllInboxes(nameContains); verify both the
+  // full list and the name-filter (a subset) behave consistently.
+  process.stderr.write('    listAllInboxes (all)...\n');
   const listAllData = await callTool('listAllInboxes');
   const listAllResults: any[] = listAllData?.inboxes ?? listAllData?.results ?? [];
   assert(listAllResults.length >= 1, 'listAllInboxes returned no results');
   const listAllIds = new Set(listAllResults.map((i: any) => String(i.id)));
+  process.stderr.write(`    listAllInboxes returned ${listAllIds.size} inbox(es).\n`);
 
-  // Verify same set of inbox IDs
-  const missingFromList = [...searchAllIds].filter((id) => !listAllIds.has(id));
-  const missingFromSearch = [...listAllIds].filter((id) => !searchAllIds.has(id));
-  assert(
-    missingFromList.length === 0 && missingFromSearch.length === 0,
-    `Inbox ID sets differ. Missing from listAll: [${missingFromList}]. Missing from searchAll: [${missingFromSearch}]`,
-  );
-  process.stderr.write(`    Both return ${listAllIds.size} inbox(es) with matching IDs.\n`);
-
-  process.stderr.write('    searchInboxes ("Client")...\n');
-  const searchClientData = await callTool('searchInboxes', { query: 'Client' });
-  const searchClientResults: any[] = searchClientData?.results ?? searchClientData?.inboxes ?? [];
-  assert(searchClientResults.length >= 1, 'searchInboxes("Client") returned no results');
+  process.stderr.write('    listAllInboxes (nameContains: "Client")...\n');
+  const searchClientData = await callTool('listAllInboxes', { nameContains: 'Client' });
+  const searchClientResults: any[] = searchClientData?.inboxes ?? searchClientData?.results ?? [];
+  assert(searchClientResults.length >= 1, 'listAllInboxes(nameContains "Client") returned no results');
 
   const clientIds = new Set(searchClientResults.map((i: any) => String(i.id)));
   const notSubset = [...clientIds].filter((id) => !listAllIds.has(id));
   assert(
     notSubset.length === 0,
-    `searchInboxes("Client") returned IDs not in listAllInboxes: [${notSubset}]`,
+    `listAllInboxes(nameContains) returned IDs not in the full list: [${notSubset}]`,
   );
 
   const foundClientSupport = searchClientResults.some((i: any) => i.name === GOLDEN.inboxName);
-  assert(foundClientSupport, `"${GOLDEN.inboxName}" not found in searchInboxes("Client") results`);
+  assert(foundClientSupport, `"${GOLDEN.inboxName}" not found in listAllInboxes(nameContains "Client") results`);
 
   process.stderr.write('    All steps passed.\n');
 }
@@ -796,7 +784,7 @@ async function scenario10_messageContentRedactionVerification(): Promise<void> {
   const knownCustomerId = String(searchResults[0]?.id ?? '');
   assert(knownCustomerId.length > 0, 'Could not extract customerId for redaction test');
 
-  const filterData = await callTool('structuredConversationFilter', {
+  const filterData = await callTool('searchConversations', {
     customerIds: [Number(knownCustomerId)],
     limit: 1,
   });
@@ -933,14 +921,13 @@ async function scenario11_paginationContinuity(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function scenario12_emptyResultHandling(): Promise<void> {
-  process.stderr.write('    comprehensiveConversationSearch (nonsense)...\n');
-  const searchData = await callTool('comprehensiveConversationSearch', {
-    searchTerms: ['xyzzy_nonexistent_foobarbaz_12345'],
-    timeframeDays: 365,
+  process.stderr.write('    searchConversations (nonsense)...\n');
+  const searchData = await callTool('searchConversations', {
+    contentTerms: ['xyzzy_nonexistent_foobarbaz_12345'],
   });
-  const total = searchData?.totalConversationsFound ?? searchData?.totalResults ?? -1;
-  assert(total === 0, `Expected 0 results for nonsense search, got ${total}`);
-  process.stderr.write(`    totalConversationsFound=0 (correct)\n`);
+  const nonsenseResults: any[] = searchData?.results ?? searchData?.conversations ?? [];
+  assert(nonsenseResults.length === 0, `Expected 0 results for nonsense search, got ${nonsenseResults.length}`);
+  process.stderr.write(`    0 results (correct)\n`);
 
   process.stderr.write('    searchCustomersByEmail (nonexistent)...\n');
   const emailData = await callTool('searchCustomersByEmail', {
@@ -950,8 +937,8 @@ async function scenario12_emptyResultHandling(): Promise<void> {
   assert(emailResults.length === 0, `Expected 0 customers, got ${emailResults.length}`);
   process.stderr.write(`    0 customers found (correct)\n`);
 
-  process.stderr.write('    structuredConversationFilter (nonexistent customer ID)...\n');
-  const filterData = await callTool('structuredConversationFilter', {
+  process.stderr.write('    searchConversations (nonexistent customer ID)...\n');
+  const filterData = await callTool('searchConversations', {
     customerIds: [999999999],
     limit: 5,
   });
@@ -1336,8 +1323,8 @@ async function scenario19_multipleCustomersSameOrg(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function scenario20_advancedFilterComposition(): Promise<void> {
-  process.stderr.write('    advancedConversationSearch (domain + status=closed)...\n');
-  const data = await callTool('advancedConversationSearch', {
+  process.stderr.write('    searchConversations (domain + status=closed)...\n');
+  const data = await callTool('searchConversations', {
     emailDomain: GOLDEN.orgDomain,
     status: 'closed',
     limit: 10,
@@ -1352,10 +1339,10 @@ async function scenario20_advancedFilterComposition(): Promise<void> {
     );
   }
 
-  process.stderr.write('    advancedConversationSearch (domain + tags)...\n');
-  const tagData = await callTool('advancedConversationSearch', {
+  process.stderr.write('    searchConversations (domain + tags)...\n');
+  const tagData = await callTool('searchConversations', {
     emailDomain: GOLDEN.orgDomain,
-    tags: [GOLDEN.tag],
+    tag: GOLDEN.tag,
     limit: 10,
   });
   const tagResults: any[] = tagData?.results ?? tagData?.conversations ?? [];
@@ -1371,18 +1358,18 @@ async function scenario20_advancedFilterComposition(): Promise<void> {
   }
 
   // Cross-check: conversations from the tag search should also appear
-  // in a structuredConversationFilter for the same tag
+  // in a searchConversations for the same tag
   if (tagResults.length > 0) {
     const sampleId = tagResults[0].id;
     const sampleNumber = tagResults[0].number;
-    process.stderr.write(`    structuredConversationFilter (verify ticket #${sampleNumber})...\n`);
-    const filterData = await callTool('structuredConversationFilter', {
+    process.stderr.write(`    searchConversations (verify ticket #${sampleNumber})...\n`);
+    const filterData = await callTool('searchConversations', {
       conversationNumber: Number(sampleNumber),
     });
     const filterResults: any[] = filterData?.results ?? [];
     assert(
       filterResults.length >= 1 && filterResults[0].id === sampleId,
-      `structuredConversationFilter did not return same conversation ${sampleId}`,
+      `searchConversations did not return same conversation ${sampleId}`,
     );
   }
 

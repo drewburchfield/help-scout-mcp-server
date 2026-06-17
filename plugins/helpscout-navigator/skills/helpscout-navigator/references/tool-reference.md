@@ -1,6 +1,8 @@
-# HelpScout MCP Tool Reference
+# Help Scout MCP Tool Reference
 
-Complete parameter documentation for all 17 HelpScout MCP tools.
+Core workflow reference for the most common Help Scout MCP tools.
+
+The server exposes 102 read-only tools in v1.9.0. Use the live MCP tool schemas for the complete parameter surface, especially for reports, metadata, Docs, and lower-frequency admin reads.
 
 ---
 

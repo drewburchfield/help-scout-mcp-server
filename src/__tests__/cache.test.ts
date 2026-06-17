@@ -26,6 +26,20 @@ describe('Cache', () => {
       expect(result).toBeUndefined();
     });
 
+    it.each([
+      ['zero', 0],
+      ['false', false],
+      ['empty string', ''],
+    ])('should return a cached falsy value (%s), not treat it as a miss', (_label, value) => {
+      const key = 'falsy-key';
+      const params = { v: _label };
+
+      cache.set(key, params, value);
+
+      // A falsy-but-present value must be returned as-is, not re-fetched as a miss.
+      expect(cache.get(key, params)).toEqual(value);
+    });
+
     it('should handle different parameters for same key', () => {
       const key = 'test-key';
       const params1 = { param: 'value1' };

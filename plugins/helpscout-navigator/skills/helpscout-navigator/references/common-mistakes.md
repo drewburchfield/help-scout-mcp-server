@@ -1,4 +1,4 @@
-# Common HelpScout MCP Mistakes
+# Common Help Scout MCP Mistakes
 
 Detailed anti-patterns with explanations and fixes.
 

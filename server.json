@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.drewburchfield/help-scout-mcp",
   "title": "Help Scout MCP Server",
-  "description": "Search Help Scout conversations, customers, organizations, threads, and inboxes with AI assistants",
-  "version": "1.7.0",
+  "description": "Read-only MCP server for Help Scout conversations, customers, organizations, reports, metadata, and Docs knowledge base.",
+  "version": "1.9.0",
   "repository": {
     "url": "https://github.com/drewburchfield/help-scout-mcp-server.git",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "npm",
       "identifier": "help-scout-mcp-server",
-      "version": "1.7.0",
+      "version": "1.9.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -33,6 +33,20 @@
           "format": "string"
         },
         {
+          "name": "HELPSCOUT_DEFAULT_INBOX_ID",
+          "description": "Optional default inbox ID for scoped searches",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "HELPSCOUT_DOCS_API_KEY",
+          "description": "Optional Help Scout Docs API key for knowledge base tools",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
           "name": "REDACT_MESSAGE_CONTENT",
           "description": "Replace message bodies with placeholders in responses (true/false)",
           "isRequired": false,
@@ -43,7 +57,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "docker.io/drewburchfield/help-scout-mcp-server:1.7.0",
+      "identifier": "docker.io/drewburchfield/help-scout-mcp-server:1.9.0",
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
@@ -60,6 +74,24 @@
           "description": "Help Scout OAuth2 App Secret",
           "isRequired": true,
           "isSecret": true
+        },
+        {
+          "name": "HELPSCOUT_DEFAULT_INBOX_ID",
+          "description": "Optional default inbox ID for scoped searches",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "HELPSCOUT_DOCS_API_KEY",
+          "description": "Optional Help Scout Docs API key for knowledge base tools",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "REDACT_MESSAGE_CONTENT",
+          "description": "Replace message bodies with placeholders in responses (true/false)",
+          "isRequired": false,
+          "isSecret": false
         }
       ]
     }

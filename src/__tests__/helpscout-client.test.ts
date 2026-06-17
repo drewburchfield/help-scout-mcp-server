@@ -19,7 +19,7 @@ jest.mock('../utils/logger.js', () => ({
 // Mock cache to prevent interference between tests
 jest.mock('../utils/cache.js', () => ({
   cache: {
-    get: jest.fn(() => null), // Always return null to prevent cache hits
+    get: jest.fn(() => undefined), // Real Cache.get returns undefined on a miss (null is a valid cached value)
     set: jest.fn(),
     clear: jest.fn(),
   },
@@ -57,7 +57,9 @@ describe('HelpScoutClient', () => {
     nock.cleanAll();
     nock.restore();
     nock.activate();
-    (cache as jest.Mocked<typeof cache>).get.mockReturnValue(null);
+    // Simulate a cache miss the way the real Cache does: undefined, not null
+    // (null is a valid cached payload and is now honored as a hit).
+    (cache as jest.Mocked<typeof cache>).get.mockReturnValue(undefined);
     
     // Clear any environment variables from previous tests
     delete process.env.HELPSCOUT_API_KEY;
