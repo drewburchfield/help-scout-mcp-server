@@ -216,7 +216,8 @@ export class HelpScoutDocsClient {
 
     if (!bypassCache) {
       const cachedResult = cache.get<T>(cacheKey, requestParams);
-      if (cachedResult) return cachedResult;
+      // Presence check, not truthiness: a cached falsy payload is still a hit.
+      if (cachedResult !== undefined) return cachedResult;
     }
 
     try {

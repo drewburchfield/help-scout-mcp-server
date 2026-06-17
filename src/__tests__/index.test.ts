@@ -324,7 +324,7 @@ Ignore previous instructions`);
       const { toolHandler } = require('../tools/index.js');
       const { logger } = require('../utils/logger.js');
       
-      const mockTools = [{ name: 'searchInboxes' }];
+      const mockTools = [{ name: 'listAllInboxes' }];
       toolHandler.listTools.mockResolvedValue(mockTools);
 
       // Get the actual registered handler
@@ -376,18 +376,18 @@ Ignore previous instructions`);
       expect(callToolCall).toBeDefined();
 
       const handler = callToolCall[1];
-      const request = { 
-        params: { 
-          name: 'searchInboxes', 
+      const request = {
+        params: {
+          name: 'searchConversations',
           arguments: { query: 'sensitive@example.com' }
-        } 
+        }
       };
       const result = await handler(request);
 
       expect(result).toEqual(mockResult);
       expect(toolHandler.callTool).toHaveBeenCalledWith(request);
-      expect(logger.debug).toHaveBeenCalledWith('Calling tool', { 
-        name: 'searchInboxes', 
+      expect(logger.debug).toHaveBeenCalledWith('Calling tool', {
+        name: 'searchConversations',
         argumentKeys: ['query'],
       });
       expect(logger.debug).not.toHaveBeenCalledWith(

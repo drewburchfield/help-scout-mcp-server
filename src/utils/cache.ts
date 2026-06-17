@@ -28,13 +28,15 @@ export class Cache {
   get<T>(prefix: string, data: unknown): T | undefined {
     const key = this.generateKey(prefix, data);
     const value = this.cache.get(key) as T | undefined;
-    
-    if (value) {
+
+    // Distinguish a real miss (undefined) from a cached falsy value (0, '', false),
+    // so the hit/miss log is accurate and falsy payloads count as hits.
+    if (value !== undefined) {
       logger.debug('Cache hit', { key, prefix });
     } else {
       logger.debug('Cache miss', { key, prefix });
     }
-    
+
     return value;
   }
 

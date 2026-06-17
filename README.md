@@ -108,9 +108,9 @@ For the MCP compatibility contract and roadmap, see:
 | Task | Tool | Example |
 |------|------|---------|
 | List recent tickets | `searchConversations` | "Show me active tickets from this week" |
-| Find by keyword | `comprehensiveConversationSearch` | "Find conversations about billing errors" |
-| Look up a ticket number | `structuredConversationFilter` | "Show me ticket #42839" |
-| Complex filters | `advancedConversationSearch` | "All @acme.com conversations tagged urgent" |
+| Find by keyword | `searchConversations` (`contentTerms`) | "Find conversations about billing errors" |
+| Look up a ticket number | `searchConversations` (`conversationNumber`) | "Show me ticket #42839" |
+| Complex filters | `searchConversations` (`emailDomain`, `tag`) | "All @acme.com conversations tagged urgent" |
 | Browse customers | `listCustomers` | "Show customers named Jane" |
 | Find a customer by email | `searchCustomersByEmail` | "Find customer jane@acme.com" |
 | Inspect a customer profile | `getCustomer` | "Open customer 12345" |
@@ -122,7 +122,7 @@ For the MCP compatibility contract and roadmap, see:
 | Raw conversation detail | `getConversation` | "Open conversation 12345 with full metadata" |
 | Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
 | Full message history | `getThreads` | "Show me the complete thread" |
-| Inspect routing state | `getInboxRouting` | "Show routing for inbox 359402" |
+| Inspect inbox fields, folders, or routing | `getInbox` (`include`) | "Show routing for inbox 359402" (`include: ["routing"]`) |
 | Search Docs articles | `searchDocsArticles` | "Find knowledge base articles about refunds" |
 | Retrieve a Docs article | `getDocsArticle` | "Open Docs article 123" |
 | Current MCP host time | `getServerTime` | Used for time-relative searches |
@@ -173,7 +173,7 @@ curl -X POST https://api.helpscout.net/v2/oauth2/token \
 ```
 
 **Empty search results?** Common causes:
-- Using the wrong search tool (use `searchConversations` for listing, `comprehensiveConversationSearch` for keyword search)
+- Forgetting that `searchConversations` is the single search tool: use `contentTerms`/`subjectTerms` for keyword search, plain filters for listing
 - Inbox ID mismatch. Check the IDs from server instructions, not guessed values.
 - Search terms too narrow. Try broader terms or a longer time range.
 

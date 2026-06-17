@@ -508,8 +508,10 @@ export class HelpScoutClient {
 
     if (!bypassCache) {
       const cachedResult = cache.get<T>(cacheKey, params);
-      
-      if (cachedResult) {
+
+      // Guard on presence, not truthiness: a cached falsy payload (0, '', false,
+      // null) is a real hit and must not trigger a redundant API call.
+      if (cachedResult !== undefined) {
         return cachedResult;
       }
     }
@@ -531,6 +533,50 @@ export class HelpScoutClient {
     }
     
     return response.data;
+  }
+
+  /**
+   * Fetch successive pages of a v2 list endpoint and accumulate the embedded
+   * collection. The Mailbox v2 API has NO `size`/`pageSize` parameter — page
+   * size is fixed (25 for conversations/threads, 50 elsewhere) and any `size`
+   * is silently ignored — so callers that need more than one page must loop.
+   *
+   * Stops at `maxItems`, at the last page (`page.totalPages`), or when a page
+   * returns no items. Safe when the endpoint returns no `page` block (e.g. a
+   * cursor-based or bare-array response): `totalPages` defaults to 1, so only
+   * the first page is fetched and no over-fetch/infinite loop can occur.
+   */
+  async getAllPages<T>(
+    endpoint: string,
+    collectionKey: string,
+    params: Record<string, unknown> = {},
+    maxItems: number = Number.POSITIVE_INFINITY,
+  ): Promise<{ items: T[]; totalElements: number; pagesFetched: number; truncated: boolean }> {
+    const items: T[] = [];
+    let pageNum = typeof params.page === 'number' && params.page > 0 ? params.page : 1;
+    let totalElements = 0;
+    let totalPages = 1;
+    let pagesFetched = 0;
+
+    do {
+      const resp = await this.get<PaginatedResponse<T>>(endpoint, { ...params, page: pageNum });
+      pagesFetched++;
+      const batch = resp._embedded?.[collectionKey] ?? [];
+      items.push(...batch);
+      totalElements = resp.page?.totalElements ?? items.length;
+      totalPages = resp.page?.totalPages ?? 1;
+      if (batch.length === 0) break;
+      pageNum++;
+    } while (pageNum <= totalPages && items.length < maxItems);
+
+    const capped = Number.isFinite(maxItems) && items.length > maxItems;
+    return {
+      items: capped ? items.slice(0, maxItems) : items,
+      totalElements,
+      pagesFetched,
+      // truncated = there is more data than we are returning to the caller.
+      truncated: capped || totalElements > items.length,
+    };
   }
 
   async getRaw<T>(endpoint: string, params?: Record<string, unknown>, options: RawGetOptions = {}): Promise<AxiosResponse<T>> {
