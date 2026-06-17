@@ -67,8 +67,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 73 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(73);
+    it('should have all 67 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(67);
 
       const expectedTools = [
         'searchInboxes',
@@ -86,12 +86,6 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
-        'getCustomerAddress',
-        'listCustomerEmails',
-        'listCustomerPhones',
-        'listCustomerChats',
-        'listCustomerSocialProfiles',
-        'listCustomerWebsites',
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',
@@ -315,12 +309,6 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
-        'getCustomerAddress',
-        'listCustomerEmails',
-        'listCustomerPhones',
-        'listCustomerChats',
-        'listCustomerSocialProfiles',
-        'listCustomerWebsites',
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',

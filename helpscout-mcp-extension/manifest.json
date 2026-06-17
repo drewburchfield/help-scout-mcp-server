@@ -173,30 +173,6 @@
       "description": "Fetch customer contact sub-resources including emails, phones, chats, websites, social profiles, and address"
     },
     {
-      "name": "getCustomerAddress",
-      "description": "Get a Help Scout customer address by customer ID"
-    },
-    {
-      "name": "listCustomerEmails",
-      "description": "List Help Scout customer email contacts by customer ID"
-    },
-    {
-      "name": "listCustomerPhones",
-      "description": "List Help Scout customer phone contacts by customer ID"
-    },
-    {
-      "name": "listCustomerChats",
-      "description": "List Help Scout customer chat handles by customer ID"
-    },
-    {
-      "name": "listCustomerSocialProfiles",
-      "description": "List Help Scout customer social profiles by customer ID"
-    },
-    {
-      "name": "listCustomerWebsites",
-      "description": "List Help Scout customer websites by customer ID"
-    },
-    {
       "name": "getOrganization",
       "description": "Get an organization profile by ID with optional counts and properties"
     },

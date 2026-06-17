@@ -109,8 +109,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 | Browse customers with v3 cursor filters | listCustomersV3 |
 | Find a customer by email | searchCustomersByEmail |
 | Get a full customer profile | getCustomer |
-| Get customer contact channels | getCustomerContacts |
-| Get one customer contact sub-resource | getCustomerAddress/listCustomerEmails/listCustomerPhones/listCustomerChats/listCustomerSocialProfiles/listCustomerWebsites |
+| Get customer contact channels (emails, phones, chats, social profiles, websites, address) | getCustomerContacts |
 | Browse organizations | listOrganizations |
 | Get an organization profile | getOrganization |
 | See everyone in an organization | getOrganizationMembers |

@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(73);
+      expect(tools).toHaveLength(67);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -62,12 +62,6 @@ describe('ToolHandler', () => {
         'listCustomersV3',
         'searchCustomersByEmail',
         'getCustomerContacts',
-        'getCustomerAddress',
-        'listCustomerEmails',
-        'listCustomerPhones',
-        'listCustomerChats',
-        'listCustomerSocialProfiles',
-        'listCustomerWebsites',
         'getOrganization',
         'listOrganizations',
         'getOrganizationMembers',
@@ -534,7 +528,7 @@ describe('ToolHandler', () => {
   });
 
   describe('customer contact sub-resource tools', () => {
-    it('should expose direct customer contact reads without fetching the aggregate bundle', async () => {
+    it('getCustomerContacts aggregates every contact sub-resource (address, emails, phones, chats, social profiles, websites)', async () => {
       nock(baseURL)
         .get('/customers/123/address')
         .reply(200, {
@@ -560,53 +554,39 @@ describe('ToolHandler', () => {
         .get('/customers/123/websites')
         .reply(200, { _embedded: { websites: [{ id: 5, value: 'https://example.com' }] } });
 
-      const call = async (name: string) => {
-        const result = await toolHandler.callTool({
-          method: 'tools/call',
-          params: {
-            name,
-            arguments: { customerId: '123' },
-          },
-        });
-        expect(result.isError).toBeUndefined();
-        return JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
-      };
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getCustomerContacts',
+          arguments: { customerId: '123' },
+        },
+      });
 
-      await expect(call('getCustomerAddress')).resolves.toEqual(expect.objectContaining({
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response).toEqual(expect.objectContaining({
         customerId: '123',
         address: expect.objectContaining({ city: 'Dallas', country: 'US' }),
-      }));
-      await expect(call('listCustomerEmails')).resolves.toEqual(expect.objectContaining({
         emails: [expect.objectContaining({ id: 1, value: 'ada@example.com', type: 'work' })],
-        total: 1,
-      }));
-      await expect(call('listCustomerPhones')).resolves.toEqual(expect.objectContaining({
         phones: [expect.objectContaining({ id: 2, value: '222-333-4444', type: 'mobile' })],
-        total: 1,
-      }));
-      await expect(call('listCustomerChats')).resolves.toEqual(expect.objectContaining({
         chats: [expect.objectContaining({ id: 3, value: 'ada-chat', type: 'aim' })],
-        total: 1,
-      }));
-      await expect(call('listCustomerSocialProfiles')).resolves.toEqual(expect.objectContaining({
         socialProfiles: [expect.objectContaining({ id: 4, value: 'ada-lovelace', type: 'twitter' })],
-        total: 1,
-      }));
-      await expect(call('listCustomerWebsites')).resolves.toEqual(expect.objectContaining({
         websites: [expect.objectContaining({ id: 5, value: 'https://example.com' })],
-        total: 1,
       }));
     });
 
-    it('should return null for customer address when no address is on file', async () => {
-      nock(baseURL)
-        .get('/customers/123/address')
-        .reply(404, { message: 'Not found' });
+    it('getCustomerContacts returns a null address when none is on file', async () => {
+      nock(baseURL).get('/customers/123/emails').reply(200, { _embedded: { emails: [] } });
+      nock(baseURL).get('/customers/123/phones').reply(200, { _embedded: { phones: [] } });
+      nock(baseURL).get('/customers/123/chats').reply(200, { _embedded: { chats: [] } });
+      nock(baseURL).get('/customers/123/social-profiles').reply(200, { _embedded: { social_profiles: [] } });
+      nock(baseURL).get('/customers/123/websites').reply(200, { _embedded: { websites: [] } });
+      nock(baseURL).get('/customers/123/address').reply(404, { message: 'Not found' });
 
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getCustomerAddress',
+          name: 'getCustomerContacts',
           arguments: { customerId: '123' },
         },
       });
@@ -614,7 +594,6 @@ describe('ToolHandler', () => {
       expect(result.isError).toBeUndefined();
       const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
       expect(response.address).toBeNull();
-      expect(response.note).toContain('No address on file');
     });
   });
 

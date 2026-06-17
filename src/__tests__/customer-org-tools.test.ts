@@ -728,16 +728,20 @@ describe('Customer & Organization Tools', () => {
     });
 
     it('should accept the legacy underscored social profile embedded key', async () => {
+      nock(baseURL).get('/customers/123/emails').query(true).reply(200, { _embedded: { emails: [] } });
+      nock(baseURL).get('/customers/123/phones').query(true).reply(200, { _embedded: { phones: [] } });
+      nock(baseURL).get('/customers/123/chats').query(true).reply(200, { _embedded: { chats: [] } });
+      nock(baseURL).get('/customers/123/websites').query(true).reply(200, { _embedded: { websites: [] } });
+      nock(baseURL).get('/customers/123/address').query(true).reply(404, { message: 'Not found' });
       nock(baseURL).get('/customers/123/social-profiles').query(true).reply(200, {
         _embedded: { social_profiles: [{ id: 4, value: '@janedoe', type: 'twitter' }] },
       });
 
-      const result = await toolHandler.callTool(makeRequest('listCustomerSocialProfiles', { customerId: '123' }));
+      const result = await toolHandler.callTool(makeRequest('getCustomerContacts', { customerId: '123' }));
       const data = parseResult(result);
 
       expect(data.socialProfiles).toHaveLength(1);
       expect(data.socialProfiles[0].value).toBe('@janedoe');
-      expect(data.total).toBe(1);
     });
   });
 });
