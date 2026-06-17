@@ -385,20 +385,62 @@ export class ToolHandler {
           properties: {
             query: {
               type: 'string',
-              description: 'HelpScout query syntax. Omit to list all. Example: (body:"keyword")',
+              description: 'Raw HelpScout query syntax (power users). The convenience filters below are compiled into this automatically. Example: (body:"keyword")',
+            },
+            contentTerms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Match these terms in the message body (compiled to body:"term")',
+            },
+            subjectTerms: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Match these terms in the subject (compiled to subject:"term")',
+            },
+            email: {
+              type: 'string',
+              description: 'Match conversations involving this email (to/cc/bcc or customer)',
+            },
+            emailDomain: {
+              type: 'string',
+              description: 'Match conversations involving any email at this domain',
+            },
+            customerIds: {
+              type: 'array',
+              items: { type: 'integer', minimum: 0 },
+              description: 'Conversations belonging to these customer IDs (the customer->conversations bridge)',
+            },
+            hasAttachments: {
+              type: 'boolean',
+              description: 'Only conversations that have attachments',
             },
             inboxId: {
               type: 'string',
-              description: 'Inbox ID from server instructions',
+              description: 'Inbox (mailbox) ID from server instructions',
+            },
+            folderId: {
+              type: 'integer',
+              minimum: 0,
+              description: 'Filter by folder ID',
             },
             tag: {
               type: 'string',
-              description: 'Filter by tag name',
+              description: 'Filter by tag name (comma-separated for multiple)',
+            },
+            assignedTo: {
+              type: 'integer',
+              minimum: -1,
+              description: 'Filter by assignee user ID (-1 for unassigned)',
+            },
+            conversationNumber: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Look up by conversation number',
             },
             status: {
               type: 'string',
-              enum: [TOOL_CONSTANTS.STATUSES.ACTIVE, TOOL_CONSTANTS.STATUSES.PENDING, TOOL_CONSTANTS.STATUSES.CLOSED, TOOL_CONSTANTS.STATUSES.SPAM],
-              description: 'Filter by status. Defaults to all (active, pending, closed)',
+              enum: ['active', 'pending', 'closed', 'open', 'spam', 'all'],
+              description: 'Filter by status. Omit to search active+pending+closed (excludes spam).',
             },
             createdAfter: {
               type: 'string',
@@ -410,22 +452,27 @@ export class ToolHandler {
               format: 'date-time',
               description: 'Filter conversations created before this timestamp (ISO8601)',
             },
+            modifiedSince: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Filter conversations modified after this timestamp (ISO8601)',
+            },
             limit: {
-              type: 'number',
-              description: `Maximum number of results (1-${TOOL_CONSTANTS.MAX_PAGE_SIZE})`,
+              type: 'integer',
+              description: 'Maximum number of results (1-200)',
               minimum: 1,
-              maximum: TOOL_CONSTANTS.MAX_PAGE_SIZE,
+              maximum: 200,
               default: TOOL_CONSTANTS.DEFAULT_PAGE_SIZE,
             },
             page: {
-              type: 'number',
+              type: 'integer',
               minimum: 1,
               default: 1,
               description: 'Page number',
             },
             sort: {
               type: 'string',
-              enum: ['createdAt', 'modifiedAt', 'number'],
+              enum: ['createdAt', 'modifiedAt', 'number', 'waitingSince', 'customerName', 'customerEmail', 'mailboxid', 'status', 'subject', 'score'],
               default: TOOL_CONSTANTS.DEFAULT_SORT_FIELD,
               description: 'Sort field',
             },
@@ -1564,7 +1611,7 @@ export class ToolHandler {
     if (input.contentTerms?.length) clauses.push(input.contentTerms.map(t => `body:"${esc(t)}"`).join(' OR '));
     if (input.subjectTerms?.length) clauses.push(input.subjectTerms.map(t => `subject:"${esc(t)}"`).join(' OR '));
     if (input.email) clauses.push(`email:"${esc(input.email)}"`);
-    if (input.emailDomain) clauses.push(`email:"${esc(input.emailDomain)}"`);
+    if (input.emailDomain) clauses.push(`email:"${esc(input.emailDomain.replace(/^@/, ''))}"`);
     if (input.customerIds?.length) clauses.push(input.customerIds.map(id => `customerIds:${id}`).join(' OR '));
     if (input.hasAttachments) clauses.push('attachments:true');
     if (input.assignedTo === -1) clauses.push('assigned:"Unassigned"');

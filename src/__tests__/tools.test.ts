@@ -130,6 +130,20 @@ describe('ToolHandler', () => {
       });
     });
 
+    it('should advertise all searchConversations convenience filters in its inputSchema', async () => {
+      // Regression guard (NAS-1298): the 4-search-tool merge must keep every
+      // absorbed filter DISCOVERABLE in the advertised inputSchema, not just in
+      // the internal Zod schema — LLM clients build calls from inputSchema.
+      const tools = await toolHandler.listTools();
+      const search = tools.find(t => t.name === 'searchConversations')!;
+      const props = (search.inputSchema as { properties: Record<string, unknown> }).properties;
+      for (const p of ['contentTerms', 'subjectTerms', 'email', 'emailDomain', 'customerIds', 'hasAttachments', 'folderId', 'assignedTo', 'conversationNumber', 'modifiedSince']) {
+        expect(props).toHaveProperty(p);
+      }
+      // status enum must include the absorbed 'all'/'open' values
+      expect((props.status as { enum: string[] }).enum).toEqual(expect.arrayContaining(['all', 'open']));
+    });
+
     it('should expose page-based pagination for v2 paginated tools', async () => {
       const tools = await toolHandler.listTools();
       const byName = Object.fromEntries(tools.map(tool => [tool.name, tool]));
@@ -145,12 +159,11 @@ describe('ToolHandler', () => {
       ];
 
       for (const toolName of pageBasedTools) {
-        const properties = byName[toolName].inputSchema.properties as Record<string, unknown>;
-        expect(properties.page).toEqual(expect.objectContaining({
-          type: 'number',
-          minimum: 1,
-          default: 1,
-        }));
+        const properties = byName[toolName].inputSchema.properties as Record<string, Record<string, unknown>>;
+        // page is a 1-based integer (advertised as 'number' or the stricter
+        // 'integer'); no cursor on v2 page-based tools.
+        expect(['number', 'integer']).toContain(properties.page.type);
+        expect(properties.page).toEqual(expect.objectContaining({ minimum: 1, default: 1 }));
         expect(properties.cursor).toBeUndefined();
       }
     });
