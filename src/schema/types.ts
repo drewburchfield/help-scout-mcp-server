@@ -698,6 +698,14 @@ export const ListUsersInputSchema = z.object({
   email: z.string().optional().describe('Exact email match'),
   inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').optional().describe('Filter by inbox ID'),
   page: z.number().int().min(1).default(1),
+  includeStatuses: z
+    .boolean()
+    .default(false)
+    .describe('When true, also fetches /users/status once and attaches all user email/chat availability statuses under "statuses". Does not fan out per user.'),
+  includeSystemActors: z
+    .boolean()
+    .default(false)
+    .describe('When true, routes to the v3 /system-users endpoint, returning system actors (AI agents, integration users) instead of standard users. Emits apiVersion: "v3". Ignores includeStatuses.'),
 });
 
 export const GetUserInputSchema = z.object({
@@ -705,22 +713,14 @@ export const GetUserInputSchema = z.object({
     z.literal('me'),
     z.string().regex(/^\d+$/, 'User ID must be numeric or "me"'),
   ]).describe('User ID or "me" for the authenticated resource owner'),
-});
-
-export const ListSystemUsersInputSchema = z.object({
-  page: z.number().int().min(1).default(1),
-});
-
-export const GetSystemUserInputSchema = z.object({
-  systemUserId: z.string().regex(/^\d+$/, 'System user ID must be numeric'),
-});
-
-export const ListUserStatusesInputSchema = z.object({
-  page: z.number().int().min(1).default(1),
-});
-
-export const GetUserStatusInputSchema = z.object({
-  userId: z.string().regex(/^\d+$/, 'User ID must be numeric'),
+  includeStatus: z
+    .boolean()
+    .default(false)
+    .describe('When true, also fetches /users/{id}/status and attaches the email/chat availability status under "status". Ignored when includeSystemActors is true.'),
+  includeSystemActors: z
+    .boolean()
+    .default(false)
+    .describe('When true, routes to the v3 /system-users/{id} endpoint, returning the system actor record instead of a standard user. Emits apiVersion: "v3". Takes precedence over includeStatus.'),
 });
 
 export const ListTeamsInputSchema = z.object({
@@ -788,9 +788,11 @@ export const ListDocsSitesInputSchema = DocsPageInputSchema;
 
 export const GetDocsSiteInputSchema = z.object({
   siteId: DocsIdSchema.describe('Docs site ID'),
+  includeRestrictions: z
+    .boolean()
+    .default(false)
+    .describe('When true, also fetches the restricted-site settings (/sites/{id}/restricted) and attaches them under "restrictions" with shared secrets redacted.'),
 });
-
-export const GetDocsSiteRestrictionsInputSchema = GetDocsSiteInputSchema;
 
 export const ListDocsCollectionsInputSchema = DocsPageInputSchema.extend({
   siteId: DocsIdSchema.describe('Docs site ID').optional(),
@@ -924,10 +926,6 @@ export type ListTagsInput = z.infer<typeof ListTagsInputSchema>;
 export type GetTagInput = z.infer<typeof GetTagInputSchema>;
 export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
 export type GetUserInput = z.infer<typeof GetUserInputSchema>;
-export type ListSystemUsersInput = z.infer<typeof ListSystemUsersInputSchema>;
-export type GetSystemUserInput = z.infer<typeof GetSystemUserInputSchema>;
-export type ListUserStatusesInput = z.infer<typeof ListUserStatusesInputSchema>;
-export type GetUserStatusInput = z.infer<typeof GetUserStatusInputSchema>;
 export type ListTeamsInput = z.infer<typeof ListTeamsInputSchema>;
 export type GetTeamMembersInput = z.infer<typeof GetTeamMembersInputSchema>;
 export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
@@ -941,7 +939,6 @@ export type GetWebhookInput = z.infer<typeof GetWebhookInputSchema>;
 export type GetSatisfactionRatingInput = z.infer<typeof GetSatisfactionRatingInputSchema>;
 export type ListDocsSitesInput = z.infer<typeof ListDocsSitesInputSchema>;
 export type GetDocsSiteInput = z.infer<typeof GetDocsSiteInputSchema>;
-export type GetDocsSiteRestrictionsInput = z.infer<typeof GetDocsSiteRestrictionsInputSchema>;
 export type ListDocsCollectionsInput = z.infer<typeof ListDocsCollectionsInputSchema>;
 export type GetDocsCollectionInput = z.infer<typeof GetDocsCollectionInputSchema>;
 export type ListDocsCategoriesInput = z.infer<typeof ListDocsCategoriesInputSchema>;

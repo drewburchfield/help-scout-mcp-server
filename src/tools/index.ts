@@ -51,10 +51,6 @@ import {
   GetTagInputSchema,
   ListUsersInputSchema,
   GetUserInputSchema,
-  ListSystemUsersInputSchema,
-  GetSystemUserInputSchema,
-  ListUserStatusesInputSchema,
-  GetUserStatusInputSchema,
   ListTeamsInputSchema,
   GetTeamMembersInputSchema,
   ListSavedRepliesInputSchema,
@@ -75,7 +71,6 @@ import {
   GetDocsReportInputSchema,
   ListDocsSitesInputSchema,
   GetDocsSiteInputSchema,
-  GetDocsSiteRestrictionsInputSchema,
   ListDocsCollectionsInputSchema,
   GetDocsCollectionInputSchema,
   ListDocsCategoriesInputSchema,
@@ -734,65 +729,43 @@ export class ToolHandler {
       },
       {
         name: 'listUsers',
-        description: 'List Help Scout users with optional exact email or inbox filter. Use to discover assignee IDs, mentions, and roles.',
+        description: 'List Help Scout users with optional exact email or inbox filter. Use to discover assignee IDs, mentions, and roles. Set includeStatuses to attach all user availability statuses; set includeSystemActors to list v3 system users (AI agents, integrations) instead.',
         inputSchema: {
           type: 'object',
           properties: {
             email: { type: 'string', description: 'Exact user email filter' },
             inboxId: { type: 'string', description: 'Inbox ID to find users with access to that inbox' },
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            includeStatuses: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, additionally calls /users/status once and attaches all user email/chat availability statuses under "statuses" (not fanned out per user).',
+            },
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 /system-users endpoint, returning system actors (AI agents, integration users) instead of standard users. Emits apiVersion: "v3". Ignores includeStatuses.',
+            },
           },
         },
       },
       {
         name: 'getUser',
-        description: 'Get a Help Scout user by ID, or pass "me" to get the authenticated resource owner.',
+        description: 'Get a Help Scout user by ID, or pass "me" to get the authenticated resource owner. Set includeStatus to attach the user availability status; set includeSystemActors to fetch the v3 system-user record instead.',
         inputSchema: {
           type: 'object',
           properties: {
             userId: { type: 'string', description: 'User ID from listUsers, or "me" for the authenticated resource owner' },
-          },
-          required: ['userId'],
-        },
-      },
-      {
-        name: 'listSystemUsers',
-        description: 'List Help Scout system users such as AI agents and integration users. Uses the v3 API and page-based pagination.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-          },
-        },
-      },
-      {
-        name: 'getSystemUser',
-        description: 'Get one Help Scout system user by ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            systemUserId: { type: 'string', description: 'System user ID from listSystemUsers' },
-          },
-          required: ['systemUserId'],
-        },
-      },
-      {
-        name: 'listUserStatuses',
-        description: 'List Help Scout user email and chat availability statuses.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
-          },
-        },
-      },
-      {
-        name: 'getUserStatus',
-        description: 'Get one Help Scout user email and chat availability status by numeric user ID.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string', description: 'Numeric user ID from listUsers or getUser' },
+            includeStatus: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, also fetches /users/{id}/status and attaches the email/chat availability status under "status". Ignored when includeSystemActors is true.',
+            },
+            includeSystemActors: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, routes to the v3 /system-users/{id} endpoint, returning the system actor record instead of a standard user. Emits apiVersion: "v3". Takes precedence over includeStatus.',
+            },
           },
           required: ['userId'],
         },
@@ -1088,22 +1061,16 @@ export class ToolHandler {
       },
       {
         name: 'getDocsSite',
-        description: 'Get one Help Scout Docs site by ID.',
+        description: 'Get one Help Scout Docs site by ID. Set includeRestrictions to also attach the restricted-site settings (secrets redacted).',
         inputSchema: {
           type: 'object',
           properties: {
             siteId: { type: 'string', description: 'Docs site ID' },
-          },
-          required: ['siteId'],
-        },
-      },
-      {
-        name: 'getDocsSiteRestrictions',
-        description: 'Get Help Scout Docs restricted-site settings by site ID, with secrets redacted.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            siteId: { type: 'string', description: 'Docs site ID from listDocsSites' },
+            includeRestrictions: {
+              type: 'boolean',
+              default: false,
+              description: 'When true, also fetches the restricted-site settings (/sites/{id}/restricted) and attaches them under "restrictions" with shared secrets redacted.',
+            },
           },
           required: ['siteId'],
         },
@@ -1412,18 +1379,6 @@ export class ToolHandler {
         case 'getUser':
           result = await this.getUser(request.params.arguments || {});
           break;
-        case 'listSystemUsers':
-          result = await this.listSystemUsers(request.params.arguments || {});
-          break;
-        case 'getSystemUser':
-          result = await this.getSystemUser(request.params.arguments || {});
-          break;
-        case 'listUserStatuses':
-          result = await this.listUserStatuses(request.params.arguments || {});
-          break;
-        case 'getUserStatus':
-          result = await this.getUserStatus(request.params.arguments || {});
-          break;
         case 'listTeams':
           result = await this.listTeams(request.params.arguments || {});
           break;
@@ -1483,9 +1438,6 @@ export class ToolHandler {
           break;
         case 'getDocsSite':
           result = await this.getDocsSite(request.params.arguments || {});
-          break;
-        case 'getDocsSiteRestrictions':
-          result = await this.getDocsSiteRestrictions(request.params.arguments || {});
           break;
         case 'listDocsCollections':
           result = await this.listDocsCollections(request.params.arguments || {});
@@ -2171,125 +2123,154 @@ export class ToolHandler {
 
   private async listUsers(args: unknown): Promise<CallToolResult> {
     const input = ListUsersInputSchema.parse(args);
+
+    // includeSystemActors routes to the v3 /system-users endpoint, which
+    // returns system actors (AI agents, integration users) that v2 /users
+    // does not expose. It supersedes the standard-user listing and ignores
+    // includeStatuses (statuses do not apply to system actors).
+    if (input.includeSystemActors) {
+      const response = await helpScoutClient.get<PaginatedResponse<SystemUser>>(
+        this.buildV3ApiUrl('/system-users'),
+        { page: input.page }
+      );
+      const systemUsers = response._embedded?.system_users || response._embedded?.systemUsers || [];
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            apiVersion: 'v3',
+            systemUsers,
+            totalSystemUsers: systemUsers.length,
+            pagination: response.page,
+            nextPage: getNextPage(response.page),
+            usage: systemUsers.length > 0
+              ? 'Use getUser(userId, includeSystemActors:true) when you need the full system-user record.'
+              : 'No system users returned for this Help Scout account.',
+          }, null, 2),
+        }],
+      };
+    }
+
     const params: Record<string, unknown> = { page: input.page };
     if (input.email) params.email = input.email;
     if (input.inboxId) params.mailbox = Number(input.inboxId);
 
-    const response = await helpScoutClient.get<PaginatedResponse<User>>('/users', params);
+    // includeStatuses additionally calls /users/status ONCE (it returns all
+    // user statuses in a single call). We never fan out per user.
+    const [usersResponse, statusesResult] = await Promise.allSettled([
+      helpScoutClient.get<PaginatedResponse<User>>('/users', params),
+      input.includeStatuses
+        ? helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', { page: 1 })
+        : Promise.resolve(null),
+    ]);
+
+    if (usersResponse.status === 'rejected') {
+      throw usersResponse.reason;
+    }
+
+    const response = usersResponse.value;
     const users = response._embedded?.users || [];
+
+    const result: Record<string, unknown> = {
+      users,
+      filters: {
+        email: input.email,
+        inboxId: input.inboxId,
+      },
+      totalUsers: users.length,
+      pagination: response.page,
+      nextPage: getNextPage(response.page),
+      usage: users.length > 0
+        ? 'Use user.id for assignee filters and user.mention when composing Help Scout note/reply text.'
+        : 'No users matched these filters. Try omitting email or inboxId.',
+    };
+
+    if (input.includeStatuses) {
+      if (statusesResult.status === 'fulfilled' && statusesResult.value) {
+        const statusEnvelope = statusesResult.value;
+        result.statuses = statusEnvelope._embedded?.userStatuses || statusEnvelope._embedded?.user_statuses || [];
+      } else {
+        const reason = statusesResult.status === 'rejected' ? statusesResult.reason : new Error('Unknown error');
+        const errorMessage = reason instanceof Error ? reason.message : String(reason);
+        logger.error('User status fetch failed for listUsers', { error: errorMessage });
+        result.statusesError = `Status lookup failed: ${errorMessage}`;
+      }
+    }
 
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          users,
-          filters: {
-            email: input.email,
-            inboxId: input.inboxId,
-          },
-          totalUsers: users.length,
-          pagination: response.page,
-          nextPage: getNextPage(response.page),
-          usage: users.length > 0
-            ? 'Use user.id for assignee filters and user.mention when composing Help Scout note/reply text.'
-            : 'No users matched these filters. Try omitting email or inboxId.',
-        }, null, 2),
+        text: JSON.stringify(result, null, 2),
       }],
     };
   }
 
   private async getUser(args: unknown): Promise<CallToolResult> {
     const input = GetUserInputSchema.parse(args);
+
+    // includeSystemActors routes to the v3 /system-users/{id} endpoint, which
+    // returns the system actor record (v2 /users collapses these). It takes
+    // precedence over includeStatus, which does not apply to system actors.
+    if (input.includeSystemActors) {
+      const systemUser = await helpScoutClient.get<SystemUser>(
+        this.buildV3ApiUrl(`/system-users/${input.userId}`)
+      );
+
+      const result: Record<string, unknown> = {
+        apiVersion: 'v3',
+        systemUser,
+        usage: 'System users identify non-human or integration actors in Help Scout account data.',
+      };
+      if (input.includeStatus) {
+        result.statusNote = 'includeStatus is ignored for system users; availability statuses apply only to standard users.';
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        }],
+      };
+    }
+
     const path = input.userId === 'me' ? '/users/me' : `/users/${input.userId}`;
-    const user = await helpScoutClient.get<User>(path);
 
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          user,
-          usage: 'Use user.id for assignment, assignee filters, and user/team report filters.',
-        }, null, 2),
-      }],
+    // includeStatus adds the /users/{id}/status sub-fetch. Surface a per-call
+    // error rather than failing the whole call if only the status lookup fails.
+    const [userResult, statusResult] = await Promise.allSettled([
+      helpScoutClient.get<User>(path),
+      input.includeStatus
+        ? helpScoutClient.get<UserStatus>(
+            input.userId === 'me' ? '/users/me/status' : `/users/${input.userId}/status`
+          )
+        : Promise.resolve(null),
+    ]);
+
+    if (userResult.status === 'rejected') {
+      throw userResult.reason;
+    }
+
+    const result: Record<string, unknown> = {
+      user: userResult.value,
+      usage: 'Use user.id for assignment, assignee filters, and user/team report filters.',
     };
-  }
 
-  private async listSystemUsers(args: unknown): Promise<CallToolResult> {
-    const input = ListSystemUsersInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<SystemUser>>(
-      this.buildV3ApiUrl('/system-users'),
-      { page: input.page }
-    );
-    const systemUsers = response._embedded?.system_users || response._embedded?.systemUsers || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          systemUsers,
-          totalSystemUsers: systemUsers.length,
-          pagination: response.page,
-          nextPage: getNextPage(response.page),
-          usage: systemUsers.length > 0
-            ? 'Use systemUser.id with getSystemUser when you need the full system-user record.'
-            : 'No system users returned for this Help Scout account.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getSystemUser(args: unknown): Promise<CallToolResult> {
-    const input = GetSystemUserInputSchema.parse(args);
-    const systemUser = await helpScoutClient.get<SystemUser>(
-      this.buildV3ApiUrl(`/system-users/${input.systemUserId}`)
-    );
+    if (input.includeStatus) {
+      if (statusResult.status === 'fulfilled' && statusResult.value) {
+        result.status = statusResult.value;
+      } else {
+        const reason = statusResult.status === 'rejected' ? statusResult.reason : new Error('Unknown error');
+        const errorMessage = reason instanceof Error ? reason.message : String(reason);
+        logger.error('User status fetch failed for getUser', { userId: input.userId, error: errorMessage });
+        result.statusError = `Status lookup failed: ${errorMessage}`;
+      }
+    }
 
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          systemUser,
-          usage: 'System users identify non-human or integration actors in Help Scout account data.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listUserStatuses(args: unknown): Promise<CallToolResult> {
-    const input = ListUserStatusesInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', {
-      page: input.page,
-    });
-    const userStatuses = response._embedded?.userStatuses || response._embedded?.user_statuses || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          userStatuses,
-          totalUserStatuses: userStatuses.length,
-          pagination: response.page,
-          nextPage: getNextPage(response.page),
-          usage: userStatuses.length > 0
-            ? 'Use userStatus.userId with getUserStatus or user-scoped report filters.'
-            : 'No user statuses returned for this Help Scout account.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getUserStatus(args: unknown): Promise<CallToolResult> {
-    const input = GetUserStatusInputSchema.parse(args);
-    const userStatus = await helpScoutClient.get<UserStatus>(`/users/${input.userId}/status`);
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          userId: input.userId,
-          userStatus,
-          usage: 'Use user status to interpret availability and routing context; this tool does not change status.',
-        }, null, 2),
+        text: JSON.stringify(result, null, 2),
       }],
     };
   }
@@ -2801,21 +2782,40 @@ export class ToolHandler {
 
   private async getDocsSite(args: unknown): Promise<CallToolResult> {
     const input = GetDocsSiteInputSchema.parse(args);
-    const response = await helpScoutDocsClient.get<{ site: Record<string, unknown> }>(`/sites/${input.siteId}`);
-    return this.docsTextResponse({
-      site: response.site,
-      usage: 'Use site.id with listDocsCollections, listDocsRedirects, and getDocsSiteRestrictions.',
-    });
-  }
 
-  private async getDocsSiteRestrictions(args: unknown): Promise<CallToolResult> {
-    const input = GetDocsSiteRestrictionsInputSchema.parse(args);
-    const response = await helpScoutDocsClient.get<Record<string, unknown>>(`/sites/${input.siteId}/restricted`);
-    return this.docsTextResponse({
-      siteId: input.siteId,
-      restrictions: this.redactDocsSiteRestrictions(response),
-      usage: 'Use restrictions.enabled and authentication to understand Docs access controls. callbackConfiguration.sharedSecret is always redacted.',
-    });
+    // includeRestrictions adds the /sites/{id}/restricted sub-fetch. Surface a
+    // per-call error rather than failing the whole call if only the
+    // restrictions lookup fails. Shared secrets are always redacted.
+    const [siteResult, restrictionsResult] = await Promise.allSettled([
+      helpScoutDocsClient.get<{ site: Record<string, unknown> }>(`/sites/${input.siteId}`),
+      input.includeRestrictions
+        ? helpScoutDocsClient.get<Record<string, unknown>>(`/sites/${input.siteId}/restricted`)
+        : Promise.resolve(null),
+    ]);
+
+    if (siteResult.status === 'rejected') {
+      throw siteResult.reason;
+    }
+
+    const payload: Record<string, unknown> = {
+      site: siteResult.value.site,
+      usage: input.includeRestrictions
+        ? 'Use site.id with listDocsCollections and listDocsRedirects. restrictions.callbackConfiguration.sharedSecret is always redacted.'
+        : 'Use site.id with listDocsCollections and listDocsRedirects. Set includeRestrictions to inspect access controls.',
+    };
+
+    if (input.includeRestrictions) {
+      if (restrictionsResult.status === 'fulfilled' && restrictionsResult.value) {
+        payload.restrictions = this.redactDocsSiteRestrictions(restrictionsResult.value);
+      } else {
+        const reason = restrictionsResult.status === 'rejected' ? restrictionsResult.reason : new Error('Unknown error');
+        const errorMessage = reason instanceof Error ? reason.message : String(reason);
+        logger.error('Docs site restrictions fetch failed for getDocsSite', { siteId: input.siteId, error: errorMessage });
+        payload.restrictionsError = `Restrictions lookup failed: ${errorMessage}`;
+      }
+    }
+
+    return this.docsTextResponse(payload);
   }
 
   private async listDocsCollections(args: unknown): Promise<CallToolResult> {

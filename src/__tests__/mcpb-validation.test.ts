@@ -67,8 +67,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 60 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(60);
+    it('should have all 55 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(55);
 
       const expectedTools = [
         'searchConversations',
@@ -93,10 +93,6 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getTag',
         'listUsers',
         'getUser',
-        'listSystemUsers',
-        'getSystemUser',
-        'listUserStatuses',
-        'getUserStatus',
         'listTeams',
         'getTeamMembers',
         'listSavedReplies',
@@ -117,7 +113,6 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getDocsReport',
         'listDocsSites',
         'getDocsSite',
-        'getDocsSiteRestrictions',
         'listDocsCollections',
         'getDocsCollection',
         'listDocsCategories',
@@ -302,12 +297,10 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'listOrganizations',
         'getOrganizationMembers',
         'getOrganizationConversations',
-        'listSystemUsers',
-        'getSystemUser',
-        'listUserStatuses',
-        'getUserStatus',
+        'listUsers',
+        'getUser',
         'downloadAttachmentFile',
-        'getDocsSiteRestrictions'
+        'getDocsSite'
       ];
 
       expectedExports.forEach(exportName => {

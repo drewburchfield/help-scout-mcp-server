@@ -194,27 +194,11 @@
     },
     {
       "name": "listUsers",
-      "description": "List Help Scout users with optional exact email or inbox filtering"
+      "description": "List Help Scout users with optional exact email or inbox filtering; includeStatuses attaches availability, includeSystemActors lists v3 system users"
     },
     {
       "name": "getUser",
-      "description": "Get a Help Scout user by ID or the authenticated resource owner"
-    },
-    {
-      "name": "listSystemUsers",
-      "description": "List Help Scout system users using the v3 API"
-    },
-    {
-      "name": "getSystemUser",
-      "description": "Get one Help Scout system user by ID"
-    },
-    {
-      "name": "listUserStatuses",
-      "description": "List Help Scout user email and chat availability statuses"
-    },
-    {
-      "name": "getUserStatus",
-      "description": "Get one Help Scout user email and chat availability status"
+      "description": "Get a Help Scout user by ID or the authenticated resource owner; includeStatus attaches availability, includeSystemActors fetches the v3 system-user record"
     },
     {
       "name": "listTeams",
@@ -294,11 +278,7 @@
     },
     {
       "name": "getDocsSite",
-      "description": "Get a Help Scout Docs site by ID"
-    },
-    {
-      "name": "getDocsSiteRestrictions",
-      "description": "Get Help Scout Docs site restriction settings by site ID"
+      "description": "Get a Help Scout Docs site by ID; includeRestrictions attaches restricted-site settings with secrets redacted"
     },
     {
       "name": "listDocsCollections",

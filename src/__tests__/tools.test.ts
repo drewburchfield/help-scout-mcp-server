@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(60);
+      expect(tools).toHaveLength(55);
       expect(tools.map(t => t.name)).toEqual([
         'searchConversations',
         'getConversation',
@@ -69,10 +69,6 @@ describe('ToolHandler', () => {
         'getTag',
         'listUsers',
         'getUser',
-        'listSystemUsers',
-        'getSystemUser',
-        'listUserStatuses',
-        'getUserStatus',
         'listTeams',
         'getTeamMembers',
         'listSavedReplies',
@@ -93,7 +89,6 @@ describe('ToolHandler', () => {
         'getDocsReport',
         'listDocsSites',
         'getDocsSite',
-        'getDocsSiteRestrictions',
         'listDocsCollections',
         'getDocsCollection',
         'listDocsCategories',
@@ -143,8 +138,6 @@ describe('ToolHandler', () => {
         'getThreads',
         'listTags',
         'listUsers',
-        'listSystemUsers',
-        'listUserStatuses',
         'listTeams',
         'getTeamMembers',
         'listWorkflows',
@@ -208,12 +201,16 @@ describe('ToolHandler', () => {
       expect(response.pagination).toEqual(expect.objectContaining({ page: 1, pages: 1, count: 1 }));
     });
 
-    it('should get Docs site restrictions and redact shared secrets', async () => {
+    it('should attach Docs site restrictions via includeRestrictions and redact shared secrets', async () => {
       nock(docsBaseURL, {
         reqheaders: {
           authorization: docsAuthHeader,
         },
       })
+        .get('/sites/site_123')
+        .reply(200, {
+          site: { id: 'site_123', title: 'Acme Help Center' },
+        })
         .get('/sites/site_123/restricted')
         .reply(200, {
           enabled: true,
@@ -233,14 +230,14 @@ describe('ToolHandler', () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getDocsSiteRestrictions',
-          arguments: { siteId: 'site_123' },
+          name: 'getDocsSite',
+          arguments: { siteId: 'site_123', includeRestrictions: true },
         },
       });
 
       expect(result.isError).toBeUndefined();
       const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
-      expect(response.siteId).toBe('site_123');
+      expect(response.site).toEqual(expect.objectContaining({ id: 'site_123', title: 'Acme Help Center' }));
       expect(response.restrictions).toEqual(expect.objectContaining({
         enabled: true,
         authentication: 'CALLBACK',
@@ -252,6 +249,59 @@ describe('ToolHandler', () => {
       expect(JSON.stringify(response)).not.toContain('super-secret-value');
       expect(JSON.stringify(response)).not.toContain('token-value');
       expect(JSON.stringify(response)).not.toContain('password-value');
+    });
+
+    it('should not fetch restrictions when includeRestrictions is omitted', async () => {
+      nock(docsBaseURL, {
+        reqheaders: {
+          authorization: docsAuthHeader,
+        },
+      })
+        .get('/sites/site_123')
+        .reply(200, {
+          site: { id: 'site_123', title: 'Acme Help Center' },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getDocsSite',
+          arguments: { siteId: 'site_123' },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.site).toEqual(expect.objectContaining({ id: 'site_123' }));
+      expect(response.restrictions).toBeUndefined();
+    });
+
+    it('should surface a per-call error when includeRestrictions fetch fails but still return the site', async () => {
+      nock(docsBaseURL, {
+        reqheaders: {
+          authorization: docsAuthHeader,
+        },
+      })
+        .get('/sites/site_123')
+        .reply(200, {
+          site: { id: 'site_123', title: 'Acme Help Center' },
+        })
+        .get('/sites/site_123/restricted')
+        .reply(500, { error: 'boom' });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getDocsSite',
+          arguments: { siteId: 'site_123', includeRestrictions: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.site).toEqual(expect.objectContaining({ id: 'site_123' }));
+      expect(response.restrictions).toBeUndefined();
+      expect(response.restrictionsError).toEqual(expect.stringContaining('Restrictions lookup failed'));
     });
 
     it('should search Docs articles with query filters', async () => {
@@ -772,6 +822,107 @@ describe('ToolHandler', () => {
       expect(response.nextPage).toBeNull();
     });
 
+    it('should attach all user statuses via listUsers includeStatuses with a single /users/status call', async () => {
+      nock(baseURL)
+        .get('/users')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            users: [
+              { id: 4, firstName: 'Ada', lastName: 'Agent', email: 'agent@example.com', role: 'user', type: 'user' },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        })
+        .get('/users/status')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            userStatuses: [
+              { userId: 4, email: { status: 'active', source: 'ui' }, chat: { status: 'available', mailboxStatuses: {} } },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listUsers',
+          arguments: { includeStatuses: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.users).toHaveLength(1);
+      expect(response.statuses).toHaveLength(1);
+      expect(response.statuses[0].userId).toBe(4);
+    });
+
+    it('should tolerate snake_case user_statuses when listUsers includeStatuses is set', async () => {
+      nock(baseURL)
+        .get('/users')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: { users: [] },
+          page: { number: 1, size: 50, totalElements: 0, totalPages: 1 },
+        })
+        .get('/users/status')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            user_statuses: [
+              { userId: 7, email: { status: 'away', source: 'api' }, chat: { status: 'offline', mailboxStatuses: {} } },
+            ],
+          },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listUsers',
+          arguments: { includeStatuses: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.statuses[0].userId).toBe(7);
+    });
+
+    it('should route listUsers to the v3 system-users endpoint via includeSystemActors', async () => {
+      const apiRoot = baseURL.replace('/v2', '');
+      nock(apiRoot)
+        .get('/v3/system-users')
+        .query({ page: 2 })
+        .reply(200, {
+          _embedded: {
+            system_users: [
+              { id: 155250, type: 'system_user', firstName: 'AI Agent', role: 'user' },
+            ],
+          },
+          page: { size: 50, totalElements: 1, totalPages: 2, number: 2 },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'listUsers',
+          arguments: { page: 2, includeSystemActors: true, includeStatuses: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.apiVersion).toBe('v3');
+      expect(response.systemUsers).toHaveLength(1);
+      expect(response.systemUsers[0].id).toBe(155250);
+      // includeStatuses is ignored for the system-actor path.
+      expect(response.statuses).toBeUndefined();
+    });
+
     it('should get a user by ID and support the authenticated user shortcut', async () => {
       nock(baseURL)
         .get('/users/4')
@@ -800,6 +951,81 @@ describe('ToolHandler', () => {
         id: 5,
         companyId: 1,
       }));
+    });
+
+    it('should attach user status via getUser includeStatus', async () => {
+      nock(baseURL)
+        .get('/users/4')
+        .reply(200, { id: 4, firstName: 'Ada', lastName: 'Agent', email: 'agent@example.com', role: 'user', type: 'user' })
+        .get('/users/4/status')
+        .reply(200, {
+          userId: 4,
+          email: { status: 'active', source: 'ui' },
+          chat: { status: 'available', mailboxStatuses: {} },
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getUser',
+          arguments: { userId: '4', includeStatus: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.user.id).toBe(4);
+      expect(response.status.email.status).toBe('active');
+    });
+
+    it('should surface a per-call error when getUser includeStatus fetch fails but still return the user', async () => {
+      nock(baseURL)
+        .get('/users/4')
+        .reply(200, { id: 4, firstName: 'Ada', lastName: 'Agent', email: 'agent@example.com', role: 'user', type: 'user' })
+        .get('/users/4/status')
+        .reply(500, { error: 'boom' });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getUser',
+          arguments: { userId: '4', includeStatus: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.user.id).toBe(4);
+      expect(response.status).toBeUndefined();
+      expect(response.statusError).toEqual(expect.stringContaining('Status lookup failed'));
+    });
+
+    it('should route getUser to the v3 system-user endpoint via includeSystemActors', async () => {
+      const apiRoot = baseURL.replace('/v2', '');
+      nock(apiRoot)
+        .get('/v3/system-users/155250')
+        .reply(200, {
+          id: 155250,
+          type: 'system_user',
+          firstName: 'AI Agent',
+          role: 'user',
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getUser',
+          arguments: { userId: '155250', includeSystemActors: true, includeStatus: true },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.apiVersion).toBe('v3');
+      expect(response.systemUser).toEqual(expect.objectContaining({ id: 155250, type: 'system_user' }));
+      // includeStatus does not apply to system users; it is ignored with a note.
+      expect(response.status).toBeUndefined();
+      expect(response.statusNote).toEqual(expect.stringContaining('ignored for system users'));
     });
 
     it('should list teams and team members', async () => {
@@ -3057,140 +3283,6 @@ describe('ToolHandler', () => {
   });
 
   describe('metadata parity tools', () => {
-    const apiRoot = baseURL.replace('/v2', '');
-
-    it('should list and get system users through the v3 API', async () => {
-      nock(apiRoot)
-        .get('/v3/system-users')
-        .query({ page: 2 })
-        .reply(200, {
-          _embedded: {
-            system_users: [
-              {
-                id: 155250,
-                type: 'system_user',
-                firstName: 'AI Agent',
-                role: 'user',
-              },
-            ],
-          },
-          page: { size: 50, totalElements: 1, totalPages: 2, number: 2 },
-        })
-        .get('/v3/system-users/155250')
-        .reply(200, {
-          id: 155250,
-          type: 'system_user',
-          firstName: 'AI Agent',
-          role: 'user',
-        });
-
-      const listResult = await toolHandler.callTool({
-        method: 'tools/call',
-        params: {
-          name: 'listSystemUsers',
-          arguments: { page: 2 },
-        },
-      });
-
-      expect(listResult.isError).toBeUndefined();
-      const listResponse = JSON.parse((listResult.content[0] as { type: 'text'; text: string }).text);
-      expect(listResponse.systemUsers).toHaveLength(1);
-      expect(listResponse.systemUsers[0].id).toBe(155250);
-
-      const getResult = await toolHandler.callTool({
-        method: 'tools/call',
-        params: {
-          name: 'getSystemUser',
-          arguments: { systemUserId: '155250' },
-        },
-      });
-
-      expect(getResult.isError).toBeUndefined();
-      const getResponse = JSON.parse((getResult.content[0] as { type: 'text'; text: string }).text);
-      expect(getResponse.systemUser).toEqual(expect.objectContaining({
-        id: 155250,
-        type: 'system_user',
-      }));
-    });
-
-    it('should list and get user statuses', async () => {
-      nock(baseURL)
-        .get('/users/status')
-        .query({ page: 1 })
-        .reply(200, {
-          _embedded: {
-            userStatuses: [
-              {
-                userId: 4,
-                email: { status: 'active', source: 'ui' },
-                chat: { status: 'available', mailboxStatuses: {} },
-              },
-            ],
-          },
-          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
-        })
-        .get('/users/4/status')
-        .reply(200, {
-          userId: 4,
-          email: { status: 'active', source: 'ui' },
-          chat: { status: 'available', mailboxStatuses: {} },
-        });
-
-      const listResult = await toolHandler.callTool({
-        method: 'tools/call',
-        params: {
-          name: 'listUserStatuses',
-          arguments: { page: 1 },
-        },
-      });
-
-      expect(listResult.isError).toBeUndefined();
-      const listResponse = JSON.parse((listResult.content[0] as { type: 'text'; text: string }).text);
-      expect(listResponse.userStatuses[0].userId).toBe(4);
-
-      const getResult = await toolHandler.callTool({
-        method: 'tools/call',
-        params: {
-          name: 'getUserStatus',
-          arguments: { userId: '4' },
-        },
-      });
-
-      expect(getResult.isError).toBeUndefined();
-      const getResponse = JSON.parse((getResult.content[0] as { type: 'text'; text: string }).text);
-      expect(getResponse.userStatus.email.status).toBe('active');
-    });
-
-    it('should tolerate snake_case user status embedding', async () => {
-      nock(baseURL)
-        .get('/users/status')
-        .query({ page: 1 })
-        .reply(200, {
-          _embedded: {
-            user_statuses: [
-              {
-                userId: 7,
-                email: { status: 'away', source: 'api' },
-                chat: { status: 'offline', mailboxStatuses: {} },
-              },
-            ],
-          },
-          page: { size: 50, totalElements: 1, totalPages: 1, number: 1 },
-        });
-
-      const result = await toolHandler.callTool({
-        method: 'tools/call',
-        params: {
-          name: 'listUserStatuses',
-          arguments: { page: 1 },
-        },
-      });
-
-      expect(result.isError).toBeUndefined();
-      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
-      expect(response.userStatuses[0].userId).toBe(7);
-    });
-
     it('should cache inbox routing for 300s when fetched via getInbox include', async () => {
       const cacheSetSpy = jest.spyOn(cache, 'set');
       nock(baseURL)
