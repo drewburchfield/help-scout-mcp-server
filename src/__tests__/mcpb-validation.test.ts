@@ -67,8 +67,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should have all 63 MCP tools declared', () => {
-      expect(manifest.tools).toHaveLength(63);
+    it('should have all 60 MCP tools declared', () => {
+      expect(manifest.tools).toHaveLength(60);
 
       const expectedTools = [
         'searchConversations',
@@ -99,9 +99,6 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getUserStatus',
         'listTeams',
         'getTeamMembers',
-        'listInboxCustomFields',
-        'listInboxFolders',
-        'getInboxRouting',
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
@@ -309,7 +306,6 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
         'getSystemUser',
         'listUserStatuses',
         'getUserStatus',
-        'getInboxRouting',
         'downloadAttachmentFile',
         'getDocsSiteRestrictions'
       ];

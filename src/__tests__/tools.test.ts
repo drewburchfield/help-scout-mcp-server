@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(63);
+      expect(tools).toHaveLength(60);
       expect(tools.map(t => t.name)).toEqual([
         'searchConversations',
         'getConversation',
@@ -75,9 +75,6 @@ describe('ToolHandler', () => {
         'getUserStatus',
         'listTeams',
         'getTeamMembers',
-        'listInboxCustomFields',
-        'listInboxFolders',
-        'getInboxRouting',
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
@@ -474,7 +471,11 @@ describe('ToolHandler', () => {
         name: 'Client Support',
         email: 'support@example.com',
       }));
-      expect(response.usage).toContain('listInboxFolders');
+      expect(response.usage).toContain('include');
+      // Without include, no sub-resources are attached.
+      expect(response.customFields).toBeUndefined();
+      expect(response.folders).toBeUndefined();
+      expect(response.routing).toBeUndefined();
     });
   });
 
@@ -844,7 +845,10 @@ describe('ToolHandler', () => {
       expect(JSON.parse((members.content[0] as { type: 'text'; text: string }).text).members[0]).toEqual(expect.objectContaining({ id: 4, email: 'agent@example.com' }));
     });
 
-    it('should list inbox custom fields and folders', async () => {
+    it('should attach inbox custom fields and folders via getInbox include', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402')
+        .reply(200, { id: 359402, name: 'Client Support', email: 'support@example.com' });
       nock(baseURL)
         .get('/mailboxes/359402/fields')
         .reply(200, {
@@ -873,26 +877,83 @@ describe('ToolHandler', () => {
           page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
         });
 
-      const fields = await toolHandler.callTool({
+      const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'listInboxCustomFields',
-          arguments: { inboxId: '359402' },
-        },
-      });
-      const folders = await toolHandler.callTool({
-        method: 'tools/call',
-        params: {
-          name: 'listInboxFolders',
-          arguments: { inboxId: '359402' },
+          name: 'getInbox',
+          arguments: { inboxId: '359402', include: ['fields', 'folders'] },
         },
       });
 
-      const fieldsResponse = JSON.parse((fields.content[0] as { type: 'text'; text: string }).text);
-      const foldersResponse = JSON.parse((folders.content[0] as { type: 'text'; text: string }).text);
-      expect(fieldsResponse.fields[0]).toEqual(expect.objectContaining({ id: 104, name: 'Plan', type: 'dropdown' }));
-      expect(fieldsResponse.fields[0].options[0]).toEqual(expect.objectContaining({ id: 168, label: 'Pro' }));
-      expect(foldersResponse.folders[0]).toEqual(expect.objectContaining({ id: 1234, name: 'Mine', activeCount: 1 }));
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.inbox).toEqual(expect.objectContaining({ id: 359402, name: 'Client Support' }));
+      expect(response.includeErrors).toBeUndefined();
+      expect(response.customFields.fields[0]).toEqual(expect.objectContaining({ id: 104, name: 'Plan', type: 'dropdown' }));
+      expect(response.customFields.fields[0].options[0]).toEqual(expect.objectContaining({ id: 168, label: 'Pro' }));
+      expect(response.customFields.totalFields).toBe(1);
+      expect(response.folders.folders[0]).toEqual(expect.objectContaining({ id: 1234, name: 'Mine', activeCount: 1 }));
+      expect(response.folders.totalFolders).toBe(1);
+    });
+
+    it('should attach inbox routing via getInbox include', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402')
+        .reply(200, { id: 359402, name: 'Client Support', email: 'support@example.com' });
+      nock(baseURL)
+        .get('/mailboxes/359402/routing')
+        .reply(200, {
+          state: 'enabled',
+          assignmentMethod: 'round_robin',
+          userIds: [4, 7],
+          rotation: [{ userId: 4, conversationsCount: 2, eligible: true }],
+        });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getInbox',
+          arguments: { inboxId: '359402', include: ['routing'] },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      expect(response.includeErrors).toBeUndefined();
+      expect(response.routing).toEqual(expect.objectContaining({ state: 'enabled', userIds: [4, 7] }));
+      expect(response.routing.rotation[0]).toEqual(expect.objectContaining({ userId: 4, eligible: true }));
+    });
+
+    it('should surface per-sub-resource errors without failing the whole getInbox call', async () => {
+      nock(baseURL)
+        .get('/mailboxes/359402')
+        .reply(200, { id: 359402, name: 'Client Support', email: 'support@example.com' });
+      nock(baseURL)
+        .get('/mailboxes/359402/fields')
+        .reply(200, {
+          _embedded: { fields: [{ id: 104, type: 'dropdown', name: 'Plan' }] },
+          page: { number: 1, size: 50, totalElements: 1, totalPages: 1 },
+        });
+      nock(baseURL)
+        .get('/mailboxes/359402/routing')
+        .reply(500, { error: 'boom' });
+
+      const result = await toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'getInbox',
+          arguments: { inboxId: '359402', include: ['fields', 'routing'] },
+        },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+      // The succeeding sub-resource is still attached.
+      expect(response.customFields.fields[0]).toEqual(expect.objectContaining({ id: 104, name: 'Plan' }));
+      // The failing sub-resource is reported, not thrown.
+      expect(response.routing).toBeUndefined();
+      expect(response.includeErrors).toBeDefined();
+      expect(response.includeErrors.routing).toEqual(expect.any(String));
     });
 
     it('should list and get saved replies for an inbox', async () => {
@@ -3130,8 +3191,11 @@ describe('ToolHandler', () => {
       expect(response.userStatuses[0].userId).toBe(7);
     });
 
-    it('should get inbox routing configuration', async () => {
+    it('should cache inbox routing for 300s when fetched via getInbox include', async () => {
       const cacheSetSpy = jest.spyOn(cache, 'set');
+      nock(baseURL)
+        .get('/mailboxes/359402')
+        .reply(200, { id: 359402, name: 'Client Support', email: 'support@example.com' });
       nock(baseURL)
         .get('/mailboxes/359402/routing')
         .reply(200, {
@@ -3148,8 +3212,8 @@ describe('ToolHandler', () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getInboxRouting',
-          arguments: { inboxId: '359402' },
+          name: 'getInbox',
+          arguments: { inboxId: '359402', include: ['routing'] },
         },
       });
 

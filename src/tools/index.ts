@@ -57,9 +57,6 @@ import {
   GetUserStatusInputSchema,
   ListTeamsInputSchema,
   GetTeamMembersInputSchema,
-  ListInboxCustomFieldsInputSchema,
-  ListInboxFoldersInputSchema,
-  GetInboxRoutingInputSchema,
   ListSavedRepliesInputSchema,
   GetSavedReplyInputSchema,
   GetOriginalSourceInputSchema,
@@ -551,13 +548,18 @@ export class ToolHandler {
       },
       {
         name: 'getInbox',
-        description: 'Get one Help Scout inbox by ID, including inbox email and resource links.',
+        description: 'Get one Help Scout inbox by ID, including inbox email and resource links. Pass include to fan out and attach sub-resources in one call: "fields" (customFields with dropdown option IDs), "folders" (folder IDs and counts), and "routing" (rotation users and eligibility state). Each sub-resource is fetched from its own endpoint; a failure of one is reported under includeErrors without failing the whole call.',
         inputSchema: {
           type: 'object',
           properties: {
             inboxId: {
               type: 'string',
               description: 'Inbox ID from listAllInboxes or server instructions',
+            },
+            include: {
+              type: 'array',
+              items: { type: 'string', enum: ['fields', 'folders', 'routing'] },
+              description: 'Sub-resources to fetch and attach: "fields" -> customFields, "folders" -> folders, "routing" -> routing. Omit for just the inbox.',
             },
           },
           required: ['inboxId'],
@@ -815,39 +817,6 @@ export class ToolHandler {
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
           },
           required: ['teamId'],
-        },
-      },
-      {
-        name: 'listInboxCustomFields',
-        description: 'List custom field definitions for an inbox, including dropdown option IDs used by conversation filters and updates.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
-          },
-          required: ['inboxId'],
-        },
-      },
-      {
-        name: 'listInboxFolders',
-        description: 'List Help Scout folders for an inbox. Use to discover folder IDs and counts before folder-scoped lookups.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
-          },
-          required: ['inboxId'],
-        },
-      },
-      {
-        name: 'getInboxRouting',
-        description: 'Get Help Scout routing configuration for an inbox, including rotation users and eligibility state when routing is enabled.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            inboxId: { type: 'string', description: 'Inbox ID from listAllInboxes or server instructions' },
-          },
-          required: ['inboxId'],
         },
       },
       {
@@ -1461,15 +1430,6 @@ export class ToolHandler {
         case 'getTeamMembers':
           result = await this.getTeamMembers(request.params.arguments || {});
           break;
-        case 'listInboxCustomFields':
-          result = await this.listInboxCustomFields(request.params.arguments || {});
-          break;
-        case 'listInboxFolders':
-          result = await this.listInboxFolders(request.params.arguments || {});
-          break;
-        case 'getInboxRouting':
-          result = await this.getInboxRouting(request.params.arguments || {});
-          break;
         case 'listSavedReplies':
           result = await this.listSavedReplies(request.params.arguments || {});
           break;
@@ -2030,15 +1990,80 @@ export class ToolHandler {
     const input = GetInboxInputSchema.parse(args);
     const inbox = await helpScoutClient.get<Inbox>(`/mailboxes/${input.inboxId}`);
 
+    const payload: Record<string, unknown> = {
+      inbox,
+      usage: 'Use inbox.id with conversation searches, saved reply tools, or call getInbox again with include: ["fields","folders","routing"] to attach inbox sub-resources.',
+    };
+
+    const include = input.include ? Array.from(new Set(input.include)) : [];
+    if (include.length > 0) {
+      const includeErrors: Record<string, string> = {};
+
+      const settled = await Promise.allSettled(
+        include.map(part => this.fetchInboxSubResource(input.inboxId, part))
+      );
+
+      settled.forEach((outcome, index) => {
+        const part = include[index];
+        if (outcome.status === 'fulfilled') {
+          Object.assign(payload, outcome.value);
+        } else {
+          const reason = outcome.reason;
+          includeErrors[part] = reason instanceof Error ? reason.message : String(reason);
+        }
+      });
+
+      if (Object.keys(includeErrors).length > 0) {
+        payload.includeErrors = includeErrors;
+      }
+    }
+
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          inbox,
-          usage: 'Use inbox.id with conversation searches, listInboxFolders, listInboxCustomFields, getInboxRouting, or saved reply tools.',
-        }, null, 2),
+        text: JSON.stringify(payload, null, 2),
       }],
     };
+  }
+
+  /**
+   * Fetch a single inbox sub-resource from its dedicated Help Scout endpoint and
+   * return the response fragment to merge into the getInbox payload. Each sub-resource
+   * lives at its own endpoint (the API does not embed them on the inbox), so getInbox
+   * fans these out server-side when requested via the include parameter.
+   */
+  private async fetchInboxSubResource(
+    inboxId: string,
+    part: 'fields' | 'folders' | 'routing'
+  ): Promise<Record<string, unknown>> {
+    switch (part) {
+      case 'fields': {
+        const response = await helpScoutClient.get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${inboxId}/fields`);
+        const fields = response._embedded?.fields || [];
+        return {
+          customFields: {
+            fields,
+            totalFields: fields.length,
+            pagination: response.page,
+          },
+        };
+      }
+      case 'folders': {
+        const response = await helpScoutClient.get<PaginatedResponse<InboxFolder>>(`/mailboxes/${inboxId}/folders`);
+        const folders = response._embedded?.folders || [];
+        return {
+          folders: {
+            folders,
+            totalFolders: folders.length,
+            pagination: response.page,
+          },
+        };
+      }
+      case 'routing': {
+        const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${inboxId}/routing`, undefined, { ttl: 300 });
+        return { routing };
+      }
+    }
   }
 
   private async listTags(args: unknown): Promise<CallToolResult> {
@@ -2311,66 +2336,6 @@ export class ToolHandler {
           usage: members.length > 0
             ? 'Use member.id for assignee filters or user report filters.'
             : 'No users returned for this team.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listInboxCustomFields(args: unknown): Promise<CallToolResult> {
-    const input = ListInboxCustomFieldsInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${input.inboxId}/fields`);
-    const fields = response._embedded?.fields || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          inboxId: input.inboxId,
-          fields,
-          totalFields: fields.length,
-          pagination: response.page,
-          usage: fields.length > 0
-            ? 'Use field.id and dropdown option IDs when filtering or interpreting custom field values.'
-            : 'No custom fields returned for this inbox.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async listInboxFolders(args: unknown): Promise<CallToolResult> {
-    const input = ListInboxFoldersInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<InboxFolder>>(`/mailboxes/${input.inboxId}/folders`);
-    const folders = response._embedded?.folders || [];
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          inboxId: input.inboxId,
-          folders,
-          totalFolders: folders.length,
-          pagination: response.page,
-          usage: folders.length > 0
-            ? 'Use folder.id with searchConversations(folderId) for folder-scoped lookups.'
-            : 'No folders returned for this inbox.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getInboxRouting(args: unknown): Promise<CallToolResult> {
-    const input = GetInboxRoutingInputSchema.parse(args);
-    const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${input.inboxId}/routing`, undefined, { ttl: 300 });
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          inboxId: input.inboxId,
-          routing,
-          usage: routing.state === 'enabled'
-            ? 'Use routing.userIds and routing.rotation to understand current assignment rotation state.'
-            : 'Routing is disabled for this inbox; userIds may be empty.',
         }, null, 2),
       }],
     };

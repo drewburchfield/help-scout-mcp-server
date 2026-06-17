@@ -138,7 +138,7 @@
     },
     {
       "name": "getInbox",
-      "description": "Get one Help Scout inbox by ID"
+      "description": "Get one Help Scout inbox by ID; pass include for custom fields, folders, and routing"
     },
     {
       "name": "getCustomer",
@@ -223,18 +223,6 @@
     {
       "name": "getTeamMembers",
       "description": "List users who belong to a Help Scout team"
-    },
-    {
-      "name": "listInboxCustomFields",
-      "description": "List custom field definitions and option IDs for an inbox"
-    },
-    {
-      "name": "listInboxFolders",
-      "description": "List folders and counts for a Help Scout inbox"
-    },
-    {
-      "name": "getInboxRouting",
-      "description": "Get Help Scout routing configuration for an inbox"
     },
     {
       "name": "listSavedReplies",

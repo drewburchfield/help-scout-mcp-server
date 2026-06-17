@@ -122,7 +122,7 @@ For the MCP compatibility contract and roadmap, see:
 | Raw conversation detail | `getConversation` | "Open conversation 12345 with full metadata" |
 | Quick conversation overview | `getConversationSummary` | "Summarize this conversation" |
 | Full message history | `getThreads` | "Show me the complete thread" |
-| Inspect routing state | `getInboxRouting` | "Show routing for inbox 359402" |
+| Inspect inbox fields, folders, or routing | `getInbox` (`include`) | "Show routing for inbox 359402" (`include: ["routing"]`) |
 | Search Docs articles | `searchDocsArticles` | "Find knowledge base articles about refunds" |
 | Retrieve a Docs article | `getDocsArticle` | "Open Docs article 123" |
 | Current MCP host time | `getServerTime` | Used for time-relative searches |

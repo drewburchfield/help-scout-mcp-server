@@ -118,7 +118,7 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 | Get full conversation thread | getThreads |
 | Quick conversation preview | getConversationSummary |
 | Get inbox metadata | getInbox |
-| Inspect inbox routing state | getInboxRouting |
+| Inspect inbox custom fields, folders, or routing state | getInbox (include: ["fields","folders","routing"]) |
 
 ## Workflow Patterns
 - **Ticket investigation**: searchConversations → getConversation/getConversationSummary → getThreads

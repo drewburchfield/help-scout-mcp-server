@@ -676,6 +676,13 @@ export const ListAllInboxesInputSchema = z.object({
 
 export const GetInboxInputSchema = z.object({
   inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
+  include: z
+    .array(z.enum(['fields', 'folders', 'routing']))
+    .optional()
+    .describe(
+      'Sub-resources to fetch server-side and attach to the response. ' +
+        '"fields" -> customFields, "folders" -> folders, "routing" -> routing.'
+    ),
 });
 
 export const ListTagsInputSchema = z.object({
@@ -723,18 +730,6 @@ export const ListTeamsInputSchema = z.object({
 export const GetTeamMembersInputSchema = z.object({
   teamId: z.string().regex(/^\d+$/, 'Team ID must be numeric').describe('Team ID'),
   page: z.number().int().min(1).default(1),
-});
-
-export const ListInboxCustomFieldsInputSchema = z.object({
-  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
-});
-
-export const ListInboxFoldersInputSchema = z.object({
-  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric').describe('Inbox ID'),
-});
-
-export const GetInboxRoutingInputSchema = z.object({
-  inboxId: z.string().regex(/^\d+$/, 'Inbox ID must be numeric'),
 });
 
 export const ListSavedRepliesInputSchema = z.object({
@@ -935,9 +930,6 @@ export type ListUserStatusesInput = z.infer<typeof ListUserStatusesInputSchema>;
 export type GetUserStatusInput = z.infer<typeof GetUserStatusInputSchema>;
 export type ListTeamsInput = z.infer<typeof ListTeamsInputSchema>;
 export type GetTeamMembersInput = z.infer<typeof GetTeamMembersInputSchema>;
-export type ListInboxCustomFieldsInput = z.infer<typeof ListInboxCustomFieldsInputSchema>;
-export type ListInboxFoldersInput = z.infer<typeof ListInboxFoldersInputSchema>;
-export type GetInboxRoutingInput = z.infer<typeof GetInboxRoutingInputSchema>;
 export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
 export type GetSavedReplyInput = z.infer<typeof GetSavedReplyInputSchema>;
 export type GetOriginalSourceInput = z.infer<typeof GetOriginalSourceInputSchema>;
