@@ -840,9 +840,8 @@ export const GetSavedReplyInputSchema = z.object({
 export const GetOriginalSourceInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric').describe('Conversation ID'),
   threadId: z.string().regex(/^\d+$/, 'Thread ID must be numeric').describe('Thread ID'),
+  format: z.enum(['json', 'rfc822']).default('json').describe("Source format: 'json' (parsed) or 'rfc822' (raw email source)"),
 });
-
-export const GetOriginalSourceRfc822InputSchema = GetOriginalSourceInputSchema;
 
 export const GetAttachmentInputSchema = z.object({
   conversationId: z.string().regex(/^\d+$/, 'Conversation ID must be numeric').describe('Conversation ID'),
@@ -1043,7 +1042,6 @@ export type GetInboxRoutingInput = z.infer<typeof GetInboxRoutingInputSchema>;
 export type ListSavedRepliesInput = z.infer<typeof ListSavedRepliesInputSchema>;
 export type GetSavedReplyInput = z.infer<typeof GetSavedReplyInputSchema>;
 export type GetOriginalSourceInput = z.infer<typeof GetOriginalSourceInputSchema>;
-export type GetOriginalSourceRfc822Input = z.infer<typeof GetOriginalSourceRfc822InputSchema>;
 export type GetAttachmentInput = z.infer<typeof GetAttachmentInputSchema>;
 export type DownloadAttachmentFileInput = z.infer<typeof DownloadAttachmentFileInputSchema>;
 export type ListWorkflowsInput = z.infer<typeof ListWorkflowsInputSchema>;

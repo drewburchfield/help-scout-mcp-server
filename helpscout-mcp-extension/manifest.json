@@ -298,11 +298,7 @@
     },
     {
       "name": "getOriginalSource",
-      "description": "Get original source JSON for a Help Scout conversation thread"
-    },
-    {
-      "name": "getOriginalSourceRfc822",
-      "description": "Get original source as message/rfc822 for a Help Scout conversation thread"
+      "description": "Get the original source for a conversation thread (format: json default, or rfc822 raw email)."
     },
     {
       "name": "getAttachment",

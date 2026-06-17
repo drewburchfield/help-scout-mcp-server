@@ -45,7 +45,7 @@ describe('ToolHandler', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
       
-      expect(tools).toHaveLength(102);
+      expect(tools).toHaveLength(101);
       expect(tools.map(t => t.name)).toEqual([
         'searchInboxes',
         'searchConversations',
@@ -94,7 +94,6 @@ describe('ToolHandler', () => {
         'listSavedReplies',
         'getSavedReply',
         'getOriginalSource',
-        'getOriginalSourceRfc822',
         'getAttachment',
         'downloadAttachmentFile',
         'listWorkflows',
@@ -1088,8 +1087,8 @@ describe('ToolHandler', () => {
       const result = await toolHandler.callTool({
         method: 'tools/call',
         params: {
-          name: 'getOriginalSourceRfc822',
-          arguments: { conversationId: '123', threadId: '456' },
+          name: 'getOriginalSource',
+          arguments: { conversationId: '123', threadId: '456', format: 'rfc822' },
         },
       });
 
@@ -1114,8 +1113,8 @@ describe('ToolHandler', () => {
         const result = await toolHandler.callTool({
           method: 'tools/call',
           params: {
-            name: 'getOriginalSourceRfc822',
-            arguments: { conversationId: '123', threadId: '456' },
+            name: 'getOriginalSource',
+            arguments: { conversationId: '123', threadId: '456', format: 'rfc822' },
           },
         });
 

@@ -77,7 +77,6 @@ import {
   ListSavedRepliesInputSchema,
   GetSavedReplyInputSchema,
   GetOriginalSourceInputSchema,
-  GetOriginalSourceRfc822InputSchema,
   GetAttachmentInputSchema,
   DownloadAttachmentFileInputSchema,
   ListWorkflowsInputSchema,
@@ -1221,24 +1220,13 @@ export class ToolHandler {
       },
       {
         name: 'getOriginalSource',
-        description: 'Get the original source JSON for a Help Scout conversation thread.',
+        description: 'Get the original source for a Help Scout conversation thread. Set format to "rfc822" for raw email source, or "json" (default) for parsed source.',
         inputSchema: {
           type: 'object',
           properties: {
             conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
             threadId: { type: 'string', description: 'Thread ID from getThreads' },
-          },
-          required: ['conversationId', 'threadId'],
-        },
-      },
-      {
-        name: 'getOriginalSourceRfc822',
-        description: 'Get the original source for a Help Scout conversation thread as message/rfc822 text.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
-            threadId: { type: 'string', description: 'Thread ID from getThreads or getThreadsV3' },
+            format: { type: 'string', enum: ['json', 'rfc822'], default: 'json', description: "Source format: 'json' (parsed) or 'rfc822' (raw email source)" },
           },
           required: ['conversationId', 'threadId'],
         },
@@ -2337,9 +2325,6 @@ export class ToolHandler {
         case 'getOriginalSource':
           result = await this.getOriginalSource(request.params.arguments || {});
           break;
-        case 'getOriginalSourceRfc822':
-          result = await this.getOriginalSourceRfc822(request.params.arguments || {});
-          break;
         case 'getAttachment':
           result = await this.getAttachment(request.params.arguments || {});
           break;
@@ -3386,6 +3371,8 @@ export class ToolHandler {
 
   private async getOriginalSource(args: unknown): Promise<CallToolResult> {
     const input = GetOriginalSourceInputSchema.parse(args);
+    const endpoint = `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`;
+
     if (config.security.redactMessageContent) {
       return {
         content: [{
@@ -3393,6 +3380,7 @@ export class ToolHandler {
           text: JSON.stringify({
             conversationId: input.conversationId,
             threadId: input.threadId,
+            format: input.format,
             originalSource: REDACTED_MESSAGE_BODY,
             usage: 'Original source content is hidden because REDACT_MESSAGE_CONTENT is enabled.',
           }, null, 2),
@@ -3400,60 +3388,39 @@ export class ToolHandler {
       };
     }
 
-    const originalSource = await helpScoutClient.get<Record<string, unknown>>(
-      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`
-    );
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          conversationId: input.conversationId,
-          threadId: input.threadId,
-          originalSource,
-          usage: 'Use original source for read-only inspection of raw thread content when rendered thread fields are insufficient.',
-        }, null, 2),
-      }],
-    };
-  }
-
-  private async getOriginalSourceRfc822(args: unknown): Promise<CallToolResult> {
-    const input = GetOriginalSourceRfc822InputSchema.parse(args);
-    if (config.security.redactMessageContent) {
+    // The Help Scout endpoint selects format via the Accept header.
+    if (input.format === 'rfc822') {
+      const response = await helpScoutClient.getRaw<string>(endpoint, undefined, {
+        responseType: 'text',
+        headers: { Accept: 'message/rfc822' },
+      });
+      const headers = response.headers as Record<string, unknown>;
       return {
         content: [{
           type: 'text',
           text: JSON.stringify({
             conversationId: input.conversationId,
             threadId: input.threadId,
+            format: 'rfc822',
             sourceFormat: 'message/rfc822',
-            originalSource: REDACTED_MESSAGE_BODY,
-            usage: 'RFC 822 source content is hidden because REDACT_MESSAGE_CONTENT is enabled.',
+            contentType: this.getResponseHeader(headers, 'content-type') ?? 'message/rfc822',
+            originalSource: response.data,
+            usage: 'Use RFC 822 source for read-only inspection of raw email source when JSON original source is insufficient.',
           }, null, 2),
         }],
       };
     }
 
-    const response = await helpScoutClient.getRaw<string>(
-      `/conversations/${input.conversationId}/threads/${input.threadId}/original-source`,
-      undefined,
-      {
-        responseType: 'text',
-        headers: { Accept: 'message/rfc822' },
-      }
-    );
-    const headers = response.headers as Record<string, unknown>;
-
+    const originalSource = await helpScoutClient.get<Record<string, unknown>>(endpoint);
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
           conversationId: input.conversationId,
           threadId: input.threadId,
-          sourceFormat: 'message/rfc822',
-          contentType: this.getResponseHeader(headers, 'content-type') ?? 'message/rfc822',
-          originalSource: response.data,
-          usage: 'Use RFC 822 source for read-only inspection of raw email source when JSON original source is insufficient.',
+          format: 'json',
+          originalSource,
+          usage: 'Use original source for read-only inspection of raw thread content when rendered thread fields are insufficient.',
         }, null, 2),
       }],
     };
