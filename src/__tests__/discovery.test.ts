@@ -64,6 +64,27 @@ describe('Tool discovery layer (NAS-1305)', () => {
     return JSON.parse(first.text as string);
   }
 
+  function validateClosedObjectSchema(schema: any, value: any, path = '$'): string[] {
+    if (!schema || schema.type !== 'object' || typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return [];
+    }
+    const errors: string[] = [];
+    const properties = schema.properties || {};
+    if (schema.additionalProperties === false) {
+      for (const key of Object.keys(value)) {
+        if (!Object.prototype.hasOwnProperty.call(properties, key)) {
+          errors.push(`${path}.${key}`);
+        }
+      }
+    }
+    for (const [key, childSchema] of Object.entries(properties)) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        errors.push(...validateClosedObjectSchema(childSchema, value[key], `${path}.${key}`));
+      }
+    }
+    return errors;
+  }
+
   describe('default listTools() surface', () => {
     it('returns exactly the core tools + 3 meta tools', async () => {
       const tools = await toolHandler.listTools();
@@ -96,9 +117,31 @@ describe('Tool discovery layer (NAS-1305)', () => {
         type: 'object',
         additionalProperties: false,
       });
-      // `arguments` is constrained to type:object (not left unconstrained).
+      // The outer call_tool object is strict, but the nested arguments bag must
+      // stay open so strict-schema clients can pass inner tool arguments through.
       const props = (callToolDef.inputSchema as { properties: Record<string, any> }).properties;
       expect(props.arguments.type).toBe('object');
+      expect(props.arguments.additionalProperties).toBe(true);
+    });
+
+    it('keeps call_tool top-level strict while allowing nested tool arguments', async () => {
+      const tools = await toolHandler.listTools();
+      const callToolDef = tools.find((t) => t.name === 'call_tool')!;
+      const schema = callToolDef.inputSchema as Record<string, unknown>;
+
+      expect(validateClosedObjectSchema(schema, {
+        name: 'searchConversations',
+        arguments: {
+          query: 'urgent',
+          status: 'active',
+        },
+      })).toEqual([]);
+
+      expect(validateClosedObjectSchema(schema, {
+        name: 'searchConversations',
+        arguments: {},
+        unexpectedTopLevel: true,
+      })).toContain('$.unexpectedTopLevel');
     });
 
     it('search_tools description carries the live total tool count', async () => {
@@ -176,6 +219,48 @@ describe('Tool discovery layer (NAS-1305)', () => {
       // getServerTime returns its server-time payload directly.
       expect(data).toHaveProperty('isoTime');
       expect(data.source).toBe('mcp_host_clock');
+    });
+
+    it('validates the inner tool constraints when dispatching through call_tool', async () => {
+      const data = await call('call_tool', {
+        name: 'searchConversations',
+        arguments: {
+          query: 'urgent',
+          __userQuery: 'find urgent conversations in the support inbox',
+        },
+      });
+
+      expect(data.error).toBe('API Constraint Validation Failed');
+      expect(data.details.requiredPrerequisites).toContain('listAllInboxes');
+      expect(data.details.suggestions[0]).toContain('server instructions');
+    });
+
+    it('records the inner tool name in history for call_tool dispatch', async () => {
+      nock(baseURL)
+        .get('/mailboxes')
+        .query({ page: 1 })
+        .reply(200, {
+          _embedded: {
+            mailboxes: [
+              { id: 1, name: 'Support Inbox', email: 'support@example.com' },
+            ],
+          },
+          page: { size: 100, totalElements: 1 },
+        });
+
+      await call('call_tool', { name: 'listAllInboxes', arguments: {} });
+
+      const data = await call('call_tool', {
+        name: 'searchConversations',
+        arguments: {
+          query: 'urgent',
+          __userQuery: 'find urgent conversations in the support inbox',
+        },
+      });
+
+      expect(data.error).toBe('API Constraint Validation Failed');
+      expect(data.details.requiredPrerequisites).toBeUndefined();
+      expect(data.details.suggestions[0]).toContain('Use the inbox ID from the listAllInboxes results');
     });
 
     it('returns an actionable error for an unknown tool name', async () => {

@@ -1,7 +1,7 @@
 // NAS-1308: per-model LOAD check — the cross-model compatibility metric.
 // Does each tool surface load (no provider 400) on each model family?
 // This is the metric that would have caught the anyOf bug. Run:
-//   /opt/homebrew/bin/node evals/load-check.mjs
+//   npm run eval:load
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';

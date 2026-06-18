@@ -42,7 +42,7 @@ describe('sanitizeJsonSchema', () => {
     });
   });
 
-  it('adds additionalProperties:false to object nodes (and nested) but not primitives/arrays', () => {
+  it('adds additionalProperties:false to object nodes (and nested) but preserves explicit open bags', () => {
     const input = {
       type: 'object',
       properties: {
@@ -56,6 +56,10 @@ describe('sanitizeJsonSchema', () => {
         inferred: {
           properties: { z: { type: 'string' } },
         },
+        passthrough: {
+          type: 'object',
+          additionalProperties: true,
+        },
       },
     };
 
@@ -65,6 +69,7 @@ describe('sanitizeJsonSchema', () => {
     expect(out.additionalProperties).toBe(false);
     expect((props.nested as JsonObject).additionalProperties).toBe(false);
     expect((props.inferred as JsonObject).additionalProperties).toBe(false);
+    expect((props.passthrough as JsonObject).additionalProperties).toBe(true);
     // primitives and arrays must NOT gain additionalProperties
     expect(props.name).not.toHaveProperty('additionalProperties');
     expect(props.ids).not.toHaveProperty('additionalProperties');
@@ -197,7 +202,7 @@ describe('coerceJsonStringArgs', () => {
 });
 
 describe('listTools() emits provider-safe schemas', () => {
-  it('has no object-level anyOf/oneOf/allOf, additionalProperties:false on objects, no type:number', async () => {
+  it('has no object-level anyOf/oneOf/allOf, explicit object additionalProperties, no type:number', async () => {
     const handler = new ToolHandler();
     const tools = await handler.listTools();
 
@@ -213,11 +218,17 @@ describe('listTools() emits provider-safe schemas', () => {
         if ('type' in node) {
           expect(node.type).not.toBe('number');
         }
-        // every object node carries additionalProperties:false
+        // every object node declares additionalProperties; the only open object
+        // is the call_tool passthrough bag for nested inner-tool arguments.
         const isObject = node.type === 'object' ||
           (node.properties && typeof node.properties === 'object');
         if (isObject) {
-          expect(node.additionalProperties).toBe(false);
+          expect(node).toHaveProperty('additionalProperties');
+          if (node.additionalProperties === true) {
+            expect(node).not.toHaveProperty('properties');
+          } else {
+            expect(node.additionalProperties).toBe(false);
+          }
         }
       });
     }

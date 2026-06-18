@@ -10,7 +10,7 @@
 // score whether the model REACHES `call_tool({name: target, arguments: ...})`
 // with the expected key args.
 //
-// Run:  npm run build && /opt/homebrew/bin/node evals/tail-walk.mjs
+// Run:  npm run eval:tail
 import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';

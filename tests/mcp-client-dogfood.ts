@@ -3,12 +3,11 @@
  * Full MCP client dogfood harness.
  *
  * This spawns the built server entrypoint and talks to it through the official
- * MCP TypeScript client over stdio. It validates every exposed tool through the
- * same protocol path used by real MCP hosts.
+ * MCP TypeScript client over stdio. It validates the full flat compatibility
+ * tool surface through the same protocol path used by real MCP hosts.
  *
  * Usage:
- *   npm run build
- *   node --loader ts-node/esm tests/mcp-client-dogfood.ts
+ *   npm run dogfood:mcp
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';

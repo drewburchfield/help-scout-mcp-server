@@ -1434,8 +1434,8 @@ export class ToolHandler {
    *
    * Every inputSchema is run through sanitizeJsonSchema so it loads across
    * Gemini / OpenAI / GLM / Claude (NAS-1307): strips object-level
-   * anyOf/oneOf/allOf, adds additionalProperties:false to object nodes, and
-   * converts number -> integer.
+   * anyOf/oneOf/allOf, makes object additionalProperties explicit, and converts
+   * number -> integer.
    */
   private allToolDefs(): Tool[] {
     return this.buildToolDefs().map((tool) => ({
@@ -1500,6 +1500,7 @@ export class ToolHandler {
             },
             arguments: {
               type: 'object',
+              additionalProperties: true,
               description: "The tool's input arguments object, matching its loaded input schema.",
             },
           },
@@ -1566,6 +1567,24 @@ export class ToolHandler {
     }
   }
 
+  private resolveMetaCallTarget(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; arguments: Record<string, unknown> } | undefined {
+    if (toolName !== 'call_tool') {
+      return undefined;
+    }
+    const innerName = typeof args.name === 'string' ? args.name : '';
+    if (!innerName || (ToolHandler.META_TOOLS as readonly string[]).includes(innerName)) {
+      return undefined;
+    }
+    if (!this.allToolDefs().some((tool) => tool.name === innerName)) {
+      return undefined;
+    }
+    const innerArgs = isPlainRecord(args.arguments) ? args.arguments : {};
+    return { toolName: innerName, arguments: innerArgs };
+  }
+
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
     const requestId = Math.random().toString(36).substring(7);
     const startTime = Date.now();
@@ -1586,12 +1605,15 @@ export class ToolHandler {
     );
 
     const args = request.params.arguments || {};
-    const userQuery = this.getToolCallUserQuery(args);
+    const metaTarget = this.resolveMetaCallTarget(request.params.name, args);
+    const validationToolName = metaTarget?.toolName ?? request.params.name;
+    const validationArgs = metaTarget?.arguments ?? args;
+    const userQuery = this.getToolCallUserQuery(validationArgs) ?? this.getToolCallUserQuery(args);
 
     // REVERSE LOGIC VALIDATION: Check API constraints before making the call
     const validationContext: ToolCallContext = {
-      toolName: request.params.name,
-      arguments: args,
+      toolName: validationToolName,
+      arguments: validationArgs,
       userQuery,
       previousCalls: [...this.callHistory]
     };
@@ -1637,7 +1659,7 @@ export class ToolHandler {
 
       const duration = Date.now() - startTime;
       // Add to call history for future validation
-      this.callHistory.push(request.params.name);
+      this.callHistory.push(validationToolName);
 
       const firstContent = result.content?.[0];
       if (!firstContent || firstContent.type !== 'text' || typeof firstContent.text !== 'string') {

@@ -5,7 +5,7 @@
  * providers because each provider enforces a stricter / different dialect:
  *   - Gemini rejects object-level `anyOf`/`oneOf`/`allOf` (one bad schema in a
  *     `tools/list` 400s the WHOLE request).
- *   - OpenAI strict mode 400s on object schemas missing `additionalProperties: false`.
+ *   - OpenAI strict mode 400s on closed object schemas missing `additionalProperties: false`.
  *   - Some models serialize `$ref` objects as strings.
  *   - Weaker / non-Claude models stringify complex arguments (`"[1,2]"` instead
  *     of `[1,2]`) and the server then rejects them with -32602.
@@ -123,7 +123,8 @@ function sanitizeNode(
     result[key] = sanitizeNode(value, defs, definitions, refStack);
   }
 
-  // OpenAI strict mode requires additionalProperties:false on object schemas.
+  // OpenAI strict mode requires explicit additionalProperties on object schemas.
+  // Preserve explicit open bags such as call_tool.arguments.
   const looksLikeObject = result.type === 'object' || isPlainObject(result.properties);
   if (looksLikeObject && !Object.prototype.hasOwnProperty.call(result, 'additionalProperties')) {
     result.additionalProperties = false;
@@ -136,8 +137,8 @@ function sanitizeNode(
  * Normalize a JSON Schema so it loads across Gemini / OpenAI / GLM / Claude.
  *
  * - Strips object-level `anyOf`/`oneOf`/`allOf` wherever they appear.
- * - Sets `additionalProperties: false` on every object node (type:'object' or
- *   any node carrying a `properties` map). Leaves non-object nodes alone.
+ * - Sets `additionalProperties: false` on object nodes missing an explicit
+ *   additionalProperties value. Leaves intentional open bags and non-objects alone.
  * - Converts `type: 'number'` -> `type: 'integer'` everywhere, preserving
  *   minimum/maximum/default.
  * - Inline-derefs local `$ref`/`$defs` (then drops `$defs`); unresolvable refs
