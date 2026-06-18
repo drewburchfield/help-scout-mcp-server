@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
 import { sanitizeJsonSchema, coerceJsonStringArgs } from '../utils/schema-sanitizer.js';
+import { buildResponseGuidance } from './response-guidance.js';
 import {
   Inbox,
   Conversation,
@@ -1650,41 +1651,23 @@ export class ToolHandler {
         );
       }
       
-      // Enhance result with API constraint guidance (best-effort: never turn a success into a failure)
-      let guidanceProvided = false;
-      try {
-        const originalContent = JSON.parse(firstContent.text);
-        const guidance = HelpScoutAPIConstraints.generateToolGuidance(
-          request.params.name,
-          originalContent,
-          validationContext
-        );
-
-        if (guidance.length > 0) {
-          originalContent.apiGuidance = guidance;
-          result.content[0] = {
-            type: 'text',
-            text: JSON.stringify(originalContent, null, 2)
-          };
-          guidanceProvided = true;
-        }
-      } catch (guidanceError) {
-        logger.warn('Failed to inject API guidance into tool response', {
-          requestId,
-          toolName: request.params.name,
-          error: guidanceError instanceof Error ? guidanceError.message : String(guidanceError),
-        });
-      }
+      // Unified content-aware response guidance (NAS-1308): a single producer
+      // sets both the result body's apiGuidance and _meta.suggestedTools, driven
+      // by the actual result shape. Best-effort: never turns a success into a
+      // failure. callToolMeta applies this against the real hub name for the
+      // call_tool re-entry path, so we skip the meta-tool here to avoid a
+      // double-attach (applyResponseGuidance also no-ops on meta-tools).
+      const guided = this.applyResponseGuidance(request.params.name, result);
 
       logger.info('Tool call completed', {
         requestId,
         toolName: request.params.name,
         duration,
         validationPassed: true,
-        guidanceProvided
+        guidanceProvided: Boolean(guided._meta?.suggestedTools),
       });
 
-      return result;
+      return guided;
     } catch (error) {
       const duration = Date.now() - startTime;
       
@@ -1705,66 +1688,78 @@ export class ToolHandler {
    * switch.
    */
   private async dispatchTool(name: string, args: object): Promise<CallToolResult> {
-    const result = await this.dispatchToolInner(name, args);
-    return this.attachSuccessorHints(name, result);
+    return this.dispatchToolInner(name, args);
   }
 
   /**
-   * Build the successor-hint defs for a tool (NAS-1305 phase 3). Looks up
-   * SUCCESSOR_MAP, filters OUT any name already in CORE_TOOLS (the model already
-   * has those) and any meta-tool, caps at 3, and maps each survivor to its
-   * sanitized def ({ name, description, inputSchema }) from allToolDefs().
-   * Returns undefined when nothing remains (terminal tools, or all-core tails).
-   */
-  private successorHintsFor(
-    toolName: string,
-  ): { name: string; description?: string; inputSchema: Tool['inputSchema'] }[] | undefined {
-    const successors = ToolHandler.SUCCESSOR_MAP[toolName];
-    if (!successors || successors.length === 0) {
-      return undefined;
-    }
-    const excluded = new Set<string>([...ToolHandler.CORE_TOOLS, ...ToolHandler.META_TOOLS]);
-    const wanted = successors.filter((name) => !excluded.has(name)).slice(0, 3);
-    if (wanted.length === 0) {
-      return undefined;
-    }
-    const byName = new Map(this.allToolDefs().map((tool) => [tool.name, tool]));
-    const hints = wanted
-      .map((name) => byName.get(name))
-      .filter((tool): tool is Tool => tool !== undefined)
-      .map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-      }));
-    return hints.length > 0 ? hints : undefined;
-  }
-
-  /**
-   * Attach response-bootstrapped successor hints (NAS-1305 phase 3) to a hub
-   * tool's result. Sets `result._meta.suggestedTools` to the sanitized schemas
-   * of the logically-next (non-core) tools so the model's next call_tool /
-   * direct call is correctly typed with no search detour.
+   * The unified content-aware response-guidance layer (NAS-1308). Replaces the
+   * two prior half-mechanisms — the static `_meta.suggestedTools` successor
+   * hints and the 2-tool `generateToolGuidance` next-step text — with a SINGLE
+   * producer (`buildResponseGuidance`) driven by what actually happened (was the
+   * result empty or populated? what real id can anchor an example?).
+   *
+   * Mutates the result in place to carry both:
+   *   - `_meta.suggestedTools`: sanitized, core/meta-filtered, capped schemas for
+   *     the logically-next tools.
+   *   - the result body's `apiGuidance` field: next-step text with a real id
+   *     interpolated into the example.
    *
    * Gated OFF in HELPSCOUT_EXPOSE_ALL_TOOLS mode (every tool already advertised,
-   * so hints are redundant). Total: never throws and never changes the primary
-   * result payload — on any failure the original result is returned untouched.
-   * Meta-tool results are never hinted; when call_tool dispatches a hub tool the
-   * hint rides along because attachment keys off the dispatched tool name.
+   * so schema hints are redundant). Meta-tool results are never guided. Total:
+   * never throws and never turns a success into a failure — on any failure the
+   * original result is returned untouched. Keyed on the dispatched tool name, so
+   * when call_tool re-enters a hub tool the guidance is attached against the real
+   * hub name (callToolMeta invokes this after dispatch).
    */
-  private attachSuccessorHints(name: string, result: CallToolResult): CallToolResult {
+  private applyResponseGuidance(name: string, result: CallToolResult): CallToolResult {
     try {
-      if (process.env.HELPSCOUT_EXPOSE_ALL_TOOLS === 'true') {
-        return result;
-      }
       if ((ToolHandler.META_TOOLS as readonly string[]).includes(name)) {
         return result;
       }
-      const hints = this.successorHintsFor(name);
-      if (!hints) {
-        return result;
+
+      // Parse the primary text payload once (needed for both shape classification
+      // and apiGuidance injection). If it isn't JSON text we can still attach the
+      // static-fallback schema hints, just with no content-aware text.
+      const firstContent = result.content?.[0];
+      let parsedBody: unknown;
+      if (firstContent && firstContent.type === 'text' && typeof firstContent.text === 'string') {
+        try {
+          parsedBody = JSON.parse(firstContent.text);
+        } catch {
+          parsedBody = undefined;
+        }
       }
-      result._meta = { ...result._meta, suggestedTools: hints };
+
+      const guidance = buildResponseGuidance(name, parsedBody, {
+        toolDefs: this.allToolDefs(),
+        coreTools: ToolHandler.CORE_TOOLS,
+        metaTools: ToolHandler.META_TOOLS,
+        successorMap: ToolHandler.SUCCESSOR_MAP,
+      });
+
+      const exposeAll = process.env.HELPSCOUT_EXPOSE_ALL_TOOLS === 'true';
+
+      // Inject next-step text into the result body (only when we have a parsed
+      // JSON body to extend, mirroring the prior apiGuidance behavior).
+      if (
+        guidance.apiGuidance &&
+        guidance.apiGuidance.length > 0 &&
+        parsedBody &&
+        typeof parsedBody === 'object' &&
+        !Array.isArray(parsedBody)
+      ) {
+        (parsedBody as Record<string, unknown>).apiGuidance = guidance.apiGuidance;
+        result.content[0] = {
+          type: 'text',
+          text: JSON.stringify(parsedBody, null, 2),
+        };
+      }
+
+      // Attach typed successor schemas (suppressed in expose-all mode).
+      if (!exposeAll && guidance.suggestedTools && guidance.suggestedTools.length > 0) {
+        result._meta = { ...result._meta, suggestedTools: guidance.suggestedTools };
+      }
+
       return result;
     } catch {
       return result;
@@ -2027,7 +2022,12 @@ export class ToolHandler {
     }
 
     const coerced = coerceJsonStringArgs(innerArgs, tool.inputSchema ?? {}) as object;
-    return this.dispatchTool(name, coerced);
+    const dispatched = await this.dispatchTool(name, coerced);
+    // Apply unified response guidance against the REAL hub name so the hint +
+    // next-step text ride along (NAS-1308). The outer callTool() guidance pass
+    // sees only the `call_tool` meta name and no-ops, leaving this as the single
+    // attach for the re-entry path.
+    return this.applyResponseGuidance(name, dispatched);
   }
 
 

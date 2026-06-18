@@ -147,59 +147,45 @@ describe('HelpScoutAPIConstraints', () => {
     });
   });
 
-  describe('generateToolGuidance', () => {
-    it('should provide next steps for listAllInboxes results', () => {
-      const mockResult = {
-        inboxes: [{ id: '12345', name: 'Support' }]
-      };
-
+  describe('generateToolGuidance (constraint-warning composition point)', () => {
+    // NAS-1308: the content-aware NEXT-STEP text for listAllInboxes and
+    // searchConversations moved to the unified response-guidance layer
+    // (src/tools/response-guidance.ts GUIDANCE_MAP, covered by
+    // response-guidance.test.ts). generateToolGuidance now only carries genuine
+    // API-constraint warnings (currently none) and must not duplicate next-step
+    // text anymore.
+    it('no longer emits listAllInboxes next-step text', () => {
       const context: ToolCallContext = {
         toolName: 'listAllInboxes',
         arguments: {},
         userQuery: '',
         previousCalls: []
       };
-
-      const guidance = HelpScoutAPIConstraints.generateToolGuidance('listAllInboxes', mockResult, context);
-
-      expect(guidance[0]).toContain('✅ NEXT STEP');
-      expect(guidance[1]).toContain('"inboxId": "12345"');
+      const guidance = HelpScoutAPIConstraints.generateToolGuidance(
+        'listAllInboxes',
+        { inboxes: [{ id: '12345', name: 'Support' }] },
+        context
+      );
+      expect(guidance).toEqual([]);
     });
 
-    it('should provide troubleshooting for empty conversation results', () => {
-      const mockResult = {
-        results: []
-      };
-
+    it('no longer emits searchConversations next-step text', () => {
       const context: ToolCallContext = {
         toolName: 'searchConversations',
         arguments: {},
         userQuery: '',
         previousCalls: []
       };
-
-      const guidance = HelpScoutAPIConstraints.generateToolGuidance('searchConversations', mockResult, context);
-
-      expect(guidance[0]).toContain('❌ No conversations found');
-      expect(guidance.some(g => g.includes('Different status'))).toBe(true);
-    });
-
-    it('should provide next steps for successful conversation search', () => {
-      const mockResult = {
-        results: [{ id: '1' }, { id: '2' }]
-      };
-
-      const context: ToolCallContext = {
-        toolName: 'searchConversations',
-        arguments: {},
-        userQuery: '',
-        previousCalls: []
-      };
-
-      const guidance = HelpScoutAPIConstraints.generateToolGuidance('searchConversations', mockResult, context);
-
-      expect(guidance[0]).toContain('✅ Found 2 conversations');
-      expect(guidance[1]).toContain('getConversationSummary or getThreads');
+      expect(
+        HelpScoutAPIConstraints.generateToolGuidance('searchConversations', { results: [] }, context)
+      ).toEqual([]);
+      expect(
+        HelpScoutAPIConstraints.generateToolGuidance(
+          'searchConversations',
+          { results: [{ id: '1' }] },
+          context
+        )
+      ).toEqual([]);
     });
   });
 });

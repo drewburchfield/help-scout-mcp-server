@@ -157,37 +157,18 @@ export class HelpScoutAPIConstraints {
   }
   
   /**
-   * Generate validation guidance for tool responses
+   * Generate API-constraint guidance for tool responses (page-size / embed
+   * warnings, etc.).
+   *
+   * The content-aware NEXT-STEP text for `listAllInboxes` and
+   * `searchConversations` moved to the unified response-guidance layer
+   * (`src/tools/response-guidance.ts` GUIDANCE_MAP, NAS-1308); this method now
+   * only carries genuine API-constraint warnings that compose alongside it.
+   * Currently there are none, so it returns an empty list; kept as the
+   * composition point for future constraint warnings.
    */
-  static generateToolGuidance(toolName: string, result: any, _context: ToolCallContext): string[] {
-    const guidance: string[] = [];
-    
-    if (toolName === 'listAllInboxes') {
-      const inboxes = result?.inboxes || [];
-      if (inboxes.length > 0) {
-        guidance.push('✅ NEXT STEP: Use the inbox ID from these results in your conversation search');
-        guidance.push(`Example: searchConversations({ "inboxId": "${inboxes[0]?.id}", "status": "active" })`);
-      } else {
-        guidance.push('❌ No inboxes found. Pass a broader nameContains filter, or omit nameContains to list all inboxes');
-      }
-    }
-    
-    if (toolName === 'searchConversations') {
-      const totalFound = Array.isArray(result?.results) ? result.results.length : 0;
-      
-      if (totalFound === 0) {
-        guidance.push('❌ No conversations found. Try:');
-        guidance.push('  1. Different status (active/pending/closed/spam)');
-        guidance.push('  2. Broader search terms');
-        guidance.push('  3. Extended time range');
-        guidance.push('  4. Verify inbox ID is correct');
-      } else {
-        guidance.push(`✅ Found ${totalFound} conversations`);
-        guidance.push('💡 NEXT STEPS: Use getConversationSummary or getThreads for detailed analysis');
-      }
-    }
-    
-    return guidance;
+  static generateToolGuidance(_toolName: string, _result: any, _context: ToolCallContext): string[] {
+    return [];
   }
 }
 
