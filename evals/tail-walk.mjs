@@ -31,15 +31,21 @@ const SYSTEM =
   'You are an agent with a small set of Help Scout tools plus search_tools/get_tool_schema/call_tool to reach others. ' +
   'Use them to complete the task. Call tools; do not ask the user.';
 
+// searchOnly: target is NOT a successor-hint of any core tool, so the model MUST
+// use search_tools to discover it (isolates the search-discovery mechanism).
+// pivot: tests that the model follows the EMPTY-result guidance to a second tool.
 const TASKS = [
-  { prompt: 'Get the email channel report.', target: 'getChannelReport', key: { channel: 'email' } },
-  { prompt: "Show the team's first response time productivity report.", target: 'getProductivityReport', key: { report: 'first-response-time' } },
-  { prompt: "Get user 7's replies-sent report.", target: 'getUserReport', key: { report: 'replies' } },
-  { prompt: 'Show the company happiness ratings.', target: 'getHappinessReport', key: { report: 'ratings' } },
-  { prompt: 'List all the tags in the account.', target: 'listTags', key: {} },
-  { prompt: 'Show the custom fields configured on inbox 123.', target: 'getInbox', key: { include: ['fields'] } },
-  { prompt: 'List the webhooks configured.', target: 'listWebhooks', key: {} },
-  { prompt: 'Get the raw RFC822 source of thread 7 in conversation 5.', target: 'getOriginalSource', key: { format: 'rfc822' } },
+  { prompt: 'Get the email channel report.', target: 'getChannelReport', key: { channel: 'email' }, searchOnly: true },
+  { prompt: "Show the team's first response time productivity report.", target: 'getProductivityReport', key: { report: 'first-response-time' }, searchOnly: true },
+  { prompt: "Get user 7's replies-sent report.", target: 'getUserReport', key: { report: 'replies' }, searchOnly: true },
+  { prompt: 'Show the company happiness ratings.', target: 'getHappinessReport', key: { report: 'ratings' }, searchOnly: true },
+  { prompt: 'List all the tags in the account.', target: 'listTags', key: {}, searchOnly: true },
+  { prompt: 'List the webhooks configured.', target: 'listWebhooks', key: {}, searchOnly: true },
+  { prompt: 'Show the custom fields configured on inbox 123.', target: 'getInbox', key: { include: ['fields'] }, searchOnly: false },
+  { prompt: 'Get the raw RFC822 source of thread 7 in conversation 5.', target: 'getOriginalSource', key: { format: 'rfc822' }, searchOnly: false },
+  // 0-results pivot: searchConversations for a nonexistent person returns empty;
+  // the content-aware guidance suggests searchCustomersByEmail — does the model follow it?
+  { prompt: 'Find conversations from the customer with email nobody-zzz-99887@nonexistent-domain-zzz.test. If none are found, locate that customer first.', target: 'searchCustomersByEmail', key: { email: 'nobody-zzz-99887@nonexistent-domain-zzz.test' }, pivot: true },
 ];
 
 // ---- arg-key matching (mirrors run-eval.mjs) ----
@@ -170,7 +176,9 @@ async function walk(model, task, handler, tools) {
       // ---- SUCCESS CHECK ----
       // (a) model reaches the tail via call_tool with target + key args.
       if (fnName === 'call_tool' && args?.name === task.target && paramKeyMatch(task.key, args?.arguments || {})) {
-        return { ok: true, turns: turn, via: 'call_tool', trace };
+        // mechanism: did the model SEARCH to discover the target, or follow a hint?
+        const mechanism = trace.includes('search_tools') ? 'search' : 'hint';
+        return { ok: true, turns: turn, via: 'call_tool', mechanism, trace };
       }
       // (b) defensive: model somehow calls the target tool directly (not advertised).
       if (fnName === task.target && paramKeyMatch(task.key, args)) {
@@ -291,6 +299,29 @@ function renderMarkdown(results, modelNa) {
     const avgTurns = turnN > 0 ? (turnSum / turnN).toFixed(1) : '—';
     const note = naCount === TASKS.length ? 'quota/cooldown — unavailable' : naCount > 0 ? `${naCount} task(s) n/a (quota)` : '';
     lines.push(`| ${model} | ${rate} | ${avgTurns} | ${note} |`);
+  }
+  lines.push('');
+
+  // ---- discovery-mechanism verification (NAS-1309) ----
+  lines.push('## Discovery mechanism (search vs hint)');
+  lines.push('');
+  lines.push('For `searchOnly` targets the model MUST use `search_tools` (not reachable via a hint). `pivot` = followed the empty-result guidance to a second tool.');
+  lines.push('');
+  lines.push('| Task target | type | reached | via mechanism |');
+  lines.push('|---|---|---|---|');
+  for (let ti = 0; ti < TASKS.length; ti++) {
+    const task = TASKS[ti];
+    const type = task.pivot ? 'pivot' : task.searchOnly ? 'search-only' : 'hint-ok';
+    const mechs = MODELS.map((m) => bestTrial(results[m][ti])?.mechanism).filter(Boolean);
+    const reached = mechs.length;
+    let verdict;
+    if (task.searchOnly) {
+      const usedSearch = mechs.filter((x) => x === 'search').length;
+      verdict = reached > 0 ? `search ${usedSearch}/${reached}${usedSearch < reached ? ' ⚠ some via hint' : ' ✓'}` : '—';
+    } else {
+      verdict = reached > 0 ? mechs.join(',') : '—';
+    }
+    lines.push(`| ${task.target} | ${type} | ${reached}/${MODELS.filter((m) => !modelNa[m]).length} | ${verdict} |`);
   }
   lines.push('');
 
