@@ -27,6 +27,8 @@
     "security:ci": "semgrep ci",
     "test": "jest",
     "test:contract": "TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/api-contract.ts",
+    "eval:load": "npm run build && node evals/load-check.mjs",
+    "eval:tail": "npm run build && node evals/tail-walk.mjs",
     "test:mcp": "npm run dogfood:mcp",
     "dogfood:seed": "TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/seed-test-data.ts && TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/seed-org-customers.ts && TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/seed-integration-data.ts && npm run dogfood:seed:docs",
     "dogfood:seed:docs": "TS_NODE_TRANSPILE_ONLY=true node --loader ts-node/esm tests/seed-docs-data.ts",

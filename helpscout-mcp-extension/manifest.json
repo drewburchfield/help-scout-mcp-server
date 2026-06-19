@@ -331,6 +331,18 @@
     {
       "name": "findDocsRedirect",
       "description": "Resolve a Help Scout Docs redirect target"
+    },
+    {
+      "name": "search_tools",
+      "description": "Discovery meta-tool: search the full Help Scout tool catalog by keyword to find tools not loaded by default"
+    },
+    {
+      "name": "get_tool_schema",
+      "description": "Discovery meta-tool: return the full input schema for one or more tool names so they can be called via call_tool"
+    },
+    {
+      "name": "call_tool",
+      "description": "Discovery meta-tool: invoke any Help Scout tool by name with its arguments after loading its schema"
     }
   ],
   "prompts": [

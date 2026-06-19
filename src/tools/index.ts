@@ -6,6 +6,8 @@ import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constrain
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
 import { REDACTED_MESSAGE_BODY } from '../utils/constants.js';
+import { sanitizeJsonSchema, coerceJsonStringArgs } from '../utils/schema-sanitizer.js';
+import { buildResponseGuidance } from './response-guidance.js';
 import {
   Inbox,
   Conversation,
@@ -137,8 +139,126 @@ function getDocsNextPage(page?: number, pages?: number): number | null {
   return page < pages ? page + 1 : null;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Split text into lowercased alphanumeric word tokens for the search_tools
+ * scorer. Splits camelCase boundaries (searchConversations -> search,
+ * conversations) so tool names contribute their words.
+ */
+function tokenize(text: string): string[] {
+  return text
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 1);
+}
+
+/**
+ * Lightweight relevance score for search_tools (NAS-1305): term frequency over
+ * a tool's name + description, expanded with the Help Scout synonym map, with a
+ * strong boost when a query term matches the tool NAME. Pure, no external deps.
+ */
+function scoreTool(
+  tool: Tool,
+  queryTerms: readonly string[],
+  expandedTerms: ReadonlySet<string>,
+): number {
+  const nameTokens = new Set(tokenize(tool.name));
+  const descTokens = tokenize(tool.description ?? '');
+  const descCounts = new Map<string, number>();
+  for (const token of descTokens) {
+    descCounts.set(token, (descCounts.get(token) ?? 0) + 1);
+  }
+
+  let score = 0;
+  for (const term of expandedTerms) {
+    // Direct query terms weigh more than synonym-only expansions.
+    const isDirect = queryTerms.includes(term);
+    const weight = isDirect ? 1 : 0.5;
+    if (nameTokens.has(term)) {
+      score += 4 * weight; // name match is the strongest signal
+    }
+    const inDesc = descCounts.get(term);
+    if (inDesc) {
+      score += weight * (1 + Math.log(inDesc));
+    }
+  }
+  return score;
+}
+
 export class ToolHandler {
   private callHistory: string[] = [];
+
+  /**
+   * The core read tools advertised directly in the compact discovery surface
+   * (NAS-1305). These cover the common path; everything else is reached via
+   * the search_tools / get_tool_schema / call_tool meta tools.
+   */
+  private static readonly CORE_TOOLS: readonly string[] = [
+    'searchConversations',
+    'getConversation',
+    'getThreads',
+    'getCustomer',
+    'getCustomerContacts',
+    'listAllInboxes',
+    'searchDocsArticles',
+  ];
+
+  /** The discovery meta-tool names. They are never dispatched via call_tool. */
+  private static readonly META_TOOLS: readonly string[] = [
+    'search_tools',
+    'get_tool_schema',
+    'call_tool',
+  ];
+
+  /**
+   * Response-bootstrapped successor hints (NAS-1305 phase 3). Maps a "hub" tool
+   * to the logically-next tools in the Help Scout entity graph
+   * (2026-06-16-helpscout-read-api-contract.md). When a hub tool returns, the
+   * full sanitized schemas of its (non-core) successors are appended to the
+   * result's `_meta.suggestedTools` so the model can call them next with correct
+   * args and no search detour. Successors already in CORE_TOOLS are filtered out
+   * (the model already has those); only additive tail tools are surfaced.
+   */
+  private static readonly SUCCESSOR_MAP: Record<string, readonly string[]> = {
+    searchConversations: ['getConversation', 'getThreads', 'getOriginalSource', 'getAttachment'],
+    getConversation: ['getThreads', 'getOriginalSource', 'getCustomer'],
+    getThreads: ['getOriginalSource', 'getAttachment', 'downloadAttachmentFile'],
+    getCustomer: ['getCustomerContacts', 'getOrganization'],
+    getOrganization: [
+      'getOrganizationMembers',
+      'getOrganizationConversations',
+      'listOrganizationProperties',
+    ],
+    listAllInboxes: ['getInbox', 'listSavedReplies'],
+    getInbox: ['listSavedReplies'],
+    searchDocsArticles: ['getDocsArticle', 'listDocsArticleRevisions', 'listDocsRelatedArticles'],
+    getCompanyReport: ['getConversationsReport', 'getProductivityReport', 'getHappinessReport'],
+  };
+
+  /**
+   * Help Scout domain synonyms for search_tools (NAS-1305). Each entry maps a
+   * canonical term to the words a model might use for the same concept. Used to
+   * expand query terms so e.g. 'mailbox' surfaces inbox tools. Bidirectional:
+   * a hit on any word in a group boosts tools mentioning any other word.
+   */
+  private static readonly SYNONYM_GROUPS: readonly (readonly string[])[] = [
+    ['inbox', 'inboxes', 'mailbox', 'mailboxes'],
+    ['conversation', 'conversations', 'ticket', 'tickets', 'case', 'cases'],
+    ['customer', 'customers', 'contact', 'contacts', 'person', 'people'],
+    ['message', 'messages', 'thread', 'threads', 'reply', 'replies'],
+    ['report', 'reports', 'analytics', 'metrics', 'reporting'],
+    ['tag', 'tags', 'label', 'labels'],
+    ['user', 'users', 'agent', 'agents', 'teammate', 'teammates'],
+    ['article', 'articles', 'doc', 'docs', 'knowledge', 'base'],
+    ['attachment', 'attachments', 'file', 'files', 'download'],
+    ['rating', 'ratings', 'satisfaction', 'happiness'],
+    ['webhook', 'webhooks'],
+    ['workflow', 'workflows'],
+  ];
 
   constructor() {
     // Direct imports, no DI needed
@@ -375,7 +495,13 @@ export class ToolHandler {
     return Buffer.from(JSON.stringify(data), 'utf8');
   }
 
-  async listTools(): Promise<Tool[]> {
+  /**
+   * Build the full raw (un-sanitized, un-annotated) catalog of all Help Scout
+   * tool definitions. This is the single source of truth for the registry;
+   * `allToolDefs()` sanitizes + annotates it, and the discovery meta-tools
+   * (search_tools / get_tool_schema / call_tool) all read from it.
+   */
+  private buildToolDefs(): Tool[] {
     const tools: Tool[] = [
       {
         name: 'searchConversations',
@@ -1291,15 +1417,176 @@ export class ToolHandler {
       },
     ];
 
-    // Every tool in this server is a read-only GET wrapper over the external
-    // Help Scout API. Advertise MCP tool annotations so clients (e.g. Claude
-    // CoWork) can auto-approve reads and skip "may modify data" confirmations.
-    // openWorldHint is true because results depend on an external service.
-    // A tool may still override by declaring its own `annotations`.
-    return tools.map((tool) => ({
+    return tools;
+  }
+
+  /**
+   * The full internal registry: every Help Scout tool, sanitized + annotated,
+   * exactly as the default flat surface advertises it. This is also what
+   * `search_tools`, `get_tool_schema`, and `call_tool` read from in compact
+   * mode. Rebuilt each call (no cache → no drift).
+   *
+   * Every tool in this server is a read-only GET wrapper over the external
+   * Help Scout API. We advertise MCP tool annotations so clients (e.g. Claude
+   * CoWork) can auto-approve reads and skip "may modify data" confirmations.
+   * openWorldHint is true because results depend on an external service.
+   * A tool may still override by declaring its own `annotations`.
+   *
+   * Every inputSchema is run through sanitizeJsonSchema so it loads across
+   * Gemini / OpenAI / GLM / Claude (NAS-1307): strips object-level
+   * anyOf/oneOf/allOf, makes object additionalProperties explicit, and converts
+   * number -> integer.
+   */
+  private allToolDefs(): Tool[] {
+    return this.buildToolDefs().map((tool) => ({
       annotations: { readOnlyHint: true, openWorldHint: true },
       ...tool,
+      inputSchema: sanitizeJsonSchema(tool.inputSchema) as Tool['inputSchema'],
     }));
+  }
+
+  private isCompactToolSurface(): boolean {
+    return process.env.HELPSCOUT_TOOL_SURFACE === 'compact';
+  }
+
+  /**
+   * Build the three discovery meta-tool definitions. Their schemas are run
+   * through the same sanitizer so they load across model families. The
+   * search_tools description carries the live total tool count so the model
+   * knows the full catalog exists behind the meta layer.
+   */
+  private metaToolDefs(totalToolCount: number): Tool[] {
+    const defs: Tool[] = [
+      {
+        name: 'search_tools',
+        description:
+          `This server exposes ${totalToolCount} Help Scout tools. In compact mode, only the core few are loaded up front. ` +
+          `Search the rest by keyword (e.g. 'report', 'attachment', 'tags', 'webhook') to get their names and ` +
+          `descriptions, then call get_tool_schema to load one and call_tool to invoke it.`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description:
+                "Keywords describing the capability you need (e.g. 'happiness report', 'mailbox folders', 'webhook'). Help Scout synonyms (mailbox=inbox, ticket=conversation, contact=customer) are expanded automatically.",
+            },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'get_tool_schema',
+        description:
+          'Return the full input schema for one or more tool names (from search_tools or a suggestedTools hint) so you can call them via call_tool.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            names: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'One or more exact tool names to load schemas for.',
+            },
+          },
+          required: ['names'],
+        },
+      },
+      {
+        name: 'call_tool',
+        description:
+          'Invoke any Help Scout tool by name with its arguments (after loading its schema via get_tool_schema).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'The exact name of the Help Scout tool to invoke.',
+            },
+            arguments: {
+              type: 'object',
+              additionalProperties: true,
+              description: "The tool's input arguments object, matching its loaded input schema.",
+            },
+          },
+          required: ['name', 'arguments'],
+        },
+      },
+    ];
+    return defs.map((tool) => ({
+      annotations: { readOnlyHint: true, openWorldHint: true },
+      ...tool,
+      inputSchema: sanitizeJsonSchema(tool.inputSchema) as Tool['inputSchema'],
+    }));
+  }
+
+  /**
+   * The advertised `tools/list` surface (NAS-1305 discovery layer).
+   *
+   * DEFAULT: the full sanitized flat catalog (every Help Scout tool, no meta
+   * tools). This keeps v1.9 additive for existing MCP hosts that expect every
+   * tool to be advertised by `tools/list`.
+   *
+   * COMPACT MODE: `HELPSCOUT_TOOL_SURFACE=compact` advertises the 7 core read
+   * tools + 3 meta tools (search_tools / get_tool_schema / call_tool). All ~55
+   * tools stay reachable through the meta layer. This keeps the always-on
+   * tool-definition footprint tiny (~10 tools) for clients that opt in.
+   */
+  async listTools(): Promise<Tool[]> {
+    const all = this.allToolDefs();
+
+    if (!this.isCompactToolSurface()) {
+      return all;
+    }
+
+    const byName = new Map(all.map((tool) => [tool.name, tool]));
+    const core = ToolHandler.CORE_TOOLS.map((name) => byName.get(name)).filter(
+      (tool): tool is Tool => tool !== undefined,
+    );
+
+    return [...core, ...this.metaToolDefs(all.length)];
+  }
+
+  /**
+   * Best-effort JSON-string argument coercion (NAS-1307). Looks the tool's
+   * sanitized inputSchema up from the same registry listTools() advertises and
+   * coerces stringified arrays/objects to native. Defensive: never throws; on
+   * any failure (or unknown tool) the original arguments are returned unchanged.
+   */
+  private async coerceArgumentsForTool(
+    toolName: string,
+    args: CallToolRequest['params']['arguments'],
+  ): Promise<CallToolRequest['params']['arguments']> {
+    try {
+      // Resolve against the FULL registry (+ meta-tools), not the trimmed
+      // discovery surface — tail tools must still coerce when invoked directly.
+      const all = this.allToolDefs();
+      const tools = [...all, ...this.metaToolDefs(all.length)];
+      const tool = tools.find((candidate) => candidate.name === toolName);
+      if (!tool?.inputSchema) {
+        return args;
+      }
+      return coerceJsonStringArgs(args, tool.inputSchema) as CallToolRequest['params']['arguments'];
+    } catch {
+      return args;
+    }
+  }
+
+  private resolveMetaCallTarget(
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; arguments: Record<string, unknown> } | undefined {
+    if (toolName !== 'call_tool') {
+      return undefined;
+    }
+    const innerName = typeof args.name === 'string' ? args.name : '';
+    if (!innerName || (ToolHandler.META_TOOLS as readonly string[]).includes(innerName)) {
+      return undefined;
+    }
+    if (!this.allToolDefs().some((tool) => tool.name === innerName)) {
+      return undefined;
+    }
+    const innerArgs = isPlainRecord(args.arguments) ? args.arguments : {};
+    return { toolName: innerName, arguments: innerArgs };
   }
 
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -1312,13 +1599,25 @@ export class ToolHandler {
       argumentKeys: Object.keys(request.params.arguments || {}).filter(key => key !== '__userQuery'),
     });
 
+    // NAS-1307: weaker / non-Claude models stringify complex args (`"[1,2]"`
+    // instead of `[1,2]`). Coerce stringified-JSON arrays/objects back to native
+    // against the tool's sanitized inputSchema before validation/parsing. This
+    // is best-effort and never throws; on any failure args are left untouched.
+    request.params.arguments = await this.coerceArgumentsForTool(
+      request.params.name,
+      request.params.arguments,
+    );
+
     const args = request.params.arguments || {};
-    const userQuery = this.getToolCallUserQuery(args);
+    const metaTarget = this.resolveMetaCallTarget(request.params.name, args);
+    const validationToolName = metaTarget?.toolName ?? request.params.name;
+    const validationArgs = metaTarget?.arguments ?? args;
+    const userQuery = this.getToolCallUserQuery(validationArgs) ?? this.getToolCallUserQuery(args);
 
     // REVERSE LOGIC VALIDATION: Check API constraints before making the call
     const validationContext: ToolCallContext = {
-      toolName: request.params.name,
-      arguments: args,
+      toolName: validationToolName,
+      arguments: validationArgs,
       userQuery,
       previousCalls: [...this.callHistory]
     };
@@ -1357,181 +1656,14 @@ export class ToolHandler {
     }
 
     try {
-      let result: CallToolResult;
-
-      switch (request.params.name) {
-        case 'searchConversations':
-          result = await this.searchConversations(request.params.arguments || {});
-          break;
-        case 'getConversation':
-          result = await this.getConversation(request.params.arguments || {});
-          break;
-        case 'getConversationSummary':
-          result = await this.getConversationSummary(request.params.arguments || {});
-          break;
-        case 'getThreads':
-          result = await this.getThreads(request.params.arguments || {});
-          break;
-        case 'getServerTime':
-          result = await this.getServerTime();
-          break;
-        case 'listAllInboxes':
-          result = await this.listAllInboxes(request.params.arguments || {});
-          break;
-        case 'getInbox':
-          result = await this.getInbox(request.params.arguments || {});
-          break;
-        case 'getCustomer':
-          result = await this.getCustomer(request.params.arguments || {});
-          break;
-        case 'listCustomers':
-          result = await this.listCustomers(request.params.arguments || {});
-          break;
-        case 'searchCustomersByEmail':
-          result = await this.searchCustomersByEmail(request.params.arguments || {});
-          break;
-        case 'getCustomerContacts':
-          result = await this.getCustomerContacts(request.params.arguments || {});
-          break;
-        case 'getOrganization':
-          result = await this.getOrganization(request.params.arguments || {});
-          break;
-        case 'listOrganizations':
-          result = await this.listOrganizations(request.params.arguments || {});
-          break;
-        case 'getOrganizationMembers':
-          result = await this.getOrganizationMembers(request.params.arguments || {});
-          break;
-        case 'getOrganizationConversations':
-          result = await this.getOrganizationConversations(request.params.arguments || {});
-          break;
-        case 'listCustomerProperties':
-          result = await this.listCustomerProperties(request.params.arguments || {});
-          break;
-        case 'listOrganizationProperties':
-          result = await this.listOrganizationProperties(request.params.arguments || {});
-          break;
-        case 'getOrganizationProperty':
-          result = await this.getOrganizationProperty(request.params.arguments || {});
-          break;
-        case 'listTags':
-          result = await this.listTags(request.params.arguments || {});
-          break;
-        case 'getTag':
-          result = await this.getTag(request.params.arguments || {});
-          break;
-        case 'listUsers':
-          result = await this.listUsers(request.params.arguments || {});
-          break;
-        case 'getUser':
-          result = await this.getUser(request.params.arguments || {});
-          break;
-        case 'listTeams':
-          result = await this.listTeams(request.params.arguments || {});
-          break;
-        case 'getTeamMembers':
-          result = await this.getTeamMembers(request.params.arguments || {});
-          break;
-        case 'listSavedReplies':
-          result = await this.listSavedReplies(request.params.arguments || {});
-          break;
-        case 'getSavedReply':
-          result = await this.getSavedReply(request.params.arguments || {});
-          break;
-        case 'getOriginalSource':
-          result = await this.getOriginalSource(request.params.arguments || {});
-          break;
-        case 'getAttachment':
-          result = await this.getAttachment(request.params.arguments || {});
-          break;
-        case 'downloadAttachmentFile':
-          result = await this.downloadAttachmentFile(request.params.arguments || {});
-          break;
-        case 'listWorkflows':
-          result = await this.listWorkflows(request.params.arguments || {});
-          break;
-        case 'listWebhooks':
-          result = await this.listWebhooks(request.params.arguments || {});
-          break;
-        case 'getWebhook':
-          result = await this.getWebhook(request.params.arguments || {});
-          break;
-        case 'getSatisfactionRating':
-          result = await this.getSatisfactionRating(request.params.arguments || {});
-          break;
-        case 'getCompanyReport':
-          result = await this.getCompanyReport(request.params.arguments || {});
-          break;
-        case 'getConversationsReport':
-          result = await this.getConversationsReport(request.params.arguments || {});
-          break;
-        case 'getProductivityReport':
-          result = await this.getProductivityReport(request.params.arguments || {});
-          break;
-        case 'getUserReport':
-          result = await this.getUserReport(request.params.arguments || {});
-          break;
-        case 'getHappinessReport':
-          result = await this.getHappinessReport(request.params.arguments || {});
-          break;
-        case 'getChannelReport':
-          result = await this.getChannelReport(request.params.arguments || {});
-          break;
-        case 'getDocsReport':
-          result = await this.getDocsReport(request.params.arguments || {});
-          break;
-        case 'listDocsSites':
-          result = await this.listDocsSites(request.params.arguments || {});
-          break;
-        case 'getDocsSite':
-          result = await this.getDocsSite(request.params.arguments || {});
-          break;
-        case 'listDocsCollections':
-          result = await this.listDocsCollections(request.params.arguments || {});
-          break;
-        case 'getDocsCollection':
-          result = await this.getDocsCollection(request.params.arguments || {});
-          break;
-        case 'listDocsCategories':
-          result = await this.listDocsCategories(request.params.arguments || {});
-          break;
-        case 'getDocsCategory':
-          result = await this.getDocsCategory(request.params.arguments || {});
-          break;
-        case 'listDocsArticles':
-          result = await this.listDocsArticles(request.params.arguments || {});
-          break;
-        case 'searchDocsArticles':
-          result = await this.searchDocsArticles(request.params.arguments || {});
-          break;
-        case 'getDocsArticle':
-          result = await this.getDocsArticle(request.params.arguments || {});
-          break;
-        case 'listDocsRelatedArticles':
-          result = await this.listDocsRelatedArticles(request.params.arguments || {});
-          break;
-        case 'listDocsArticleRevisions':
-          result = await this.listDocsArticleRevisions(request.params.arguments || {});
-          break;
-        case 'getDocsArticleRevision':
-          result = await this.getDocsArticleRevision(request.params.arguments || {});
-          break;
-        case 'listDocsRedirects':
-          result = await this.listDocsRedirects(request.params.arguments || {});
-          break;
-        case 'getDocsRedirect':
-          result = await this.getDocsRedirect(request.params.arguments || {});
-          break;
-        case 'findDocsRedirect':
-          result = await this.findDocsRedirect(request.params.arguments || {});
-          break;
-        default:
-          throw new Error(`Unknown tool: ${request.params.name}`);
-      }
+      const result = await this.dispatchTool(
+        request.params.name,
+        request.params.arguments || {},
+      );
 
       const duration = Date.now() - startTime;
       // Add to call history for future validation
-      this.callHistory.push(request.params.name);
+      this.callHistory.push(validationToolName);
 
       const firstContent = result.content?.[0];
       if (!firstContent || firstContent.type !== 'text' || typeof firstContent.text !== 'string') {
@@ -1545,41 +1677,23 @@ export class ToolHandler {
         );
       }
       
-      // Enhance result with API constraint guidance (best-effort: never turn a success into a failure)
-      let guidanceProvided = false;
-      try {
-        const originalContent = JSON.parse(firstContent.text);
-        const guidance = HelpScoutAPIConstraints.generateToolGuidance(
-          request.params.name,
-          originalContent,
-          validationContext
-        );
-
-        if (guidance.length > 0) {
-          originalContent.apiGuidance = guidance;
-          result.content[0] = {
-            type: 'text',
-            text: JSON.stringify(originalContent, null, 2)
-          };
-          guidanceProvided = true;
-        }
-      } catch (guidanceError) {
-        logger.warn('Failed to inject API guidance into tool response', {
-          requestId,
-          toolName: request.params.name,
-          error: guidanceError instanceof Error ? guidanceError.message : String(guidanceError),
-        });
-      }
+      // Unified content-aware response guidance (NAS-1308): a single producer
+      // sets both the result body's apiGuidance and _meta.suggestedTools, driven
+      // by the actual result shape. Best-effort: never turns a success into a
+      // failure. callToolMeta applies this against the real hub name for the
+      // call_tool re-entry path, so we skip the meta-tool here to avoid a
+      // double-attach (applyResponseGuidance also no-ops on meta-tools).
+      const guided = this.applyResponseGuidance(request.params.name, result);
 
       logger.info('Tool call completed', {
         requestId,
         toolName: request.params.name,
         duration,
         validationPassed: true,
-        guidanceProvided
+        guidanceProvided: Boolean(guided._meta?.suggestedTools),
       });
 
-      return result;
+      return guided;
     } catch (error) {
       const duration = Date.now() - startTime;
       
@@ -1589,6 +1703,356 @@ export class ToolHandler {
         duration,
       });
     }
+  }
+
+  /**
+   * Dispatch a tool by name to its handler. Extracted from callTool so the
+   * call_tool meta-tool can re-enter dispatch (NAS-1305). Includes the three
+   * discovery meta-tools (search_tools / get_tool_schema / call_tool) alongside
+   * the ~55 Help Scout tools. callTool() owns logging, arg coercion, constraint
+   * validation, and guidance injection; this method is the pure name → handler
+   * switch.
+   */
+  private async dispatchTool(name: string, args: object): Promise<CallToolResult> {
+    return this.dispatchToolInner(name, args);
+  }
+
+  /**
+   * The unified content-aware response-guidance layer (NAS-1308). Replaces the
+   * two prior half-mechanisms — the static `_meta.suggestedTools` successor
+   * hints and the 2-tool `generateToolGuidance` next-step text — with a SINGLE
+   * producer (`buildResponseGuidance`) driven by what actually happened (was the
+   * result empty or populated? what real id can anchor an example?).
+   *
+   * Mutates the result in place to carry both:
+   *   - `_meta.suggestedTools`: sanitized, core/meta-filtered, capped schemas for
+   *     the logically-next tools.
+   *   - the result body's `apiGuidance` field: next-step text with a real id
+   *     interpolated into the example.
+   *
+   * Typed successor schemas are attached only in compact mode; in the default
+   * flat surface every tool is already advertised, so schema hints are
+   * redundant. Meta-tool results are never guided. Total:
+   * never throws and never turns a success into a failure — on any failure the
+   * original result is returned untouched. Keyed on the dispatched tool name, so
+   * when call_tool re-enters a hub tool the guidance is attached against the real
+   * hub name (callToolMeta invokes this after dispatch).
+   */
+  private applyResponseGuidance(name: string, result: CallToolResult): CallToolResult {
+    try {
+      if ((ToolHandler.META_TOOLS as readonly string[]).includes(name)) {
+        return result;
+      }
+
+      // Parse the primary text payload once (needed for both shape classification
+      // and apiGuidance injection). If it isn't JSON text we can still attach the
+      // static-fallback schema hints, just with no content-aware text.
+      const firstContent = result.content?.[0];
+      let parsedBody: unknown;
+      if (firstContent && firstContent.type === 'text' && typeof firstContent.text === 'string') {
+        try {
+          parsedBody = JSON.parse(firstContent.text);
+        } catch {
+          parsedBody = undefined;
+        }
+      }
+
+      const guidance = buildResponseGuidance(name, parsedBody, {
+        toolDefs: this.allToolDefs(),
+        coreTools: ToolHandler.CORE_TOOLS,
+        metaTools: ToolHandler.META_TOOLS,
+        successorMap: ToolHandler.SUCCESSOR_MAP,
+      });
+
+      // Inject next-step text into the result body (only when we have a parsed
+      // JSON body to extend, mirroring the prior apiGuidance behavior).
+      if (
+        guidance.apiGuidance &&
+        guidance.apiGuidance.length > 0 &&
+        parsedBody &&
+        typeof parsedBody === 'object' &&
+        !Array.isArray(parsedBody)
+      ) {
+        (parsedBody as Record<string, unknown>).apiGuidance = guidance.apiGuidance;
+        result.content[0] = {
+          type: 'text',
+          text: JSON.stringify(parsedBody, null, 2),
+        };
+      }
+
+      // Attach typed successor schemas only in compact mode.
+      if (this.isCompactToolSurface() && guidance.suggestedTools && guidance.suggestedTools.length > 0) {
+        result._meta = { ...result._meta, suggestedTools: guidance.suggestedTools };
+      }
+
+      return result;
+    } catch {
+      return result;
+    }
+  }
+
+  /**
+   * The pure name → handler switch. Extracted from dispatchTool so the latter
+   * can attach successor hints around it (NAS-1305 phase 3).
+   */
+  private async dispatchToolInner(name: string, args: object): Promise<CallToolResult> {
+    switch (name) {
+      // --- Discovery meta-tools (NAS-1305) ---
+      case 'search_tools':
+        return this.searchTools(args);
+      case 'get_tool_schema':
+        return this.getToolSchema(args);
+      case 'call_tool':
+        return this.callToolMeta(args);
+
+      case 'searchConversations':
+        return this.searchConversations(args);
+      case 'getConversation':
+        return this.getConversation(args);
+      case 'getConversationSummary':
+        return this.getConversationSummary(args);
+      case 'getThreads':
+        return this.getThreads(args);
+      case 'getServerTime':
+        return this.getServerTime();
+      case 'listAllInboxes':
+        return this.listAllInboxes(args);
+      case 'getInbox':
+        return this.getInbox(args);
+      case 'getCustomer':
+        return this.getCustomer(args);
+      case 'listCustomers':
+        return this.listCustomers(args);
+      case 'searchCustomersByEmail':
+        return this.searchCustomersByEmail(args);
+      case 'getCustomerContacts':
+        return this.getCustomerContacts(args);
+      case 'getOrganization':
+        return this.getOrganization(args);
+      case 'listOrganizations':
+        return this.listOrganizations(args);
+      case 'getOrganizationMembers':
+        return this.getOrganizationMembers(args);
+      case 'getOrganizationConversations':
+        return this.getOrganizationConversations(args);
+      case 'listCustomerProperties':
+        return this.listCustomerProperties(args);
+      case 'listOrganizationProperties':
+        return this.listOrganizationProperties(args);
+      case 'getOrganizationProperty':
+        return this.getOrganizationProperty(args);
+      case 'listTags':
+        return this.listTags(args);
+      case 'getTag':
+        return this.getTag(args);
+      case 'listUsers':
+        return this.listUsers(args);
+      case 'getUser':
+        return this.getUser(args);
+      case 'listTeams':
+        return this.listTeams(args);
+      case 'getTeamMembers':
+        return this.getTeamMembers(args);
+      case 'listSavedReplies':
+        return this.listSavedReplies(args);
+      case 'getSavedReply':
+        return this.getSavedReply(args);
+      case 'getOriginalSource':
+        return this.getOriginalSource(args);
+      case 'getAttachment':
+        return this.getAttachment(args);
+      case 'downloadAttachmentFile':
+        return this.downloadAttachmentFile(args);
+      case 'listWorkflows':
+        return this.listWorkflows(args);
+      case 'listWebhooks':
+        return this.listWebhooks(args);
+      case 'getWebhook':
+        return this.getWebhook(args);
+      case 'getSatisfactionRating':
+        return this.getSatisfactionRating(args);
+      case 'getCompanyReport':
+        return this.getCompanyReport(args);
+      case 'getConversationsReport':
+        return this.getConversationsReport(args);
+      case 'getProductivityReport':
+        return this.getProductivityReport(args);
+      case 'getUserReport':
+        return this.getUserReport(args);
+      case 'getHappinessReport':
+        return this.getHappinessReport(args);
+      case 'getChannelReport':
+        return this.getChannelReport(args);
+      case 'getDocsReport':
+        return this.getDocsReport(args);
+      case 'listDocsSites':
+        return this.listDocsSites(args);
+      case 'getDocsSite':
+        return this.getDocsSite(args);
+      case 'listDocsCollections':
+        return this.listDocsCollections(args);
+      case 'getDocsCollection':
+        return this.getDocsCollection(args);
+      case 'listDocsCategories':
+        return this.listDocsCategories(args);
+      case 'getDocsCategory':
+        return this.getDocsCategory(args);
+      case 'listDocsArticles':
+        return this.listDocsArticles(args);
+      case 'searchDocsArticles':
+        return this.searchDocsArticles(args);
+      case 'getDocsArticle':
+        return this.getDocsArticle(args);
+      case 'listDocsRelatedArticles':
+        return this.listDocsRelatedArticles(args);
+      case 'listDocsArticleRevisions':
+        return this.listDocsArticleRevisions(args);
+      case 'getDocsArticleRevision':
+        return this.getDocsArticleRevision(args);
+      case 'listDocsRedirects':
+        return this.listDocsRedirects(args);
+      case 'getDocsRedirect':
+        return this.getDocsRedirect(args);
+      case 'findDocsRedirect':
+        return this.findDocsRedirect(args);
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
+  /**
+   * Build a plain text-content CallToolResult from a JSON-serializable payload,
+   * the standard shape used by every handler in this file.
+   */
+  private jsonResult(payload: unknown): CallToolResult {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+
+  /**
+   * search_tools meta handler (NAS-1305). BM25-ish keyword rank over each tool's
+   * name + description, expanded with the Help Scout synonym map, with a boost
+   * for name matches. Returns the top matches as { name, description } only (no
+   * schemas — that is get_tool_schema's job). Core + meta tools are excluded
+   * from results because they are already loaded.
+   */
+  private async searchTools(args: unknown): Promise<CallToolResult> {
+    const query = isPlainRecord(args) && typeof args.query === 'string' ? args.query : '';
+    const terms = tokenize(query);
+
+    if (terms.length === 0) {
+      return this.jsonResult({
+        query,
+        results: [],
+        message: 'Provide one or more keywords to search the Help Scout tool catalog (e.g. "report", "attachment", "tags").',
+      });
+    }
+
+    // Expand query terms with synonyms so e.g. "mailbox" also matches "inbox".
+    const expanded = new Set(terms);
+    for (const group of ToolHandler.SYNONYM_GROUPS) {
+      if (group.some((word) => expanded.has(word))) {
+        for (const word of group) {
+          expanded.add(word);
+        }
+      }
+    }
+
+    const excluded = new Set<string>([...ToolHandler.CORE_TOOLS, ...ToolHandler.META_TOOLS]);
+    const candidates = this.allToolDefs().filter((tool) => !excluded.has(tool.name));
+
+    const scored = candidates
+      .map((tool) => ({ tool, score: scoreTool(tool, terms, expanded) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+
+    if (scored.length === 0) {
+      return this.jsonResult({
+        query,
+        results: [],
+        message: `No tools matched "${query}". Broaden or rephrase your terms (e.g. try "report", "customer", "docs", "inbox").`,
+      });
+    }
+
+    return this.jsonResult({
+      query,
+      results: scored.map(({ tool }) => ({ name: tool.name, description: tool.description })),
+      next: 'Call get_tool_schema with one of these names to load its input schema, then call_tool to invoke it.',
+    });
+  }
+
+  /**
+   * get_tool_schema meta handler (NAS-1305). Returns the sanitized inputSchema
+   * (plus description) for each requested name. Unknown names get an entry
+   * flagging them and pointing back at search_tools.
+   */
+  private async getToolSchema(args: unknown): Promise<CallToolResult> {
+    const rawNames = isPlainRecord(args) ? args.names : undefined;
+    const names = Array.isArray(rawNames) ? rawNames.filter((n): n is string => typeof n === 'string') : [];
+
+    if (names.length === 0) {
+      return this.jsonResult({
+        error: 'get_tool_schema requires a non-empty `names` array of tool names.',
+        hint: 'Use search_tools to find tool names first.',
+      });
+    }
+
+    const byName = new Map(this.allToolDefs().map((tool) => [tool.name, tool]));
+    const schemas = names.map((name) => {
+      const tool = byName.get(name);
+      if (!tool) {
+        return {
+          name,
+          unknown: true,
+          message: `Unknown tool '${name}'. Use search_tools to find the correct name.`,
+        };
+      }
+      return { name: tool.name, description: tool.description, inputSchema: tool.inputSchema };
+    });
+
+    return this.jsonResult({ schemas });
+  }
+
+  /**
+   * call_tool meta handler (NAS-1305). Invokes any real Help Scout tool by name
+   * with coerced arguments, by re-entering dispatchTool. Rejects meta-tools
+   * (recursion guard) and unknown names with an actionable error.
+   */
+  private async callToolMeta(args: unknown): Promise<CallToolResult> {
+    const name = isPlainRecord(args) && typeof args.name === 'string' ? args.name : '';
+    const innerArgs =
+      isPlainRecord(args) && isPlainRecord(args.arguments) ? args.arguments : {};
+
+    if (!name) {
+      return this.jsonResult({
+        error: 'call_tool requires a `name` (the tool to invoke) and an `arguments` object.',
+        hint: 'Use search_tools to find a tool, then get_tool_schema to load its arguments.',
+      });
+    }
+
+    // Recursion guard: call_tool must not invoke itself or the other meta-tools.
+    if ((ToolHandler.META_TOOLS as readonly string[]).includes(name)) {
+      return this.jsonResult({
+        error: `call_tool cannot invoke the meta-tool '${name}'. Call search_tools / get_tool_schema / call_tool directly instead.`,
+      });
+    }
+
+    const tool = this.allToolDefs().find((candidate) => candidate.name === name);
+    if (!tool) {
+      return this.jsonResult({
+        error: `Unknown tool '${name}'. Use search_tools to find it.`,
+      });
+    }
+
+    const coerced = coerceJsonStringArgs(innerArgs, tool.inputSchema ?? {}) as object;
+    const dispatched = await this.dispatchTool(name, coerced);
+    // Apply unified response guidance against the REAL hub name so the hint +
+    // next-step text ride along (NAS-1308). The outer callTool() guidance pass
+    // sees only the `call_tool` meta name and no-ops, leaving this as the single
+    // attach for the re-entry path.
+    return this.applyResponseGuidance(name, dispatched);
   }
 
 

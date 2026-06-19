@@ -5,7 +5,7 @@ on:
     branches: [ main ]        # Only main triggers CI/CD
     tags: [ 'v*' ]           # Tags trigger Docker builds
   pull_request:
-    branches: [ main ]        # PRs to main get tested
+    branches: [ main, dev ]   # PRs to main/dev get tested
   workflow_dispatch:          # Allow manual triggering
 
 permissions:

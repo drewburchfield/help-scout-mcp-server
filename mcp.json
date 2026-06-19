@@ -64,7 +64,10 @@
     "getDocsArticleRevision",
     "listDocsRedirects",
     "getDocsRedirect",
-    "findDocsRedirect"
+    "findDocsRedirect",
+    "search_tools",
+    "get_tool_schema",
+    "call_tool"
   ],
   "prompts": [
     "search-last-7-days",

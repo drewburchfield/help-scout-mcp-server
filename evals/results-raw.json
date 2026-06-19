@@ -1,0 +1,3900 @@
+{
+  "generatedAt": "2026-06-17T18:02:52.152Z",
+  "models": [
+    "gemini-3-flash",
+    "gemini-3.1-pro-low",
+    "gpt-5.5",
+    "gpt-5.4-mini",
+    "glm-4.7",
+    "glm-4-plus"
+  ],
+  "toolsListTokens": {
+    "control": 17071,
+    "treatment": 9301
+  },
+  "modelAvailable": {
+    "gemini-3-flash": {
+      "available": true
+    },
+    "gemini-3.1-pro-low": {
+      "available": true
+    },
+    "gpt-5.5": {
+      "available": false,
+      "unavailableReason": "The usage limit has been reached"
+    },
+    "gpt-5.4-mini": {
+      "available": false,
+      "unavailableReason": "The usage limit has been reached"
+    },
+    "glm-4.7": {
+      "available": true
+    },
+    "glm-4-plus": {
+      "available": false,
+      "unavailableReason": "missing provider baseURL"
+    }
+  },
+  "records": [
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 0,
+      "prompt": "Find all conversations belonging to customer ID 4815.",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 0,
+      "prompt": "Find all conversations belonging to customer ID 4815.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 1,
+      "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+      "surface": "control",
+      "expectedSet": [
+        "advancedConversationSearch",
+        "comprehensiveConversationSearch",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 1,
+      "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 2,
+      "prompt": "Which conversations are currently assigned to user 99?",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 2,
+      "prompt": "Which conversations are currently assigned to user 99?",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "assignedTo": 99
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "assignedTo": 99
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "assignedTo": 99
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 3,
+      "prompt": "Get the team's average first response time report.",
+      "surface": "control",
+      "expectedSet": [
+        "getProductivityFirstResponseTimeReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 3,
+      "prompt": "Get the team's average first response time report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getProductivityReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 4,
+      "prompt": "How many conversations came in, broken down by channel?",
+      "surface": "control",
+      "expectedSet": [
+        "getConversationVolumeByChannelReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 4,
+      "prompt": "How many conversations came in, broken down by channel?",
+      "surface": "treatment",
+      "expectedSet": [
+        "getConversationsReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 5,
+      "prompt": "Show the company happiness ratings list.",
+      "surface": "control",
+      "expectedSet": [
+        "getHappinessRatingsReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 5,
+      "prompt": "Show the company happiness ratings list.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getHappinessReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 6,
+      "prompt": "Get the email channel report.",
+      "surface": "control",
+      "expectedSet": [
+        "getEmailReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 6,
+      "prompt": "Get the email channel report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getChannelReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 7,
+      "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+      "surface": "control",
+      "expectedSet": [
+        "getCustomerContacts",
+        "listCustomerEmails"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 7,
+      "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getCustomerContacts"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 8,
+      "prompt": "Show the custom fields and folders configured on inbox 123.",
+      "surface": "control",
+      "expectedSet": [
+        "listInboxCustomFields",
+        "listInboxFolders"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 8,
+      "prompt": "Show the custom fields and folders configured on inbox 123.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getInbox"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getInbox",
+          "args": {
+            "include": [
+              "fields",
+              "folders"
+            ],
+            "inboxId": "123"
+          }
+        },
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        },
+        {
+          "name": "getInbox",
+          "args": {
+            "include": [
+              "fields",
+              "folders"
+            ],
+            "inboxId": "123"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 9,
+      "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+      "surface": "control",
+      "expectedSet": [
+        "getOriginalSourceRfc822"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 9,
+      "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getOriginalSource"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "threadId": "7",
+            "format": "rfc822",
+            "conversationId": "5"
+          }
+        },
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "conversationId": "5",
+            "format": "rfc822",
+            "threadId": "7"
+          }
+        },
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "threadId": "7",
+            "format": "rfc822",
+            "conversationId": "5"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 10,
+      "prompt": "List the inboxes whose name contains 'Sales'.",
+      "surface": "control",
+      "expectedSet": [
+        "searchInboxes"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 10,
+      "prompt": "List the inboxes whose name contains 'Sales'.",
+      "surface": "treatment",
+      "expectedSet": [
+        "listAllInboxes"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales"
+          }
+        },
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales"
+          }
+        },
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 11,
+      "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+      "surface": "control",
+      "expectedSet": [
+        "getConversationV3"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 11,
+      "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getConversation"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getConversation",
+          "args": {
+            "includeSystemActors": true,
+            "conversationId": "900"
+          }
+        },
+        {
+          "name": "getConversation",
+          "args": {
+            "conversationId": "900",
+            "includeSystemActors": true
+          }
+        },
+        {
+          "name": "getConversation",
+          "args": {
+            "includeSystemActors": true,
+            "conversationId": "900"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 12,
+      "prompt": "What is user 12's current availability status?",
+      "surface": "control",
+      "expectedSet": [
+        "getUserStatus"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 12,
+      "prompt": "What is user 12's current availability status?",
+      "surface": "treatment",
+      "expectedSet": [
+        "getUser"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getUser",
+          "args": {
+            "includeStatus": true,
+            "userId": "12"
+          }
+        },
+        {
+          "name": "getUser",
+          "args": {
+            "userId": "12",
+            "includeStatus": true
+          }
+        },
+        {
+          "name": "getUser",
+          "args": {
+            "userId": "12",
+            "includeStatus": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 13,
+      "prompt": "Find conversations that have attachments in inbox 50.",
+      "surface": "control",
+      "expectedSet": [
+        "advancedConversationSearch",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 13,
+      "prompt": "Find conversations that have attachments in inbox 50.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "hasAttachments": true
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "hasAttachments": true,
+            "inboxId": "50"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "hasAttachments": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 14,
+      "prompt": "Show the productivity resolution time report.",
+      "surface": "control",
+      "expectedSet": [
+        "getProductivityResolutionTimeReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 14,
+      "prompt": "Show the productivity resolution time report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getProductivityReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 15,
+      "prompt": "Get all conversations for organization 33911683.",
+      "surface": "control",
+      "expectedSet": [
+        "getOrganizationConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 15,
+      "prompt": "Get all conversations for organization 33911683.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getOrganizationConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 16,
+      "prompt": "Search the knowledge base articles about 'billing'.",
+      "surface": "control",
+      "expectedSet": [
+        "searchDocsArticles"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 16,
+      "prompt": "Search the knowledge base articles about 'billing'.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchDocsArticles"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 17,
+      "prompt": "Get docs site 5 along with its access restriction settings.",
+      "surface": "control",
+      "expectedSet": [
+        "getDocsSiteRestrictions",
+        "getDocsSite"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 17,
+      "prompt": "Get docs site 5 along with its access restriction settings.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getDocsSite"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5",
+            "includeRestrictions": true
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "includeRestrictions": true,
+            "siteId": "5"
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "includeRestrictions": true,
+            "siteId": "5"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 18,
+      "prompt": "Get user 7's replies-sent report.",
+      "surface": "control",
+      "expectedSet": [
+        "getUserRepliesReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 18,
+      "prompt": "Get user 7's replies-sent report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getUserReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 19,
+      "prompt": "List conversations in 'closed' status from inbox 42.",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3-flash",
+      "taskIndex": 19,
+      "prompt": "List conversations in 'closed' status from inbox 42.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "42",
+            "status": "closed"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "42",
+            "status": "closed"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 0,
+      "prompt": "Find all conversations belonging to customer ID 4815.",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 0,
+      "prompt": "Find all conversations belonging to customer ID 4815.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ],
+            "_": true
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": true,
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ],
+            "_": {}
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 1,
+      "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+      "surface": "control",
+      "expectedSet": [
+        "advancedConversationSearch",
+        "comprehensiveConversationSearch",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 1,
+      "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ],
+            "_": true
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": {},
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": true,
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 2,
+      "prompt": "Which conversations are currently assigned to user 99?",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 2,
+      "prompt": "Which conversations are currently assigned to user 99?",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": true,
+            "assignedTo": 99
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": true,
+            "assignedTo": 99
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": true,
+            "assignedTo": 99
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 3,
+      "prompt": "Get the team's average first response time report.",
+      "surface": "control",
+      "expectedSet": [
+        "getProductivityFirstResponseTimeReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 3,
+      "prompt": "Get the team's average first response time report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getProductivityReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.6666666666666666,
+      "paramAvg": 0.6666666666666666,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getProductivityReport",
+          "args": {
+            "start": "2024-01-01T00:00:00Z",
+            "report": "first-response-time",
+            "end": "2024-12-31T23:59:59Z"
+          }
+        },
+        {
+          "name": "getServerTime",
+          "args": {
+            "reason": "Need current timestamp to calculate start and end dates for the first-response-time productivity report"
+          }
+        },
+        {
+          "name": "getProductivityReport",
+          "args": {
+            "report": "first-response-time",
+            "end": "2024-04-30T23:59:59Z",
+            "start": "2024-04-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 4,
+      "prompt": "How many conversations came in, broken down by channel?",
+      "surface": "control",
+      "expectedSet": [
+        "getConversationVolumeByChannelReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 4,
+      "prompt": "How many conversations came in, broken down by channel?",
+      "surface": "treatment",
+      "expectedSet": [
+        "getConversationsReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getConversationsReport",
+          "args": {
+            "start": "2024-01-01T00:00:00Z",
+            "report": "volume-by-channel",
+            "end": "2024-01-31T23:59:59Z"
+          }
+        },
+        {
+          "name": "getConversationsReport",
+          "args": {
+            "end": "2024-04-30T23:59:59Z",
+            "start": "2024-04-01T00:00:00Z",
+            "report": "volume-by-channel"
+          }
+        },
+        {
+          "name": "getConversationsReport",
+          "args": {
+            "end": "2024-04-30T23:59:59Z",
+            "report": "volume-by-channel",
+            "start": "2024-04-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 5,
+      "prompt": "Show the company happiness ratings list.",
+      "surface": "control",
+      "expectedSet": [
+        "getHappinessRatingsReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 5,
+      "prompt": "Show the company happiness ratings list.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getHappinessReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getHappinessReport",
+          "args": {
+            "start": "2024-01-01T00:00:00Z",
+            "report": "ratings",
+            "end": "2024-12-31T23:59:59Z"
+          }
+        },
+        {
+          "name": "getHappinessReport",
+          "args": {
+            "report": "ratings",
+            "start": "2024-01-01T00:00:00Z",
+            "end": "2024-12-31T23:59:59Z"
+          }
+        },
+        {
+          "name": "getHappinessReport",
+          "args": {
+            "end": "2024-12-31T23:59:59Z",
+            "report": "ratings",
+            "start": "2024-01-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 6,
+      "prompt": "Get the email channel report.",
+      "surface": "control",
+      "expectedSet": [
+        "getEmailReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 6,
+      "prompt": "Get the email channel report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getChannelReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getChannelReport",
+          "args": {
+            "start": "2024-01-01T00:00:00Z",
+            "channel": "email",
+            "end": "2024-01-31T23:59:59Z"
+          }
+        },
+        {
+          "name": "getChannelReport",
+          "args": {
+            "end": "2024-05-31T23:59:59Z",
+            "start": "2024-05-01T00:00:00Z",
+            "channel": "email"
+          }
+        },
+        {
+          "name": "getChannelReport",
+          "args": {
+            "end": "2024-05-31T23:59:59Z",
+            "channel": "email",
+            "start": "2024-05-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 7,
+      "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+      "surface": "control",
+      "expectedSet": [
+        "getCustomerContacts",
+        "listCustomerEmails"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 7,
+      "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getCustomerContacts"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 8,
+      "prompt": "Show the custom fields and folders configured on inbox 123.",
+      "surface": "control",
+      "expectedSet": [
+        "listInboxCustomFields",
+        "listInboxFolders"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 8,
+      "prompt": "Show the custom fields and folders configured on inbox 123.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getInbox"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        },
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        },
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 9,
+      "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+      "surface": "control",
+      "expectedSet": [
+        "getOriginalSourceRfc822"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 9,
+      "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getOriginalSource"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "threadId": "7",
+            "format": "rfc822",
+            "conversationId": "5"
+          }
+        },
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "format": "rfc822",
+            "conversationId": "5",
+            "threadId": "7"
+          }
+        },
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "conversationId": "5",
+            "format": "rfc822",
+            "threadId": "7"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 10,
+      "prompt": "List the inboxes whose name contains 'Sales'.",
+      "surface": "control",
+      "expectedSet": [
+        "searchInboxes"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 10,
+      "prompt": "List the inboxes whose name contains 'Sales'.",
+      "surface": "treatment",
+      "expectedSet": [
+        "listAllInboxes"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales",
+            "_": true
+          }
+        },
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "_": true,
+            "nameContains": "Sales"
+          }
+        },
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales",
+            "_": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 11,
+      "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+      "surface": "control",
+      "expectedSet": [
+        "getConversationV3"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 11,
+      "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getConversation"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.6666666666666666,
+      "paramAvg": 0.6666666666666666,
+      "allError": false,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "getConversation",
+          "args": {
+            "includeSystemActors": true,
+            "conversationId": "900"
+          }
+        },
+        {
+          "name": "getConversation",
+          "args": {
+            "conversationId": "900",
+            "includeSystemActors": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 12,
+      "prompt": "What is user 12's current availability status?",
+      "surface": "control",
+      "expectedSet": [
+        "getUserStatus"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 12,
+      "prompt": "What is user 12's current availability status?",
+      "surface": "treatment",
+      "expectedSet": [
+        "getUser"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getUser",
+          "args": {
+            "includeStatus": true,
+            "userId": "12"
+          }
+        },
+        {
+          "name": "getUser",
+          "args": {
+            "includeStatus": true,
+            "userId": "12"
+          }
+        },
+        {
+          "name": "getUser",
+          "args": {
+            "userId": "12",
+            "includeStatus": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 13,
+      "prompt": "Find conversations that have attachments in inbox 50.",
+      "surface": "control",
+      "expectedSet": [
+        "advancedConversationSearch",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 13,
+      "prompt": "Find conversations that have attachments in inbox 50.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 0.6666666666666666,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "_true,hasAttachments": true
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "hasAttachments": true,
+            "_": true,
+            "inboxId": "50"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "hasAttachments": true,
+            "_": true,
+            "inboxId": "50"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 14,
+      "prompt": "Show the productivity resolution time report.",
+      "surface": "control",
+      "expectedSet": [
+        "getProductivityResolutionTimeReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 14,
+      "prompt": "Show the productivity resolution time report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getProductivityReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.6666666666666666,
+      "paramAvg": 0.6666666666666666,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getProductivityReport",
+          "args": {
+            "end": "2024-12-31T23:59:59Z",
+            "report": "resolution-time",
+            "start": "2024-01-01T00:00:00Z"
+          }
+        },
+        {
+          "name": "getServerTime",
+          "args": {
+            "reason": "Need current date to calculate start and end times for the productivity resolution time report."
+          }
+        },
+        {
+          "name": "getProductivityReport",
+          "args": {
+            "report": "resolution-time",
+            "end": "2024-01-31T23:59:59Z",
+            "start": "2024-01-01T00:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 15,
+      "prompt": "Get all conversations for organization 33911683.",
+      "surface": "control",
+      "expectedSet": [
+        "getOrganizationConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 15,
+      "prompt": "Get all conversations for organization 33911683.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getOrganizationConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 16,
+      "prompt": "Search the knowledge base articles about 'billing'.",
+      "surface": "control",
+      "expectedSet": [
+        "searchDocsArticles"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 16,
+      "prompt": "Search the knowledge base articles about 'billing'.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchDocsArticles"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 17,
+      "prompt": "Get docs site 5 along with its access restriction settings.",
+      "surface": "control",
+      "expectedSet": [
+        "getDocsSiteRestrictions",
+        "getDocsSite"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 17,
+      "prompt": "Get docs site 5 along with its access restriction settings.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getDocsSite"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5",
+            "includeRestrictions": true
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5",
+            "includeRestrictions": true
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "includeRestrictions": true,
+            "siteId": "5"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 18,
+      "prompt": "Get user 7's replies-sent report.",
+      "surface": "control",
+      "expectedSet": [
+        "getUserRepliesReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 18,
+      "prompt": "Get user 7's replies-sent report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getUserReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.6666666666666666,
+      "paramAvg": 0.6666666666666666,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getUserReport",
+          "args": {
+            "report": "replies",
+            "start": "2024-01-01T00:00:00Z",
+            "end": "2024-12-31T23:59:59Z",
+            "user": 7
+          }
+        },
+        {
+          "name": "getUserReport",
+          "args": {
+            "report": "replies",
+            "user": 7,
+            "end": "2024-05-01T00:00:00Z",
+            "start": "2024-04-01T00:00:00Z"
+          }
+        },
+        {
+          "name": "getServerTime",
+          "args": {
+            "reason": "Need current date to calculate start and end dates for user 7's replies report"
+          }
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 19,
+      "prompt": "List conversations in 'closed' status from inbox 42.",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        },
+        {
+          "name": "ERR:* GenerateContentRequest.tools[0].function_declarations[12].",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "taskIndex": 19,
+      "prompt": "List conversations in 'closed' status from inbox 42.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "_": true,
+            "status": "closed",
+            "inboxId": "42"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "42",
+            "_": true,
+            "status": "closed"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "_ खाम,inboxId": "42",
+            "status": "closed"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 0,
+      "prompt": "Find all conversations belonging to customer ID 4815.",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "structuredConversationFilter",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "structuredConversationFilter",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "structuredConversationFilter",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 0,
+      "prompt": "Find all conversations belonging to customer ID 4815.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "customerIds": [
+              4815
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 1,
+      "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+      "surface": "control",
+      "expectedSet": [
+        "advancedConversationSearch",
+        "comprehensiveConversationSearch",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "comprehensiveConversationSearch",
+          "args": {
+            "searchTerms": [
+              "refund"
+            ],
+            "searchIn": [
+              "body"
+            ]
+          }
+        },
+        {
+          "name": "comprehensiveConversationSearch",
+          "args": {
+            "searchTerms": [
+              "refund"
+            ],
+            "searchIn": [
+              "body"
+            ]
+          }
+        },
+        {
+          "name": "comprehensiveConversationSearch",
+          "args": {
+            "searchTerms": [
+              "refund"
+            ],
+            "searchIn": [
+              "body"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 1,
+      "prompt": "Show me support tickets that mention the word 'refund' in the message body.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "contentTerms": [
+              "refund"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 2,
+      "prompt": "Which conversations are currently assigned to user 99?",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "structuredConversationFilter",
+          "args": {
+            "assignedTo": 99,
+            "status": "active"
+          }
+        },
+        {
+          "name": "structuredConversationFilter",
+          "args": {
+            "assignedTo": 99,
+            "sortBy": "createdAt",
+            "sortOrder": "desc"
+          }
+        },
+        {
+          "name": "structuredConversationFilter",
+          "args": {
+            "assignedTo": 99
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 2,
+      "prompt": "Which conversations are currently assigned to user 99?",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "assignedTo": 99
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "assignedTo": 99
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "assignedTo": 99
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 3,
+      "prompt": "Get the team's average first response time report.",
+      "surface": "control",
+      "expectedSet": [
+        "getProductivityFirstResponseTimeReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "listTeams",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 3,
+      "prompt": "Get the team's average first response time report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getProductivityReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 4,
+      "prompt": "How many conversations came in, broken down by channel?",
+      "surface": "control",
+      "expectedSet": [
+        "getConversationVolumeByChannelReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 4,
+      "prompt": "How many conversations came in, broken down by channel?",
+      "surface": "treatment",
+      "expectedSet": [
+        "getConversationsReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.3333333333333333,
+      "paramAvg": 0.3333333333333333,
+      "allError": false,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getConversationsReport",
+          "args": {
+            "report": "volume-by-channel",
+            "start": "2024-12-01T00:00:00Z",
+            "end": "2025-01-12T23:59:59Z"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 5,
+      "prompt": "Show the company happiness ratings list.",
+      "surface": "control",
+      "expectedSet": [
+        "getHappinessRatingsReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 5,
+      "prompt": "Show the company happiness ratings list.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getHappinessReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 6,
+      "prompt": "Get the email channel report.",
+      "surface": "control",
+      "expectedSet": [
+        "getEmailReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 6,
+      "prompt": "Get the email channel report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getChannelReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 7,
+      "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+      "surface": "control",
+      "expectedSet": [
+        "getCustomerContacts",
+        "listCustomerEmails"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 7,
+      "prompt": "Get all contact details (emails, phones, address) for customer 500.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getCustomerContacts"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        },
+        {
+          "name": "getCustomerContacts",
+          "args": {
+            "customerId": "500"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 8,
+      "prompt": "Show the custom fields and folders configured on inbox 123.",
+      "surface": "control",
+      "expectedSet": [
+        "listInboxCustomFields",
+        "listInboxFolders"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "listInboxCustomFields",
+          "args": {
+            "inboxId": "123"
+          }
+        },
+        {
+          "name": "listInboxCustomFields",
+          "args": {
+            "inboxId": "123"
+          }
+        },
+        {
+          "name": "listInboxCustomFields",
+          "args": {
+            "inboxId": "123"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 8,
+      "prompt": "Show the custom fields and folders configured on inbox 123.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getInbox"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        },
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        },
+        {
+          "name": "getInbox",
+          "args": {
+            "inboxId": "123",
+            "include": [
+              "fields",
+              "folders"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 9,
+      "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+      "surface": "control",
+      "expectedSet": [
+        "getOriginalSourceRfc822"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.6666666666666666,
+      "paramAvg": 0.6666666666666666,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOriginalSourceRfc822",
+          "args": {
+            "conversationId": "5",
+            "threadId": "7"
+          }
+        },
+        {
+          "name": "getOriginalSourceRfc822",
+          "args": {
+            "conversationId": "5",
+            "threadId": "7"
+          }
+        },
+        {
+          "name": "getThreads",
+          "args": {
+            "conversationId": "5"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 9,
+      "prompt": "Get the raw RFC 822 email source of thread 7 in conversation 5.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getOriginalSource"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "conversationId": "5",
+            "threadId": "7",
+            "format": "rfc822"
+          }
+        },
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "conversationId": "5",
+            "threadId": "7",
+            "format": "rfc822"
+          }
+        },
+        {
+          "name": "getOriginalSource",
+          "args": {
+            "conversationId": "5",
+            "threadId": "7",
+            "format": "rfc822"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 10,
+      "prompt": "List the inboxes whose name contains 'Sales'.",
+      "surface": "control",
+      "expectedSet": [
+        "searchInboxes"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchInboxes",
+          "args": {
+            "query": "Sales"
+          }
+        },
+        {
+          "name": "searchInboxes",
+          "args": {
+            "query": "Sales"
+          }
+        },
+        {
+          "name": "searchInboxes",
+          "args": {
+            "query": "Sales"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 10,
+      "prompt": "List the inboxes whose name contains 'Sales'.",
+      "surface": "treatment",
+      "expectedSet": [
+        "listAllInboxes"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales"
+          }
+        },
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales"
+          }
+        },
+        {
+          "name": "listAllInboxes",
+          "args": {
+            "nameContains": "Sales"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 11,
+      "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+      "surface": "control",
+      "expectedSet": [
+        "getConversationV3"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getConversationV3",
+          "args": {
+            "conversationId": "900"
+          }
+        },
+        {
+          "name": "getConversationV3",
+          "args": {
+            "conversationId": "900"
+          }
+        },
+        {
+          "name": "getConversationV3",
+          "args": {
+            "conversationId": "900",
+            "embed": "threads"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 11,
+      "prompt": "Get conversation 900, preserving the distinction for AI/system agent actors.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getConversation"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getConversation",
+          "args": {
+            "conversationId": "900",
+            "includeSystemActors": true
+          }
+        },
+        {
+          "name": "getConversation",
+          "args": {
+            "conversationId": "900",
+            "includeSystemActors": true
+          }
+        },
+        {
+          "name": "getConversation",
+          "args": {
+            "conversationId": "900",
+            "includeSystemActors": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 12,
+      "prompt": "What is user 12's current availability status?",
+      "surface": "control",
+      "expectedSet": [
+        "getUserStatus"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getUserStatus",
+          "args": {
+            "userId": "12"
+          }
+        },
+        {
+          "name": "getUserStatus",
+          "args": {
+            "userId": "12"
+          }
+        },
+        {
+          "name": "getUserStatus",
+          "args": {
+            "userId": "12"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 12,
+      "prompt": "What is user 12's current availability status?",
+      "surface": "treatment",
+      "expectedSet": [
+        "getUser"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getUser",
+          "args": {
+            "userId": "12",
+            "includeStatus": true
+          }
+        },
+        {
+          "name": "getUser",
+          "args": {
+            "userId": "12",
+            "includeStatus": true
+          }
+        },
+        {
+          "name": "getUser",
+          "args": {
+            "userId": "12",
+            "includeStatus": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 13,
+      "prompt": "Find conversations that have attachments in inbox 50.",
+      "surface": "control",
+      "expectedSet": [
+        "advancedConversationSearch",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "query": "has:attachments"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "limit": 100,
+            "status": "all"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "query": "has:attachments"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 13,
+      "prompt": "Find conversations that have attachments in inbox 50.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "hasAttachments": true
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "hasAttachments": true
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "inboxId": "50",
+            "hasAttachments": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 14,
+      "prompt": "Show the productivity resolution time report.",
+      "surface": "control",
+      "expectedSet": [
+        "getProductivityResolutionTimeReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 14,
+      "prompt": "Show the productivity resolution time report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getProductivityReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0.3333333333333333,
+      "paramAvg": 0.3333333333333333,
+      "allError": false,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "getProductivityReport",
+          "args": {
+            "report": "resolution-time",
+            "start": "2024-12-01T00:00:00Z",
+            "end": "2024-12-31T23:59:59Z"
+          }
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 15,
+      "prompt": "Get all conversations for organization 33911683.",
+      "surface": "control",
+      "expectedSet": [
+        "getOrganizationConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683",
+            "page": 1
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683",
+            "page": 1
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 15,
+      "prompt": "Get all conversations for organization 33911683.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getOrganizationConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        },
+        {
+          "name": "getOrganizationConversations",
+          "args": {
+            "organizationId": "33911683"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 16,
+      "prompt": "Search the knowledge base articles about 'billing'.",
+      "surface": "control",
+      "expectedSet": [
+        "searchDocsArticles"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 16,
+      "prompt": "Search the knowledge base articles about 'billing'.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchDocsArticles"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        },
+        {
+          "name": "searchDocsArticles",
+          "args": {
+            "query": "billing"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 17,
+      "prompt": "Get docs site 5 along with its access restriction settings.",
+      "surface": "control",
+      "expectedSet": [
+        "getDocsSiteRestrictions",
+        "getDocsSite"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5"
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5"
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 17,
+      "prompt": "Get docs site 5 along with its access restriction settings.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getDocsSite"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5",
+            "includeRestrictions": true
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5",
+            "includeRestrictions": true
+          }
+        },
+        {
+          "name": "getDocsSite",
+          "args": {
+            "siteId": "5",
+            "includeRestrictions": true
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 18,
+      "prompt": "Get user 7's replies-sent report.",
+      "surface": "control",
+      "expectedSet": [
+        "getUserRepliesReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": false,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "getServerTime",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 18,
+      "prompt": "Get user 7's replies-sent report.",
+      "surface": "treatment",
+      "expectedSet": [
+        "getUserReport"
+      ],
+      "attempted": true,
+      "selectionAvg": 0,
+      "paramAvg": 0,
+      "allError": true,
+      "trials": [
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        },
+        {
+          "name": "NONE",
+          "args": {}
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 19,
+      "prompt": "List conversations in 'closed' status from inbox 42.",
+      "surface": "control",
+      "expectedSet": [
+        "structuredConversationFilter",
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        }
+      ]
+    },
+    {
+      "model": "glm-4.7",
+      "taskIndex": 19,
+      "prompt": "List conversations in 'closed' status from inbox 42.",
+      "surface": "treatment",
+      "expectedSet": [
+        "searchConversations"
+      ],
+      "attempted": true,
+      "selectionAvg": 1,
+      "paramAvg": 1,
+      "allError": false,
+      "trials": [
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        },
+        {
+          "name": "searchConversations",
+          "args": {
+            "status": "closed",
+            "inboxId": "42"
+          }
+        }
+      ]
+    }
+  ]
+}

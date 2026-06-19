@@ -41,10 +41,11 @@ describe('ToolHandler', () => {
     await new Promise(resolve => setImmediate(resolve));
   });
 
-  describe('listTools', () => {
+  // The default listTools() surface is the full sanitized 55-tool catalog.
+  describe('listTools (default full catalog)', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
-      
+
       expect(tools).toHaveLength(55);
       expect(tools.map(t => t.name)).toEqual([
         'searchConversations',
