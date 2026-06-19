@@ -31,6 +31,22 @@ import { cache } from './cache.js';
 import { ApiError } from '../schema/types.js';
 
 /**
+ * Whitelist the fields propagated from an upstream Help Scout error body into
+ * the MCP tool result. Help Scout's 4xx/422 responses sometimes echo the
+ * submitted input verbatim, which would otherwise flow customer PII into the
+ * LLM context (and anywhere that context is logged or shared). Only `code`
+ * and a length-capped `message` are surfaced.
+ */
+export function safeApiResponse(data: unknown): { code?: unknown; message?: string } | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const d = data as Record<string, unknown>;
+  return {
+    code: d.code,
+    message: typeof d.message === 'string' ? d.message.slice(0, 200) : undefined,
+  };
+}
+
+/**
  * Connection pool configuration for HTTP agents
  */
 interface ConnectionPoolConfig {
@@ -448,7 +464,9 @@ export class HelpScoutClient {
         message: `Help Scout API validation error: ${responseData.message || 'Invalid request data'}`,
         details: {
           requestId,
-          validationErrors: responseData.errors || responseData,
+          // Surface only whitelisted fields; do not propagate the verbatim
+          // body or responseData.errors, which may echo customer input PII.
+          apiResponse: safeApiResponse(responseData),
           suggestion: 'Check the request parameters match Help Scout API requirements',
         },
       };
@@ -462,7 +480,7 @@ export class HelpScoutClient {
         details: {
           requestId,
           statusCode: error.response.status,
-          apiResponse: responseData,
+          apiResponse: safeApiResponse(responseData),
         },
       };
     }

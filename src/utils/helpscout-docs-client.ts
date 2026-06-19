@@ -24,6 +24,24 @@ export interface DocsCollectionEnvelope<T> {
   items?: T[];
 }
 
+/**
+ * Whitelist the fields propagated from an upstream Help Scout Docs error body
+ * before they reach the MCP tool result. Docs error bodies can echo submitted
+ * input, so only `code`/`error` and a length-capped `message` are surfaced
+ * rather than the verbatim body.
+ */
+export function safeDocsApiResponse(
+  data: unknown,
+): { code?: unknown; error?: unknown; message?: string } | undefined {
+  if (!data || typeof data !== 'object') return undefined;
+  const d = data as Record<string, unknown>;
+  return {
+    code: d.code,
+    error: typeof d.error === 'string' ? d.error.slice(0, 200) : undefined,
+    message: typeof d.message === 'string' ? d.message.slice(0, 200) : undefined,
+  };
+}
+
 export class HelpScoutDocsClient {
   private readonly client: AxiosInstance;
   private readonly httpAgent: HttpAgent;
@@ -167,7 +185,7 @@ export class HelpScoutDocsClient {
       return {
         code: 'UNAUTHORIZED',
         message: 'Help Scout Docs API authentication failed. Check HELPSCOUT_DOCS_API_KEY and Docs permissions.',
-        details: { requestId, statusCode: error.response.status, apiResponse: responseData },
+        details: { requestId, statusCode: error.response.status, apiResponse: safeDocsApiResponse(responseData) },
       };
     }
 
@@ -175,7 +193,7 @@ export class HelpScoutDocsClient {
       return {
         code: 'NOT_FOUND',
         message: `Help Scout Docs API resource not found${apiMessage ? `: ${apiMessage}` : ''}.`,
-        details: { requestId, apiResponse: responseData },
+        details: { requestId, apiResponse: safeDocsApiResponse(responseData) },
       };
     }
 
@@ -196,7 +214,7 @@ export class HelpScoutDocsClient {
       return {
         code: 'INVALID_INPUT',
         message: `Help Scout Docs API client error${apiMessage ? `: ${apiMessage}` : ''}.`,
-        details: { requestId, statusCode: error.response.status, apiResponse: responseData },
+        details: { requestId, statusCode: error.response.status, apiResponse: safeDocsApiResponse(responseData) },
       };
     }
 

@@ -50,6 +50,66 @@ function parseLogLevel(defaultValue = 'info'): string {
   return rawValue && levels.includes(rawValue) ? rawValue : defaultValue;
 }
 
+/**
+ * Parse a comma-separated host allowlist env var into a Set of trimmed,
+ * non-empty, lower-cased hostnames. Returns null when the env var is unset
+ * or empty so callers can fall back to the built-in default set.
+ */
+function parseHostAllowlist(envVar: string | undefined): Set<string> | null {
+  if (!envVar) return null;
+  const hosts = envVar
+    .split(',')
+    .map(h => h.trim().toLowerCase())
+    .filter(h => h.length > 0);
+  return hosts.length > 0 ? new Set(hosts) : null;
+}
+
+/**
+ * Default Help Scout API hosts. The OAuth2 bearer token is sent on every
+ * authenticated request, so a repointed base URL would exfiltrate it to an
+ * attacker host. Default-closed to these; override only for self-hosted or
+ * proxy setups via HELPSCOUT_ALLOWED_API_HOSTS.
+ */
+const DEFAULT_ALLOWED_API_HOSTS = new Set(['api.helpscout.net', 'api.helpscout.com']);
+
+/**
+ * Default Help Scout Docs API host. The Docs API key travels via HTTP basic
+ * auth, which is just as sensitive. Override via HELPSCOUT_ALLOWED_DOCS_HOSTS.
+ */
+const DEFAULT_ALLOWED_DOCS_HOSTS = new Set(['docsapi.helpscout.net']);
+
+/**
+ * Validate that a configured base URL resolves to a host in the allowlist.
+ * `null` allowlist means use the provided default set. Empty/whitespace
+ * URLs are skipped (the default applies elsewhere). Throws on an invalid URL
+ * or a host outside the allowlist.
+ */
+function validateHostAllowlist(
+  rawUrl: string | undefined,
+  envVarName: string,
+  override: Set<string> | null,
+  defaults: Set<string>,
+): void {
+  if (!rawUrl || !rawUrl.trim()) return;
+  const allowed = override ?? defaults;
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(
+      `Security Error: ${envVarName} is not a valid URL.\nCurrent value: ${rawUrl}`,
+    );
+  }
+  if (!allowed.has(parsed.hostname.toLowerCase())) {
+    throw new Error(
+      `Security Error: ${envVarName} host "${parsed.hostname}" is not in the allowlist. ` +
+      `Allowed hosts: ${[...allowed].join(', ')}. ` +
+      `Set ${envVarName === 'HELPSCOUT_BASE_URL' ? 'HELPSCOUT_ALLOWED_API_HOSTS' : 'HELPSCOUT_ALLOWED_DOCS_HOSTS'} ` +
+      `to override for self-hosted or proxy setups.`,
+    );
+  }
+}
+
 export const config: Config = {
   helpscout: {
     // OAuth2 authentication (Client Credentials flow)
@@ -123,4 +183,30 @@ export function validateConfig(): void {
       'Please use: https://api.helpscout.net/v2/'
     );
   }
+
+  // Constrain HELPSCOUT_BASE_URL to known Help Scout hosts (SSRF defense).
+  // The OAuth2 bearer token is sent on every authenticated request, so a
+  // misconfigured or attacker-controlled base URL would leak it.
+  validateHostAllowlist(
+    config.helpscout.baseUrl,
+    'HELPSCOUT_BASE_URL',
+    parseHostAllowlist(process.env.HELPSCOUT_ALLOWED_API_HOSTS),
+    DEFAULT_ALLOWED_API_HOSTS,
+  );
+
+  // Same treatment for the Docs API host. The Docs API key travels via HTTP
+  // basic auth, which is just as sensitive.
+  if (config.helpscout.docsBaseUrl && !config.helpscout.docsBaseUrl.startsWith('https://')) {
+    throw new Error(
+      'Security Error: HELPSCOUT_DOCS_BASE_URL must use HTTPS to protect Docs API credentials in transit.\n' +
+      `Current value: ${config.helpscout.docsBaseUrl}\n` +
+      'Please use: https://docsapi.helpscout.net/v1/'
+    );
+  }
+  validateHostAllowlist(
+    config.helpscout.docsBaseUrl,
+    'HELPSCOUT_DOCS_BASE_URL',
+    parseHostAllowlist(process.env.HELPSCOUT_ALLOWED_DOCS_HOSTS),
+    DEFAULT_ALLOWED_DOCS_HOSTS,
+  );
 }

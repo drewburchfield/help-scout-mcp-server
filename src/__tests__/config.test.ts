@@ -143,4 +143,76 @@ describe('Config Validation', () => {
       expect(config.logging.level).toBe('info');
     });
   });
+
+  describe('host allowlist (SSRF defense)', () => {
+    beforeEach(() => {
+      process.env.HELPSCOUT_CLIENT_ID = 'client-id';
+      process.env.HELPSCOUT_CLIENT_SECRET = 'client-secret';
+      delete process.env.HELPSCOUT_ALLOWED_API_HOSTS;
+      delete process.env.HELPSCOUT_ALLOWED_DOCS_HOSTS;
+    });
+
+    it('accepts the default Help Scout API hosts', async () => {
+      for (const host of ['api.helpscout.net', 'api.helpscout.com']) {
+        process.env.HELPSCOUT_BASE_URL = `https://${host}/v2/`;
+        jest.resetModules();
+        const { validateConfig } = await import('../utils/config.js');
+        expect(() => validateConfig()).not.toThrow();
+      }
+    });
+
+    it('rejects an API base URL pointed at an attacker host', async () => {
+      process.env.HELPSCOUT_BASE_URL = 'https://evil.example.com/v2/';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_BASE_URL host "evil.example.com" is not in the allowlist/);
+    });
+
+    it('rejects a look-alike subdomain not in the allowlist', async () => {
+      process.env.HELPSCOUT_BASE_URL = 'https://api.helpscout.net.evil.com/v2/';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).toThrow(/is not in the allowlist/);
+    });
+
+    it('honors HELPSCOUT_ALLOWED_API_HOSTS override for self-hosted/proxy setups', async () => {
+      process.env.HELPSCOUT_BASE_URL = 'https://helpscout.internal.corp/v2/';
+      process.env.HELPSCOUT_ALLOWED_API_HOSTS = 'helpscout.internal.corp';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).not.toThrow();
+    });
+
+    it('still requires HTTPS even when the host is allowed', async () => {
+      process.env.HELPSCOUT_BASE_URL = 'http://api.helpscout.net/v2/';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_BASE_URL must use HTTPS/);
+    });
+
+    it('rejects a Docs base URL pointed at an attacker host', async () => {
+      process.env.HELPSCOUT_DOCS_BASE_URL = 'https://evil.example.com/v1/';
+
+      jest.resetModules();
+      const { validateConfig } = await import('../utils/config.js');
+      expect(() => validateConfig()).toThrow(/HELPSCOUT_DOCS_BASE_URL host "evil.example.com" is not in the allowlist/);
+    });
+
+    it('accepts the default Docs host and honors its override', async () => {
+      process.env.HELPSCOUT_DOCS_BASE_URL = 'https://docsapi.helpscout.net/v1/';
+      jest.resetModules();
+      let mod = await import('../utils/config.js');
+      expect(() => mod.validateConfig()).not.toThrow();
+
+      process.env.HELPSCOUT_DOCS_BASE_URL = 'https://docs.internal.corp/v1/';
+      process.env.HELPSCOUT_ALLOWED_DOCS_HOSTS = 'docs.internal.corp';
+      jest.resetModules();
+      mod = await import('../utils/config.js');
+      expect(() => mod.validateConfig()).not.toThrow();
+    });
+  });
 });
