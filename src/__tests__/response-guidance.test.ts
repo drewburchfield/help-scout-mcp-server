@@ -30,7 +30,7 @@ describe('Response guidance layer (NAS-1308)', () => {
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
-    delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+    process.env.HELPSCOUT_TOOL_SURFACE = 'compact';
 
     nock.cleanAll();
     cache.clear();
@@ -48,7 +48,7 @@ describe('Response guidance layer (NAS-1308)', () => {
   });
 
   afterEach(async () => {
-    delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+    delete process.env.HELPSCOUT_TOOL_SURFACE;
     nock.cleanAll();
     await new Promise((resolve) => setImmediate(resolve));
   });
@@ -270,9 +270,9 @@ describe('Response guidance layer (NAS-1308)', () => {
     });
   });
 
-  describe('expose-all gate', () => {
-    it('suppresses suggestedTools but keeps apiGuidance text', async () => {
-      process.env.HELPSCOUT_EXPOSE_ALL_TOOLS = 'true';
+  describe('default flat surface gate', () => {
+    it('suppresses suggestedTools but keeps apiGuidance text when HELPSCOUT_TOOL_SURFACE is unset', async () => {
+      delete process.env.HELPSCOUT_TOOL_SURFACE;
       nock(baseURL)
         .get('/conversations')
         .query(true)

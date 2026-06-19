@@ -41,19 +41,8 @@ describe('ToolHandler', () => {
     await new Promise(resolve => setImmediate(resolve));
   });
 
-  // The default listTools() surface is the trimmed discovery surface (NAS-1305);
-  // see discovery.test.ts for that. These tests validate the FULL catalog
-  // (every tool's schema/annotations/filters), which is reachable flat via the
-  // HELPSCOUT_EXPOSE_ALL_TOOLS escape hatch. We set it for this describe block so
-  // listTools() returns the full sanitized 55-tool catalog.
-  describe('listTools (full catalog via HELPSCOUT_EXPOSE_ALL_TOOLS)', () => {
-    beforeEach(() => {
-      process.env.HELPSCOUT_EXPOSE_ALL_TOOLS = 'true';
-    });
-    afterEach(() => {
-      delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
-    });
-
+  // The default listTools() surface is the full sanitized 55-tool catalog.
+  describe('listTools (default full catalog)', () => {
     it('should return all available tools', async () => {
       const tools = await toolHandler.listTools();
 

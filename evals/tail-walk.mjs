@@ -211,7 +211,9 @@ async function walk(model, task, handler, tools) {
 async function main() {
   const { toolHandler, ToolHandler } = await import('../dist/tools/index.js');
   const handler = toolHandler || new ToolHandler();
+  process.env.HELPSCOUT_TOOL_SURFACE = 'compact';
   const discovery = await handler.listTools();
+  delete process.env.HELPSCOUT_TOOL_SURFACE;
   const tools = discovery.map((t) => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.inputSchema },
@@ -270,7 +272,7 @@ function renderMarkdown(results, modelNa) {
   lines.push(`Generated: ${new Date().toISOString()}`);
   lines.push('');
   lines.push(
-    'Agentic multi-turn walk over the **10-tool discovery surface** (7 core + ' +
+    'Agentic multi-turn walk over the **10-tool compact discovery surface** (7 core + ' +
       '`search_tools`/`get_tool_schema`/`call_tool`). Each task targets a **non-core (tail) ' +
       'tool** reachable only via the meta-tools. Success = the model issues ' +
       '`call_tool({name: <target>, arguments: ...})` with the expected key args within ' +

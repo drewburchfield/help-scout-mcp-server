@@ -6,10 +6,9 @@ import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 /**
  * NAS-1305 discovery layer tests.
  *
- * The default `tools/list` surface is the OPINIONATED discovery surface: the 7
- * core read tools + 3 meta tools (search_tools / get_tool_schema / call_tool).
- * All 55 Help Scout tools remain reachable through the meta layer. The
- * HELPSCOUT_EXPOSE_ALL_TOOLS=true escape hatch returns the flat sanitized 55.
+ * The default `tools/list` surface remains the full flat 55-tool catalog for
+ * compatibility. `HELPSCOUT_TOOL_SURFACE=compact` opts into the 7 core read
+ * tools + 3 meta tools (search_tools / get_tool_schema / call_tool).
  */
 describe('Tool discovery layer (NAS-1305)', () => {
   let toolHandler: ToolHandler;
@@ -30,7 +29,7 @@ describe('Tool discovery layer (NAS-1305)', () => {
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
-    delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+    delete process.env.HELPSCOUT_TOOL_SURFACE;
 
     nock.cleanAll();
     cache.clear();
@@ -48,7 +47,7 @@ describe('Tool discovery layer (NAS-1305)', () => {
   });
 
   afterEach(async () => {
-    delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+    delete process.env.HELPSCOUT_TOOL_SURFACE;
     nock.cleanAll();
     await new Promise((resolve) => setImmediate(resolve));
   });
@@ -86,20 +85,41 @@ describe('Tool discovery layer (NAS-1305)', () => {
   }
 
   describe('default listTools() surface', () => {
+    it('returns the full flat catalog of 55 tools (no meta tools)', async () => {
+      const tools = await toolHandler.listTools();
+
+      expect(tools).toHaveLength(55);
+      const names = tools.map((t) => t.name);
+      expect(names).toContain('getProductivityReport');
+      for (const meta of META_TOOLS) {
+        expect(names).not.toContain(meta);
+      }
+    });
+
+    it('applies read-only annotations to every flat tool', async () => {
+      const tools = await toolHandler.listTools();
+      for (const tool of tools) {
+        expect(tool.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: true });
+      }
+    });
+  });
+
+  describe('compact listTools() surface', () => {
+    beforeEach(() => {
+      process.env.HELPSCOUT_TOOL_SURFACE = 'compact';
+    });
+
     it('returns exactly the core tools + 3 meta tools', async () => {
       const tools = await toolHandler.listTools();
       expect(tools).toHaveLength(CORE_TOOLS.length + 3);
 
       const names = tools.map((t) => t.name);
-      // The 3 meta tools are present.
       for (const meta of META_TOOLS) {
         expect(names).toContain(meta);
       }
-      // The 7 core tools are present.
       for (const core of CORE_TOOLS) {
         expect(names).toContain(core);
       }
-      // A known tail tool is NOT advertised by default.
       expect(names).not.toContain('getProductivityReport');
     });
 
@@ -149,21 +169,6 @@ describe('Tool discovery layer (NAS-1305)', () => {
       const searchDef = tools.find((t) => t.name === 'search_tools')!;
       // 55 Help Scout tools advertised in the full catalog.
       expect(searchDef.description).toContain('55');
-    });
-  });
-
-  describe('HELPSCOUT_EXPOSE_ALL_TOOLS escape hatch', () => {
-    it('returns the full flat catalog of 55 tools (no meta tools)', async () => {
-      process.env.HELPSCOUT_EXPOSE_ALL_TOOLS = 'true';
-      const tools = await toolHandler.listTools();
-      // Flat surface = the 55 Help Scout tools only; the 3 meta tools are NOT
-      // included (the flat client wants everything callable directly).
-      expect(tools).toHaveLength(55);
-      const names = tools.map((t) => t.name);
-      expect(names).toContain('getProductivityReport');
-      for (const meta of META_TOOLS) {
-        expect(names).not.toContain(meta);
-      }
     });
   });
 

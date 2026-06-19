@@ -71,7 +71,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       // The static manifest documents the FULL catalog: 55 Help Scout tools plus
       // the 3 NAS-1305 discovery meta-tools (search_tools / get_tool_schema /
       // call_tool) so MCPB/static clients know the meta layer exists. This is
-      // separate from the runtime listTools() surface (default = ~10 tools).
+      // broader than the default runtime listTools() surface, which advertises
+      // the 55 direct tools and keeps meta tools for compact runtime mode.
       expect(manifest.tools).toHaveLength(58);
 
       const expectedTools = [

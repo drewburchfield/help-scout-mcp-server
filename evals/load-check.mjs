@@ -24,16 +24,16 @@ async function buildSurfaces() {
   const flatUnsan = JSON.parse(readFileSync(resolve(HERE, 'surfaces/treatment.json'), 'utf8')); // 55, unsanitized
   const sanitizeSurface = (s) =>
     s.map((t) => ({ type: 'function', function: { ...t.function, parameters: sanitizeJsonSchema(t.function.parameters) } }));
-  const discovery = toOA(await h.listTools()); // 10 (default)
-  process.env.HELPSCOUT_EXPOSE_ALL_TOOLS = 'true';
-  const flatSan = toOA(await h.listTools()); // 55, sanitized
-  delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+  const flatSan = toOA(await h.listTools()); // 55, sanitized (default)
+  process.env.HELPSCOUT_TOOL_SURFACE = 'compact';
+  const discovery = toOA(await h.listTools()); // 10, compact discovery mode
+  delete process.env.HELPSCOUT_TOOL_SURFACE;
   return {
     'control-102 (unsanitized)': control,
     'control-102 (sanitized)': sanitizeSurface(control),
     'flat-55 (unsanitized)': flatUnsan,
     'flat-55 (sanitized)': flatSan,
-    'discovery-10': discovery,
+    'compact-discovery-10': discovery,
   };
 }
 
@@ -76,6 +76,6 @@ for (const r of rows) {
 md += `\n## Verdict\n\n`;
 const geminiFailControl = rows.find((r) => r.name.includes('unsanitized') && r.name.includes('control'));
 md += `- control-102 unsanitized fails on Gemini (the \`anyOf\` 400); sanitized loads → **the sanitizer fixes the cross-model load bug**.\n`;
-md += `- discovery-10 loads on every reachable model at the smallest footprint.\n`;
+md += `- compact-discovery-10 loads on every reachable model at the smallest opt-in footprint.\n`;
 writeFileSync(resolve(HERE, 'load-check-results.md'), md);
 console.log(md);

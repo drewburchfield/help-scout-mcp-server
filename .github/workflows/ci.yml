@@ -68,7 +68,6 @@ jobs:
         HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
         HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
         HELPSCOUT_DEFAULT_INBOX_ID: '359402'
-        HELPSCOUT_EXPOSE_ALL_TOOLS: 'true'
       run: npm run dogfood:full
 
     - name: Run authenticated edge-case test

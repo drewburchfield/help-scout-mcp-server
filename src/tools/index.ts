@@ -193,9 +193,9 @@ export class ToolHandler {
   private callHistory: string[] = [];
 
   /**
-   * The core read tools advertised directly in the default discovery surface
-   * (NAS-1305). These cover the ~90% path; everything else is reached via the
-   * search_tools / get_tool_schema / call_tool meta tools.
+   * The core read tools advertised directly in the compact discovery surface
+   * (NAS-1305). These cover the common path; everything else is reached via
+   * the search_tools / get_tool_schema / call_tool meta tools.
    */
   private static readonly CORE_TOOLS: readonly string[] = [
     'searchConversations',
@@ -1422,9 +1422,9 @@ export class ToolHandler {
 
   /**
    * The full internal registry: every Help Scout tool, sanitized + annotated,
-   * exactly as the flat surface used to advertise it. This is what
-   * `search_tools`, `get_tool_schema`, `call_tool`, and the EXPOSE_ALL escape
-   * hatch all read from. Rebuilt each call (no cache → no drift).
+   * exactly as the default flat surface advertises it. This is also what
+   * `search_tools`, `get_tool_schema`, and `call_tool` read from in compact
+   * mode. Rebuilt each call (no cache → no drift).
    *
    * Every tool in this server is a read-only GET wrapper over the external
    * Help Scout API. We advertise MCP tool annotations so clients (e.g. Claude
@@ -1445,6 +1445,10 @@ export class ToolHandler {
     }));
   }
 
+  private isCompactToolSurface(): boolean {
+    return process.env.HELPSCOUT_TOOL_SURFACE === 'compact';
+  }
+
   /**
    * Build the three discovery meta-tool definitions. Their schemas are run
    * through the same sanitizer so they load across model families. The
@@ -1456,7 +1460,7 @@ export class ToolHandler {
       {
         name: 'search_tools',
         description:
-          `This server exposes ${totalToolCount} Help Scout tools, but only the core few are loaded by default. ` +
+          `This server exposes ${totalToolCount} Help Scout tools. In compact mode, only the core few are loaded up front. ` +
           `Search the rest by keyword (e.g. 'report', 'attachment', 'tags', 'webhook') to get their names and ` +
           `descriptions, then call get_tool_schema to load one and call_tool to invoke it.`,
         inputSchema: {
@@ -1518,19 +1522,19 @@ export class ToolHandler {
   /**
    * The advertised `tools/list` surface (NAS-1305 discovery layer).
    *
-   * DEFAULT (opinionated, no mode flag): the 7 core read tools + the 3 meta
-   * tools (search_tools / get_tool_schema / call_tool). All ~55 tools stay
-   * reachable through the meta layer. This keeps the always-on tool-definition
-   * footprint tiny (~10 tools) so the server loads cheaply across model families.
+   * DEFAULT: the full sanitized flat catalog (every Help Scout tool, no meta
+   * tools). This keeps v1.9 additive for existing MCP hosts that expect every
+   * tool to be advertised by `tools/list`.
    *
-   * ESCAPE HATCH: `HELPSCOUT_EXPOSE_ALL_TOOLS=true` returns the full sanitized
-   * flat catalog (every tool, no meta tools) for clients that explicitly want
-   * everything flat. This is the ONLY branch — a single conditional.
+   * COMPACT MODE: `HELPSCOUT_TOOL_SURFACE=compact` advertises the 7 core read
+   * tools + 3 meta tools (search_tools / get_tool_schema / call_tool). All ~55
+   * tools stay reachable through the meta layer. This keeps the always-on
+   * tool-definition footprint tiny (~10 tools) for clients that opt in.
    */
   async listTools(): Promise<Tool[]> {
     const all = this.allToolDefs();
 
-    if (process.env.HELPSCOUT_EXPOSE_ALL_TOOLS === 'true') {
+    if (!this.isCompactToolSurface()) {
       return all;
     }
 
@@ -1726,8 +1730,9 @@ export class ToolHandler {
    *   - the result body's `apiGuidance` field: next-step text with a real id
    *     interpolated into the example.
    *
-   * Gated OFF in HELPSCOUT_EXPOSE_ALL_TOOLS mode (every tool already advertised,
-   * so schema hints are redundant). Meta-tool results are never guided. Total:
+   * Typed successor schemas are attached only in compact mode; in the default
+   * flat surface every tool is already advertised, so schema hints are
+   * redundant. Meta-tool results are never guided. Total:
    * never throws and never turns a success into a failure — on any failure the
    * original result is returned untouched. Keyed on the dispatched tool name, so
    * when call_tool re-enters a hub tool the guidance is attached against the real
@@ -1759,8 +1764,6 @@ export class ToolHandler {
         successorMap: ToolHandler.SUCCESSOR_MAP,
       });
 
-      const exposeAll = process.env.HELPSCOUT_EXPOSE_ALL_TOOLS === 'true';
-
       // Inject next-step text into the result body (only when we have a parsed
       // JSON body to extend, mirroring the prior apiGuidance behavior).
       if (
@@ -1777,8 +1780,8 @@ export class ToolHandler {
         };
       }
 
-      // Attach typed successor schemas (suppressed in expose-all mode).
-      if (!exposeAll && guidance.suggestedTools && guidance.suggestedTools.length > 0) {
+      // Attach typed successor schemas only in compact mode.
+      if (this.isCompactToolSurface() && guidance.suggestedTools && guidance.suggestedTools.length > 0) {
         result._meta = { ...result._meta, suggestedTools: guidance.suggestedTools };
       }
 

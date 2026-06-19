@@ -8,9 +8,9 @@ Does each surface load without a provider schema-400? `LOAD`=ok, `FAIL`=schema r
 | control-102 (sanitized) | 102 | LOAD | LOAD | LOAD | LOAD | LOAD |
 | flat-55 (unsanitized) | 55 | LOAD | LOAD | LOAD | LOAD | LOAD |
 | flat-55 (sanitized) | 55 | LOAD | LOAD | LOAD | LOAD | LOAD |
-| discovery-10 | 10 | LOAD | LOAD | LOAD | LOAD | LOAD |
+| compact-discovery-10 | 10 | LOAD | LOAD | LOAD | LOAD | LOAD |
 
 ## Verdict
 
 - control-102 unsanitized fails on Gemini (the `anyOf` 400); sanitized loads → **the sanitizer fixes the cross-model load bug**.
-- discovery-10 loads on every reachable model at the smallest footprint.
+- compact-discovery-10 loads on every reachable model at the smallest opt-in footprint.

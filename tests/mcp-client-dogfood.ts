@@ -3,8 +3,8 @@
  * Full MCP client dogfood harness.
  *
  * This spawns the built server entrypoint and talks to it through the official
- * MCP TypeScript client over stdio. It validates the full flat compatibility
- * tool surface through the same protocol path used by real MCP hosts.
+ * MCP TypeScript client over stdio. It validates the default full flat tool
+ * surface through the same protocol path used by real MCP hosts.
  *
  * Usage:
  *   npm run dogfood:mcp

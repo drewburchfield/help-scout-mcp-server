@@ -139,6 +139,7 @@ Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in
 | `HELPSCOUT_BASE_URL` | Help Scout API endpoint | `https://api.helpscout.net/v2/` |
 | `HELPSCOUT_DOCS_API_KEY` | Optional Docs API key for knowledge base tools | None |
 | `HELPSCOUT_DOCS_BASE_URL` | Help Scout Docs API endpoint | `https://docsapi.helpscout.net/v1/` |
+| `HELPSCOUT_TOOL_SURFACE` | Set to `compact` to advertise core tools plus discovery meta-tools instead of the full flat catalog | Full flat catalog |
 | `REDACT_MESSAGE_CONTENT` | Replace message bodies with placeholders | `false` |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |

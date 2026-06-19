@@ -10,7 +10,7 @@ import type { CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/
  * (non-core) tools are appended to `result._meta.suggestedTools` so the model
  * can call them next with correct args and no search detour. Successors already
  * in CORE_TOOLS (the always-on surface) are filtered out — only additive tail
- * tools are surfaced. Hints are gated OFF in HELPSCOUT_EXPOSE_ALL_TOOLS mode.
+ * tools are surfaced. Typed schema hints are compact-mode only.
  */
 describe('Successor hints (NAS-1305 phase 3)', () => {
   let toolHandler: ToolHandler;
@@ -30,7 +30,7 @@ describe('Successor hints (NAS-1305 phase 3)', () => {
     process.env.HELPSCOUT_CLIENT_ID = 'test-client-id';
     process.env.HELPSCOUT_CLIENT_SECRET = 'test-client-secret';
     process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
-    delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+    process.env.HELPSCOUT_TOOL_SURFACE = 'compact';
 
     nock.cleanAll();
     cache.clear();
@@ -48,7 +48,7 @@ describe('Successor hints (NAS-1305 phase 3)', () => {
   });
 
   afterEach(async () => {
-    delete process.env.HELPSCOUT_EXPOSE_ALL_TOOLS;
+    delete process.env.HELPSCOUT_TOOL_SURFACE;
     nock.cleanAll();
     await new Promise((resolve) => setImmediate(resolve));
   });
@@ -131,9 +131,9 @@ describe('Successor hints (NAS-1305 phase 3)', () => {
     });
   });
 
-  describe('expose-all gate', () => {
-    it('attaches no hints when HELPSCOUT_EXPOSE_ALL_TOOLS=true', async () => {
-      process.env.HELPSCOUT_EXPOSE_ALL_TOOLS = 'true';
+  describe('default flat surface gate', () => {
+    it('attaches no typed schema hints when HELPSCOUT_TOOL_SURFACE is unset', async () => {
+      delete process.env.HELPSCOUT_TOOL_SURFACE;
       nock(baseURL)
         .get('/conversations')
         .query(true)
