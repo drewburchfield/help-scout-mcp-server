@@ -414,11 +414,62 @@ describe('HelpScoutClient', () => {
       };
       
       const transformedError = (client as any).transformError(mockAxiosError);
-      
+
       expect(transformedError).toMatchObject({
         code: 'INVALID_INPUT',
         message: 'Help Scout API client error: Invalid request'
       });
+    }, 10000);
+
+    it('whitelists 422 error body fields and does not propagate echoed input PII', async () => {
+      const client = new HelpScoutClient();
+
+      const mockAxiosError = {
+        response: {
+          status: 422,
+          data: {
+            code: 'validation_error',
+            message: 'The email is invalid',
+            errors: [{ path: 'email', message: 'jane@bigcorp.com is not valid' }],
+            _embedded: { customer: { email: 'jane@bigcorp.com' } },
+          },
+        },
+        config: { metadata: { requestId: 'test-422' }, url: '/conversations', method: 'post' },
+      };
+
+      const transformed = (client as any).transformError(mockAxiosError);
+      const serialized = JSON.stringify(transformed);
+
+      expect(transformed.code).toBe('INVALID_INPUT');
+      expect(transformed.details.apiResponse).toEqual({
+        code: 'validation_error',
+        message: 'The email is invalid',
+      });
+      expect(transformed.details).not.toHaveProperty('validationErrors');
+      expect(serialized).not.toContain('jane@bigcorp.com');
+    }, 10000);
+
+    it('truncates a long upstream message and drops other 4xx body fields', async () => {
+      const client = new HelpScoutClient();
+      const longMessage = 'x'.repeat(500);
+
+      const mockAxiosError = {
+        response: {
+          status: 400,
+          data: {
+            code: 'bad_request',
+            message: longMessage,
+            customerEmail: 'leak@bigcorp.com',
+          },
+        },
+        config: { metadata: { requestId: 'test-400-leak' }, url: '/conversations', method: 'get' },
+      };
+
+      const transformed = (client as any).transformError(mockAxiosError);
+
+      expect(transformed.details.apiResponse.code).toBe('bad_request');
+      expect(transformed.details.apiResponse.message).toHaveLength(200);
+      expect(JSON.stringify(transformed)).not.toContain('leak@bigcorp.com');
     }, 10000);
 
     it('should handle 500 server errors with retries', async () => {
