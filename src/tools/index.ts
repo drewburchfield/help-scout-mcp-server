@@ -464,6 +464,10 @@ export class ToolHandler {
               default: 1,
               description: 'Page number',
             },
+            cursor: {
+              type: 'string',
+              description: 'Pagination cursor from previous response (nextCursor)',
+            },
           },
           required: ['query'],
         },
@@ -513,6 +517,10 @@ export class ToolHandler {
               minimum: 1,
               default: 1,
               description: 'Page number',
+            },
+            cursor: {
+              type: 'string',
+              description: 'Pagination cursor from previous response (nextCursor)',
             },
             sort: {
               type: 'string',
@@ -739,6 +747,10 @@ export class ToolHandler {
               default: 1,
               description: 'Page number',
             },
+            cursor: {
+              type: 'string',
+              description: 'Pagination cursor from previous response (nextCursor)',
+            },
           },
         },
       },
@@ -818,6 +830,7 @@ export class ToolHandler {
             sortOrder: { type: 'string', enum: ['asc', 'desc'], default: 'desc' },
             limit: { type: 'number', minimum: 1, maximum: 100, default: 50 },
             page: { type: 'number', minimum: 1, default: 1, description: 'Page number' },
+            cursor: { type: 'string', description: 'Pagination cursor from previous response (nextCursor)' },
           },
           anyOf: [
             { required: ['assignedTo'] },

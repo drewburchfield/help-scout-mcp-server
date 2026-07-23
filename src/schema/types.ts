@@ -95,6 +95,7 @@ export const SearchConversationsInputSchema = z.object({
   createdBefore: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(50),
   page: z.number().int().min(1).default(1),
+  cursor: z.string().optional(),
   sort: z.enum(['createdAt', 'modifiedAt', 'number']).default('createdAt'),
   order: z.enum(['asc', 'desc']).default('desc'),
   fields: z.array(z.string()).optional(),
@@ -131,6 +132,7 @@ export const AdvancedConversationSearchInputSchema = z.object({
   createdBefore: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(50),
   page: z.number().int().min(1).default(1),
+  cursor: z.string().optional(),
 });
 
 export const MultiStatusConversationSearchInputSchema = z.object({
@@ -159,6 +161,7 @@ export const StructuredConversationFilterInputSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   limit: z.number().int().min(1).max(100).default(50),
   page: z.number().int().min(1).default(1),
+  cursor: z.string().optional(),
 }).refine(
   (data) => !!(data.assignedTo !== undefined || data.folderId !== undefined || data.customerIds !== undefined || data.conversationNumber !== undefined || (data.sortBy && ['waitingSince', 'customerName', 'customerEmail'].includes(data.sortBy))),
   { message: 'Must use at least one unique field: assignedTo, folderId, customerIds, conversationNumber, or unique sorting. For content search, use comprehensiveConversationSearch.' }
