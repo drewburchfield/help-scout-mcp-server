@@ -185,6 +185,21 @@ function getDocsNextPage(page?: number, pages?: number): number | null {
   return page < pages ? page + 1 : null;
 }
 
+function resolvePageNumber(input: { page?: number; cursor?: string }): number {
+  if (input.cursor) {
+    try {
+      const url = new URL(input.cursor);
+      const pageNum = url.searchParams.get('page');
+      if (pageNum) {
+        const parsed = parseInt(pageNum, 10);
+        if (!isNaN(parsed) && parsed >= 1) return parsed;
+      }
+    } catch {
+    }
+  }
+  return input.page || 1;
+}
+
 export class ToolHandler {
   private callHistory: string[] = [];
 
@@ -2591,7 +2606,7 @@ export class ToolHandler {
     const input = SearchConversationsInputSchema.parse(args);
 
     const baseParams: Record<string, unknown> = {
-      page: input.page,
+      page: resolvePageNumber(input),
       size: input.limit,
       sortField: input.sort,
       sortOrder: input.order,
@@ -4149,7 +4164,7 @@ export class ToolHandler {
 
     // Set up query parameters
     const queryParams: Record<string, unknown> = {
-      page: input.page,
+      page: resolvePageNumber(input),
       size: input.limit || 50,
       sortField: 'createdAt',
       sortOrder: 'desc',
@@ -4733,7 +4748,7 @@ export class ToolHandler {
     const input = StructuredConversationFilterInputSchema.parse(args);
 
     const queryParams: Record<string, unknown> = {
-      page: input.page,
+      page: resolvePageNumber(input),
       size: input.limit,
       sortField: input.sortBy,
       sortOrder: input.sortOrder,
