@@ -9,8 +9,8 @@ trust.
 MCP tools are for AI hosts and support workflows. They should be typed,
 discoverable, read-only by default, and safe for model-controlled invocation.
 
-The shape of that surface, three advertised gateway tools over a registry of
-read-only operations, is defined in
+The shape of that surface, the advertised gateway tools over a registry of read
+operations plus gated write operations, is defined in
 [`mcp-tool-contract.md`](./mcp-tool-contract.md). This document covers what
 belongs on the MCP side of the line, not how it is advertised.
 
