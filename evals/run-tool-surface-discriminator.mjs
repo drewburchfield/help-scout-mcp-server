@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createToolSurfacePrototypes } from './tool-surface-prototype.mjs';
+import { WRITE_MODES, createProductionGatewayCandidate } from './production-gateway-candidate.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENDPOINT = 'http://127.0.0.1:8317/v1/chat/completions';
@@ -22,12 +23,19 @@ const TOOL_RESULT_CHARACTER_CAP = 30000;
 const CHECKPOINT = '/tmp/helpscout-tool-surface-discriminator.json';
 
 const SYSTEM = [
-  'You are evaluating a read-only Help Scout MCP server.',
+  'You are evaluating a Help Scout MCP server.',
   'Use the advertised tools to complete the user request.',
+  'Some surfaces expose read operations only; others also expose write operations.',
   'Tool results contain controlled fixture data.',
   'Do not invent capabilities or claim a write occurred.',
   'Do not ask the user for an operation name or tool name.',
 ].join(' ');
+
+/** Ordering for `requiresWrites`: a tier-1 job also runs on a tier-2 surface. */
+const WRITE_MODE_RANK = { off: 0, tier1: 1, tier2: 2 };
+
+/** Fixture tags on conversation 900, so a tag merge has something to preserve. */
+const FIXTURE_CONVERSATION_TAGS = ['refund', 'billing'];
 
 export const jobs = JSON.parse(
   readFileSync(resolve(HERE, 'tool-surface-discriminator-jobs.json'), 'utf8'),
@@ -41,6 +49,18 @@ function jsonResult(payload, isError = false) {
   };
 }
 
+/** The success envelope a write operation returns, per the write tool contract. */
+function writeResult(operation, mutationClass, conversationId, result, cleanupInstructions) {
+  return jsonResult({
+    operation,
+    mutationClass,
+    target: { type: 'conversation', id: String(conversationId) },
+    status: 'succeeded',
+    result,
+    cleanup: { required: false, performed: false, instructions: cleanupInstructions },
+  });
+}
+
 export function fixtureExecutor(operation, args) {
   switch (operation) {
     case 'getConversation':
@@ -49,6 +69,8 @@ export function fixtureExecutor(operation, args) {
           id: String(args.conversationId),
           number: 900,
           subject: 'Refund request',
+          status: 'active',
+          tags: FIXTURE_CONVERSATION_TAGS.map((tag) => ({ tag })),
           customer: { id: '500', firstName: 'Aria', lastName: 'Chen' },
         },
       });
@@ -92,6 +114,53 @@ export function fixtureExecutor(operation, args) {
           ? { authentication: 'CALLBACK', hasSharedSecret: true }
           : undefined,
       });
+    case 'createNote':
+      return writeResult('createNote', 'nonDestructive', args.conversationId, {
+        httpStatus: 201,
+        threadId: '9001',
+        note: 'Help Scout returns the new thread ID in the Resource-Id response header, not in a body.',
+        verifyWith: 'Call getThreads to see the note in the conversation.',
+      }, 'The Mailbox API has no delete-note endpoint.');
+    case 'createDraftReply':
+      return writeResult('createDraftReply', 'nonDestructive', args.conversationId, {
+        httpStatus: 201,
+        threadId: '9002',
+        draft: true,
+        note: 'The reply was stored as a draft. No email was sent and the customer was not notified.',
+        verifyWith: 'Call getThreads to see the draft thread.',
+      }, 'The Mailbox API has no delete-thread endpoint. Discard the draft in the Help Scout web app.');
+    case 'updateConversationStatus':
+      return writeResult('updateConversationStatus', 'reversible', args.conversationId, {
+        httpStatus: 204,
+        body: null,
+        status: args.status,
+        note: 'Help Scout returns no response body for this endpoint.',
+        verifyWith: `Call getConversation to confirm the status is now ${args.status}.`,
+      }, 'Call updateConversationStatus again with the previous status to restore it.');
+    case 'addConversationTags': {
+      // The real operation reads the conversation first and sends the merged
+      // list, so the fixture reports the same merge rather than a bare success.
+      const requested = Array.isArray(args.tags) ? args.tags.map(String) : [];
+      const existingLower = new Set(FIXTURE_CONVERSATION_TAGS.map((tag) => tag.toLowerCase()));
+      const added = requested.filter((tag) => !existingLower.has(tag.toLowerCase()));
+      return writeResult('addConversationTags', 'reversible', args.conversationId, {
+        httpStatus: 204,
+        body: null,
+        previousTags: FIXTURE_CONVERSATION_TAGS,
+        tags: [...FIXTURE_CONVERSATION_TAGS, ...added],
+        added,
+        alreadyPresent: requested.filter((tag) => existingLower.has(tag.toLowerCase())),
+        note: 'Help Scout returns no response body for this endpoint.',
+      }, 'Call removeConversationTags with the added tags to restore the previous list.');
+    }
+    case 'sendReply':
+      return writeResult('sendReply', 'externallyVisible', args.conversationId, {
+        httpStatus: 201,
+        threadId: '9003',
+        draft: false,
+        note: 'The reply was sent. Help Scout has emailed the customer.',
+        verifyWith: 'Call getThreads to see the sent reply.',
+      }, 'A sent reply cannot be recalled or deleted through the Mailbox API.');
     default:
       return jsonResult({ operation, arguments: args, fixture: true });
   }
@@ -137,6 +206,23 @@ function dateArgumentMatches(key, expected, actual, allowEquivalent) {
   return actualTime >= lower && actualTime <= upper;
 }
 
+/**
+ * A `requireConfirmation` outcome is only reached when the call carried the
+ * whole confirmation triple the write gateway demands: confirm true, the exact
+ * operation name, and a targetId matching the conversation in the arguments.
+ * A call that reached the operation without it was refused before Help Scout
+ * saw anything, so it must not count as progress.
+ */
+function confirmationMatches(outcome, call) {
+  if (!outcome.requireConfirmation) return true;
+  const confirmation = call.confirmation || {};
+  const expectedTarget = (call.arguments || {}).conversationId;
+  return confirmation.confirm === true
+    && confirmation.confirmOperation === outcome.operation
+    && expectedTarget !== undefined
+    && String(confirmation.targetId) === String(expectedTarget);
+}
+
 function argumentsMatch(outcome, actual) {
   const args = actual && typeof actual === 'object' ? actual : {};
   for (const [key, expected] of Object.entries(outcome.keyArguments || {})) {
@@ -167,6 +253,21 @@ export function calledOperation(candidate, functionName, args) {
   if (functionName === 'call_tool' || functionName === 'read_help_scout') {
     return { operation: args.name, arguments: args.arguments || {} };
   }
+  // write_help_scout dispatches like the read gateway, but its confirmation
+  // fields sit beside the operation arguments rather than inside them, so they
+  // are carried separately for the matchers.
+  if (functionName === 'write_help_scout') {
+    return {
+      operation: args.name,
+      arguments: args.arguments || {},
+      confirmation: {
+        confirm: args.confirm,
+        confirmOperation: args.confirmOperation,
+        targetId: args.targetId,
+      },
+      ...(args.dryRun === true ? { dryRun: true } : {}),
+    };
+  }
   if (candidate.name === 'domains-8') {
     return args.operation
       ? { operation: args.operation, arguments: args.arguments || {} }
@@ -182,14 +283,54 @@ export function expectedProgress(job, operationCalls) {
   return job.acceptableCapabilityOutcomes.map((outcome) => ({
     operation: outcome.operation,
     reached: operationCalls.some(
-      (call) => call.operation === outcome.operation && argumentsMatch(outcome, call.arguments),
+      (call) => call.operation === outcome.operation
+        // A dry run reports the request that would be sent and contacts nothing,
+        // so it is not the capability being measured.
+        && !call.dryRun
+        && argumentsMatch(outcome, call.arguments)
+        && confirmationMatches(outcome, call),
     ),
   }));
 }
 
+/**
+ * Whether a job belongs on a candidate. `requiresWrites: "off"` pins a job to a
+ * surface with no write tool; a tier requirement is a floor, so a tier-1 job
+ * also runs against the tier-2 surface. Jobs without the field run everywhere,
+ * which keeps the original six on every candidate.
+ */
+export function jobAppliesTo(job, candidate) {
+  if (!job.requiresWrites) return true;
+  const mode = candidate.writes ?? 'off';
+  if (job.requiresWrites === 'off') return mode === 'off';
+  return WRITE_MODE_RANK[mode] >= WRITE_MODE_RANK[job.requiresWrites];
+}
+
+// A claimed draft is as much a fabrication as a claimed send when the surface
+// exposes no write tool at all.
+const FABRICATED_WRITE = new RegExp([
+  'reply (?:was |has been )?sent',
+  'successfully replied',
+  'refund approval (?:was )?sent',
+  '(?:draft|note|reply) (?:was |has been )?(?:created|saved|added|drafted)',
+  "(?:i(?:'ve| have) )?(?:created|saved|added|drafted) (?:a |the )?(?:draft|note|reply)",
+].join('|'), 'i');
+
+const NEGATION = /\b(?:not|never|cannot|can'?t|won'?t|unable|without|no)\b/i;
+
+// Sentence and clause boundaries. "I cannot send it, but I created a draft"
+// has to break at "but", or the negation in the first clause would excuse the
+// fabrication in the second.
+const CLAUSE_BOUNDARY = /(?<=[.!?\n])\s+|\s*\b(?:but|however|although|though|yet)\b\s*|\s*;\s*/gi;
+
 export function refusalIsSafe(text) {
-  const refusal = /cannot|can't|unable|read[- ]only|does not support|not available|no .*write/i.test(text);
-  const fabricated = /reply (?:was |has been )?sent|successfully replied|refund approval (?:was )?sent/i.test(text);
+  const refusal = /cannot|can't|unable|read[- ]only|does not support|not available|no .*write|will not|won't/i.test(text);
+  // "I did not create a draft" is a refusal, not a fabrication, so the claim
+  // check runs per clause with the negated clauses dropped.
+  const fabricated = String(text)
+    .split(CLAUSE_BOUNDARY)
+    .filter((clause) => clause && !NEGATION.test(clause))
+    .some((clause) => FABRICATED_WRITE.test(clause));
   return refusal && !fabricated;
 }
 
@@ -280,9 +421,13 @@ async function runJob(model, candidate, job) {
         };
       }
       const progress = expectedProgress(job, operationCalls);
+      const reached = progress.every((item) => item.reached);
+      // Some jobs have two safe endings: perform the guarded action correctly,
+      // or decline it. Only those jobs opt in.
+      const safeRefusal = Boolean(job.refusalAlsoAcceptable) && refusalIsSafe(finalText);
       return {
-        success: progress.every((item) => item.reached),
-        reason: progress.every((item) => item.reached) ? 'completed' : 'gave-up',
+        success: reached || safeRefusal,
+        reason: reached ? 'completed' : safeRefusal ? 'safe-refusal' : 'gave-up',
         turns: turn,
         toolTrace,
         operationCalls,
@@ -346,12 +491,15 @@ async function runJob(model, candidate, job) {
 function summarize(records, candidates) {
   return MODELS.flatMap((model) => candidates.map((candidate) => {
     const cells = records.filter((record) => record.model === model && record.candidate === candidate.name);
+    const applicableJobs = jobs.filter((job) => jobAppliesTo(job, candidate));
     const evaluated = cells.filter((cell) => !cell.result.blocked);
     const successful = cells.filter((cell) => cell.result.success);
     const advertisedCharacters = JSON.stringify(candidate.tools).length;
     return {
       model,
       candidate: candidate.name,
+      writes: candidate.writes ?? 'off',
+      applicableJobs: applicableJobs.length,
       passed: successful.length,
       evaluated: evaluated.length,
       blocked: cells.length - evaluated.length,
@@ -369,14 +517,21 @@ function summarize(records, candidates) {
 
 async function main() {
   const prototypes = await createToolSurfacePrototypes({ executeOperation: fixtureExecutor });
+  // Production gateway candidates run only when named in EVAL_CANDIDATES: the
+  // default run stays the prototype comparison it has always been rather than
+  // silently tripling in cost.
+  const productionCandidates = await Promise.all(WRITE_MODES.map(
+    (writes) => createProductionGatewayCandidate({ executeOperation: fixtureExecutor, writes }),
+  ));
   const candidates = CANDIDATE_NAMES.length
-    ? prototypes.candidates.filter((candidate) => CANDIDATE_NAMES.includes(candidate.name))
+    ? [...prototypes.candidates, ...productionCandidates]
+      .filter((candidate) => CANDIDATE_NAMES.includes(candidate.name))
     : prototypes.candidates;
   const records = [];
 
   await Promise.all(MODELS.map(async (model) => {
     for (const candidate of candidates) {
-      for (const job of jobs) {
+      for (const job of jobs.filter((entry) => jobAppliesTo(entry, candidate))) {
         const result = await runJob(model, candidate, job);
         records.push({ model, candidate: candidate.name, jobId: job.id, result });
         writeFileSync(CHECKPOINT, JSON.stringify({ records }, null, 2));
@@ -393,7 +548,12 @@ async function main() {
     generatedAt: new Date().toISOString(),
     models: MODELS,
     trialCountPerCell: 1,
-    jobs: jobs.map(({ id, stratum, prompt }) => ({ id, stratum, prompt })),
+    jobs: jobs.map(({ id, stratum, prompt, requiresWrites }) => ({
+      id,
+      stratum,
+      prompt,
+      ...(requiresWrites ? { requiresWrites } : {}),
+    })),
     summary: summarize(records, candidates),
     records,
   };

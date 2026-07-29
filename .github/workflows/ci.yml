@@ -68,6 +68,15 @@ jobs:
         HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
         HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
         HELPSCOUT_DEFAULT_INBOX_ID: '359402'
+        # Tier 1 only. The write contract requires live proof of every write
+        # operation, and the tier-1 lifecycle is reversible: it mutates one
+        # disposable MCP-TEST fixture conversation and reads the state back to
+        # confirm both the mutation and its restore. The tier-2 flags
+        # (HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES and
+        # MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE) stay unset on purpose: those
+        # operations email a real customer address, and no scheduled build
+        # should be able to send mail.
+        HELPSCOUT_ENABLE_WRITES: 'true'
       run: npm run dogfood:full
 
     - name: Run authenticated edge-case test
