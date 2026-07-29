@@ -15,9 +15,9 @@ if (process.env.NODE_ENV !== 'test') {
  */
 export interface WriteFlags {
   /** Tier 1: the nonDestructive and reversible operations. */
-  enabled: boolean;
+  readonly enabled: boolean;
   /** Tier 2: adds the externallyVisible operations. Inert unless `enabled`. */
-  customerVisibleEnabled: boolean;
+  readonly customerVisibleEnabled: boolean;
 }
 
 export interface Config {
@@ -40,7 +40,7 @@ export interface Config {
   security: {
     redactMessageContent: boolean;
   };
-  writes: WriteFlags;
+  readonly writes: WriteFlags;
   connectionPool: {
     maxSockets: number;
     maxFreeSockets: number;
@@ -92,6 +92,13 @@ export const config: Config = {
   // The gate decides which tools exist, so an embedding host (or a test) that
   // sets the flags after this module loads must still get the surface it asked
   // for instead of whatever the environment happened to hold at import time.
+  //
+  // The boundary: the advertised surface follows these flags provided they are
+  // set before the gateway serves its first call, because the registry is built
+  // once and reused. Customer-visible execution is not bound by that: the
+  // gateway rechecks the flags live at dispatch, so revoking the flag stops the
+  // next externally visible write even though the advertisement is stale until
+  // the process restarts.
   get writes(): WriteFlags {
     return {
       enabled: process.env.HELPSCOUT_ENABLE_WRITES === 'true',

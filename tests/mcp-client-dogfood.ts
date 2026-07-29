@@ -2284,6 +2284,13 @@ interface WriteContext {
   customFieldId?: string;
   customFieldPreviousValue?: string;
   draftThreadCreated: boolean;
+  /** Discovery reads that failed, so a skip can name the real reason. */
+  discoveryFailures: string[];
+}
+
+/** The discovery failure behind a missing optional fixture, if that is why it is missing. */
+function discoveryFailureFor(write: WriteContext, tool: string): string | undefined {
+  return write.discoveryFailures.find((failure) => failure.startsWith(`${tool} failed`));
 }
 
 interface WriteScenario {
@@ -2326,17 +2333,82 @@ async function getSeedClient(): Promise<AxiosInstance> {
   return seedClient;
 }
 
-/** Re-read until the expected state appears; Help Scout can lag a beat after a write. */
+/**
+ * The two ways one read-back can be taken: through the MCP read tool, which is
+ * what the write contract wants proved, and through the Help Scout API
+ * directly, which the contract also allows as a direct API contract check.
+ */
+interface ReadBack<T> {
+  viaTool: () => Promise<T>;
+  fresh: () => Promise<T>;
+}
+
+/**
+ * Re-read until the expected state appears; Help Scout can lag a beat after a
+ * write.
+ *
+ * The first attempt goes through the MCP read tool. Every later attempt goes
+ * to the API directly, because the server caches conversation and thread reads
+ * for five minutes: the first attempt repopulates that cache, so retrying the
+ * same tool call would re-read the same stale copy and the retry loop would
+ * prove nothing.
+ */
 async function readBackUntil<T>(
-  read: () => Promise<T>,
+  reader: ReadBack<T>,
   satisfied: (value: T) => boolean,
 ): Promise<T> {
-  let latest = await read();
+  let latest = await reader.viaTool();
   for (let attempt = 1; attempt < READ_BACK_ATTEMPTS && !satisfied(latest); attempt++) {
     await new Promise((wait) => setTimeout(wait, READ_BACK_DELAY_MS));
-    latest = await read();
+    latest = await reader.fresh();
   }
   return latest;
+}
+
+function conversationReadBack(session: McpDogfoodSession, conversationId: string): ReadBack<JsonObject> {
+  return {
+    viaTool: () => readConversation(session, conversationId),
+    fresh: () => readConversationDirect(conversationId),
+  };
+}
+
+function threadsReadBack(session: McpDogfoodSession, conversationId: string): ReadBack<JsonObject[]> {
+  return {
+    viaTool: () => readThreads(session, conversationId),
+    fresh: () => readThreadsDirect(conversationId),
+  };
+}
+
+/** Uncached conversation read, straight from Help Scout. */
+async function readConversationDirect(conversationId: string): Promise<JsonObject> {
+  const client = await getSeedClient();
+  const response = await client.get(`/conversations/${conversationId}`);
+  requireCondition(
+    response.status === 200,
+    `Direct read of conversation ${conversationId} returned ${response.status}`,
+  );
+  return response.data as JsonObject;
+}
+
+/** Uncached thread read, straight from Help Scout, paged to the thread budget. */
+async function readThreadsDirect(conversationId: string): Promise<JsonObject[]> {
+  const client = await getSeedClient();
+  const threads: JsonObject[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const response = await client.get(`/conversations/${conversationId}/threads`, { params: { page } });
+    requireCondition(
+      response.status === 200,
+      `Direct read of threads for conversation ${conversationId} returned ${response.status}`,
+    );
+    threads.push(...((response.data?._embedded?.threads ?? []) as JsonObject[]));
+    totalPages = Number(response.data?.page?.totalPages ?? 1);
+    page += 1;
+  } while (page <= totalPages && threads.length < THREAD_BUDGET);
+
+  return threads;
 }
 
 async function readConversation(session: McpDogfoodSession, conversationId: string): Promise<JsonObject> {
@@ -2369,6 +2441,13 @@ function hasTag(conversation: JsonObject, tag: string): boolean {
 function assigneeId(conversation: JsonObject): number | undefined {
   const assignee = getObject(conversation, 'assignee');
   return typeof assignee?.id === 'number' ? assignee.id : undefined;
+}
+
+/** The value of one custom field, as a string, or '' when the field is unset. */
+function customFieldValue(conversation: JsonObject, fieldId: string): string {
+  const field = (getArray(conversation, ['customFields']) as JsonObject[])
+    .find((entry) => String(entry.id) === fieldId);
+  return getString(field?.value);
 }
 
 function snoozedUntil(conversation: JsonObject): string | undefined {
@@ -2418,11 +2497,16 @@ async function resolveWriteFixture(session: McpDogfoodSession, ctx: DogfoodConte
   const existing = await client.get('/conversations', {
     params: { query: `(subject:"${WRITE_FIXTURE_SUBJECT}")`, mailbox: inboxId, status: 'all' },
   });
-  const found = existing.status === 200
-    ? (existing.data?._embedded?.conversations ?? []).find(
-      (conversation: JsonObject) => getString(conversation.subject).startsWith(WRITE_FIXTURE_SUBJECT),
-    )
-    : undefined;
+  // Anything but a 200 means the search did not run, not that the fixture is
+  // absent. Treating the two the same seeds a duplicate fixture on every failed
+  // search, so fail setup loudly instead.
+  requireCondition(
+    existing.status === 200,
+    `Searching for the write fixture conversation returned ${existing.status}: ${JSON.stringify(existing.data).slice(0, 200)}`,
+  );
+  const found = (existing.data?._embedded?.conversations ?? []).find(
+    (conversation: JsonObject) => getString(conversation.subject).startsWith(WRITE_FIXTURE_SUBJECT),
+  );
 
   let conversationId = found ? String(found.id) : '';
   let conversationCreated = false;
@@ -2474,39 +2558,62 @@ async function resolveWriteFixture(session: McpDogfoodSession, ctx: DogfoodConte
     originalStatus: getString(conversation.status) || 'active',
     originalAssigneeId: assigneeId(conversation),
     draftThreadCreated: false,
+    discoveryFailures: [],
   };
 
   await discoverWriteTargets(session, write);
   return write;
 }
 
-/** Resolve the user, inbox, and custom field the optional scenarios need. */
+/**
+ * Resolve the user, inbox, and custom field the optional scenarios need.
+ *
+ * A discovery call that fails is reported as a failed discovery, never as an
+ * absent fixture: "no user resolved from listUsers" would send the operator
+ * looking for a missing record when the read tool is what broke.
+ */
 async function discoverWriteTargets(session: McpDogfoodSession, write: WriteContext): Promise<void> {
+  const discoveryFailures: string[] = [];
+
   const users = await session.callTool('listUsers', { page: 1 });
-  const userItems = getArray(parseToolData(users), ['users', 'results']) as JsonObject[];
-  const pinnedUser = process.env.MCP_DOGFOOD_WRITE_USER_ID;
-  const matchedUser = pinnedUser
-    ? userItems.find((user) => String(user.id) === pinnedUser)
-    : userItems[0];
-  if (matchedUser?.id) write.userId = String(matchedUser.id);
+  if (users.isError) {
+    discoveryFailures.push(`listUsers failed: ${textFromResult(users).slice(0, 200)}`);
+  } else {
+    const userItems = getArray(parseToolData(users), ['users', 'results']) as JsonObject[];
+    const pinnedUser = process.env.MCP_DOGFOOD_WRITE_USER_ID;
+    const matchedUser = pinnedUser
+      ? userItems.find((user) => String(user.id) === pinnedUser)
+      : userItems[0];
+    if (matchedUser?.id) write.userId = String(matchedUser.id);
+  }
 
   const inboxes = await session.callTool('listAllInboxes', { limit: 100 });
-  const inboxItems = getArray(parseToolData(inboxes), ['inboxes', 'results']) as JsonObject[];
-  const pinnedInbox = process.env.MCP_DOGFOOD_WRITE_SECOND_INBOX_ID;
-  const secondInbox = pinnedInbox
-    ? inboxItems.find((inbox) => String(inbox.id) === pinnedInbox)
-    : inboxItems.find((inbox) => String(inbox.id) !== write.inboxId);
-  if (secondInbox?.id) write.secondInboxId = String(secondInbox.id);
+  if (inboxes.isError) {
+    discoveryFailures.push(`listAllInboxes failed: ${textFromResult(inboxes).slice(0, 200)}`);
+  } else {
+    const inboxItems = getArray(parseToolData(inboxes), ['inboxes', 'results']) as JsonObject[];
+    const pinnedInbox = process.env.MCP_DOGFOOD_WRITE_SECOND_INBOX_ID;
+    const secondInbox = pinnedInbox
+      ? inboxItems.find((inbox) => String(inbox.id) === pinnedInbox)
+      : inboxItems.find((inbox) => String(inbox.id) !== write.inboxId);
+    if (secondInbox?.id) write.secondInboxId = String(secondInbox.id);
+  }
 
   const inboxDetail = await session.callTool('getInbox', { inboxId: write.inboxId, include: ['fields'] });
-  const fields = getArray(getObject(parseToolData(inboxDetail), 'customFields'), ['fields']) as JsonObject[];
-  const pinnedField = process.env.MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID;
-  // Only free-text fields are safe to set blind: a dropdown or date needs a
-  // valid option ID or format that this harness cannot invent.
-  const textField = pinnedField
-    ? fields.find((field) => String(field.id) === pinnedField)
-    : fields.find((field) => getString(field.type).toLowerCase().includes('text'));
-  if (textField?.id) write.customFieldId = String(textField.id);
+  if (inboxDetail.isError) {
+    discoveryFailures.push(`getInbox failed: ${textFromResult(inboxDetail).slice(0, 200)}`);
+  } else {
+    const fields = getArray(getObject(parseToolData(inboxDetail), 'customFields'), ['fields']) as JsonObject[];
+    const pinnedField = process.env.MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID;
+    // Only free-text fields are safe to set blind: a dropdown or date needs a
+    // valid option ID or format that this harness cannot invent.
+    const textField = pinnedField
+      ? fields.find((field) => String(field.id) === pinnedField)
+      : fields.find((field) => getString(field.type).toLowerCase().includes('text'));
+    if (textField?.id) write.customFieldId = String(textField.id);
+  }
+
+  write.discoveryFailures = discoveryFailures;
 }
 
 async function runWriteScenario(
@@ -2534,6 +2641,12 @@ async function runWriteScenario(
     const detail = err instanceof Error ? err.message : String(err);
     results.push({ name: scenario.name, tool: scenario.operation, status: 'FAIL', durationMs, detail });
     process.stderr.write(` FAIL: ${detail.slice(0, 240)}\n`);
+  }
+
+  // Writes are rate-limited the same way reads are, and a write scenario makes
+  // several calls, so it honors the same cooldown the read matrix uses.
+  if (SCENARIO_COOLDOWN_MS > 0) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, SCENARIO_COOLDOWN_MS));
   }
 }
 
@@ -2616,7 +2729,7 @@ function buildWriteScenarios(): WriteScenario[] {
         const marker = `${write.runMarker} note`;
         await callWrite(session, 'createNote', { conversationId: write.conversationId, text: marker });
         const threads = await readBackUntil(
-          () => readThreads(session, write.conversationId),
+          threadsReadBack(session, write.conversationId),
           (items) => threadBodies(items).some((body) => body.includes(marker)),
         );
         requireCondition(
@@ -2638,7 +2751,7 @@ function buildWriteScenarios(): WriteScenario[] {
         });
         requireCondition(getObject(envelope, 'result')?.draft === true, 'createDraftReply did not report a draft');
         const threads = await readBackUntil(
-          () => readThreads(session, write.conversationId),
+          threadsReadBack(session, write.conversationId),
           (items) => threadBodies(items).some((body) => body.includes(marker)),
         );
         const draft = threads.find((thread) => `${getString(thread.body)} ${getString(thread.text)}`.includes(marker));
@@ -2660,7 +2773,7 @@ function buildWriteScenarios(): WriteScenario[] {
           status: 'closed',
         });
         const closed = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => getString(conversation.status) === 'closed',
         );
         requireCondition(getString(closed.status) === 'closed', `Status after close is ${getString(closed.status)}`);
@@ -2670,7 +2783,7 @@ function buildWriteScenarios(): WriteScenario[] {
           status: write.originalStatus,
         });
         const restored = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => getString(conversation.status) === write.originalStatus,
         );
         requireCondition(
@@ -2684,12 +2797,13 @@ function buildWriteScenarios(): WriteScenario[] {
       name: 'assign the fixture to the discovered user',
       skipIf: (write) => write.userId
         ? undefined
-        : 'no user resolved from listUsers; set MCP_DOGFOOD_WRITE_USER_ID to pin one',
+        : (discoveryFailureFor(write, 'listUsers')
+          ?? 'no user resolved from listUsers; set MCP_DOGFOOD_WRITE_USER_ID to pin one'),
       run: async (session, write) => {
         const userId = write.userId as string;
         await callWrite(session, 'assignConversation', { conversationId: write.conversationId, userId });
         const assigned = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => assigneeId(conversation) === Number(userId),
         );
         requireCondition(
@@ -2706,12 +2820,13 @@ function buildWriteScenarios(): WriteScenario[] {
       name: 'clear the assignee, then restore the pre-run one',
       skipIf: (write) => write.userId !== undefined || write.originalAssigneeId !== undefined
         ? undefined
-        : 'the fixture has no assignee to clear; set MCP_DOGFOOD_WRITE_USER_ID so assignConversation can run first',
+        : (discoveryFailureFor(write, 'listUsers')
+          ?? 'the fixture has no assignee to clear; set MCP_DOGFOOD_WRITE_USER_ID so assignConversation can run first'),
       run: async (session, write) => {
         await callWrite(session, 'unassignConversation', { conversationId: write.conversationId });
         // An unassigned Help Scout conversation carries no assignee field at all.
         const unassigned = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => assigneeId(conversation) === undefined,
         );
         requireCondition(
@@ -2725,7 +2840,7 @@ function buildWriteScenarios(): WriteScenario[] {
           userId: String(write.originalAssigneeId),
         });
         const restored = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => assigneeId(conversation) === write.originalAssigneeId,
         );
         requireCondition(
@@ -2744,7 +2859,7 @@ function buildWriteScenarios(): WriteScenario[] {
           tags: [WRITE_TAG],
         });
         const tagged = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => hasTag(conversation, WRITE_TAG),
         );
         requireCondition(hasTag(tagged, WRITE_TAG), `Tag ${WRITE_TAG} is not on the conversation after addConversationTags`);
@@ -2764,7 +2879,7 @@ function buildWriteScenarios(): WriteScenario[] {
           tags: [WRITE_TAG],
         });
         const cleaned = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => !hasTag(conversation, WRITE_TAG),
         );
         requireCondition(!hasTag(cleaned, WRITE_TAG), `Cleanup failed: tag ${WRITE_TAG} is still on the conversation`);
@@ -2784,7 +2899,7 @@ function buildWriteScenarios(): WriteScenario[] {
           unsnoozeOnCustomerReply: true,
         });
         const snoozed = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => Boolean(snoozedUntil(conversation)),
         );
         requireCondition(
@@ -2799,7 +2914,7 @@ function buildWriteScenarios(): WriteScenario[] {
       run: async (session, write) => {
         await callWrite(session, 'unsnoozeConversation', { conversationId: write.conversationId });
         const awake = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => !snoozedUntil(conversation),
         );
         requireCondition(
@@ -2813,7 +2928,8 @@ function buildWriteScenarios(): WriteScenario[] {
       name: 'set a custom field value, then restore it',
       skipIf: (write) => write.customFieldId
         ? undefined
-        : 'no free-text custom field on the fixture inbox; add one or set MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID',
+        : (discoveryFailureFor(write, 'getInbox')
+          ?? 'no free-text custom field on the fixture inbox; add one or set MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID'),
       run: async (session, write) => {
         const fieldId = write.customFieldId as string;
         const before = (getArray(await readConversation(session, write.conversationId), ['customFields']) as JsonObject[])
@@ -2826,7 +2942,7 @@ function buildWriteScenarios(): WriteScenario[] {
           fields: [{ id: fieldId, value }],
         });
         const updated = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => (getArray(conversation, ['customFields']) as JsonObject[])
             .some((field) => String(field.id) === fieldId && getString(field.value) === value),
         );
@@ -2841,7 +2957,7 @@ function buildWriteScenarios(): WriteScenario[] {
           fields: [{ id: fieldId, value: write.customFieldPreviousValue ?? '' }],
         });
         const restored = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => (getArray(conversation, ['customFields']) as JsonObject[])
             .every((field) => String(field.id) !== fieldId || getString(field.value) !== value),
         );
@@ -2857,7 +2973,8 @@ function buildWriteScenarios(): WriteScenario[] {
       name: 'move to a second inbox, then move back',
       skipIf: (write) => write.secondInboxId
         ? undefined
-        : 'the account exposes only one inbox; add a second or set MCP_DOGFOOD_WRITE_SECOND_INBOX_ID',
+        : (discoveryFailureFor(write, 'listAllInboxes')
+          ?? 'the account exposes only one inbox; add a second or set MCP_DOGFOOD_WRITE_SECOND_INBOX_ID'),
       run: async (session, write) => {
         const destination = write.secondInboxId as string;
         await callWrite(session, 'moveConversation', {
@@ -2865,7 +2982,7 @@ function buildWriteScenarios(): WriteScenario[] {
           mailboxId: destination,
         });
         const moved = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => String(conversation.mailboxId) === destination,
         );
         requireCondition(
@@ -2878,7 +2995,7 @@ function buildWriteScenarios(): WriteScenario[] {
           mailboxId: write.inboxId,
         });
         const restored = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (conversation) => String(conversation.mailboxId) === write.inboxId,
         );
         requireCondition(
@@ -2914,7 +3031,7 @@ function buildWriteScenarios(): WriteScenario[] {
           targetId: write.conversationId,
         });
         const threads = await readBackUntil(
-          () => readThreads(session, write.conversationId),
+          threadsReadBack(session, write.conversationId),
           (items) => items.some((thread) => `${getString(thread.body)} ${getString(thread.text)}`.includes(marker)
             && getString(thread.state).toLowerCase() !== 'draft'),
         );
@@ -2941,7 +3058,7 @@ function buildWriteScenarios(): WriteScenario[] {
           targetId: conversationId,
         });
         const published = await readBackUntil(
-          () => readConversation(session, conversationId),
+          conversationReadBack(session, conversationId),
           (conversation) => getString(conversation.state).toLowerCase() !== 'draft',
         );
         requireCondition(
@@ -2956,38 +3073,58 @@ function buildWriteScenarios(): WriteScenario[] {
       name: 'fixture is restored to its pre-run state',
       run: async (session, write) => {
         const drift: string[] = [];
+        const failures: string[] = [];
         const conversation = await readConversation(session, write.conversationId);
 
+        // One restore step that throws must not abandon the rest: every field
+        // left unrestored is worth restoring, and the operator needs the whole
+        // list, not the first entry in it.
+        const restoreStep = async (label: string, step: () => Promise<unknown>): Promise<void> => {
+          try {
+            await step();
+          } catch (err) {
+            failures.push(`${label}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        };
+
         if (getString(conversation.status) !== write.originalStatus) {
-          await callWrite(session, 'updateConversationStatus', {
+          await restoreStep('restore status', () => callWrite(session, 'updateConversationStatus', {
             conversationId: write.conversationId,
             status: write.originalStatus,
-          });
+          }));
         }
         if (hasTag(conversation, WRITE_TAG)) {
-          await callWrite(session, 'removeConversationTags', {
+          await restoreStep('remove the test tag', () => callWrite(session, 'removeConversationTags', {
             conversationId: write.conversationId,
             tags: [WRITE_TAG],
-          });
+          }));
         }
         if (snoozedUntil(conversation)) {
-          await callWrite(session, 'unsnoozeConversation', { conversationId: write.conversationId });
+          await restoreStep('wake the conversation', () => callWrite(session, 'unsnoozeConversation', {
+            conversationId: write.conversationId,
+          }));
         }
         if (String(conversation.mailboxId) !== write.inboxId) {
-          await callWrite(session, 'moveConversation', {
+          await restoreStep('move back to the original inbox', () => callWrite(session, 'moveConversation', {
             conversationId: write.conversationId,
             mailboxId: write.inboxId,
-          });
+          }));
         }
         if (write.originalAssigneeId !== undefined && assigneeId(conversation) !== write.originalAssigneeId) {
-          await callWrite(session, 'assignConversation', {
+          await restoreStep('restore the assignee', () => callWrite(session, 'assignConversation', {
             conversationId: write.conversationId,
             userId: String(write.originalAssigneeId),
-          });
+          }));
+        }
+        if (write.customFieldId && customFieldValue(conversation, write.customFieldId) !== (write.customFieldPreviousValue ?? '')) {
+          await restoreStep('restore the custom field value', () => callWrite(session, 'updateConversationFields', {
+            conversationId: write.conversationId,
+            fields: [{ id: write.customFieldId as string, value: write.customFieldPreviousValue ?? '' }],
+          }));
         }
 
         const final = await readBackUntil(
-          () => readConversation(session, write.conversationId),
+          conversationReadBack(session, write.conversationId),
           (current) => getString(current.status) === write.originalStatus && !hasTag(current, WRITE_TAG),
         );
         if (getString(final.status) !== write.originalStatus) {
@@ -3001,12 +3138,28 @@ function buildWriteScenarios(): WriteScenario[] {
         if (write.originalAssigneeId !== undefined && assigneeId(final) !== write.originalAssigneeId) {
           drift.push(`assignee is ${String(assigneeId(final))}, expected ${String(write.originalAssigneeId)}`);
         }
+        if (write.customFieldId) {
+          const expected = write.customFieldPreviousValue ?? '';
+          const actual = customFieldValue(final, write.customFieldId);
+          if (actual !== expected) {
+            drift.push(`custom field ${write.customFieldId} holds "${actual}", expected "${expected}"`);
+          }
+        }
 
         // Never hide a cleanup failure: name every field that could not be
-        // restored so the operator knows exactly what to fix by hand.
+        // restored so the operator knows exactly what to fix by hand, and leave
+        // it in the artifact list, which prints even when this scenario fails.
+        for (const item of drift) {
+          writeArtifacts.push(`conversation ${write.conversationId} was not restored: ${item}`);
+        }
+        for (const failure of failures) {
+          writeArtifacts.push(`conversation ${write.conversationId} restore step failed: ${failure}`);
+        }
+
         requireCondition(
-          drift.length === 0,
-          `Cleanup could not be confirmed for conversation ${write.conversationId}: ${drift.join('; ')}`,
+          drift.length === 0 && failures.length === 0,
+          `Cleanup could not be confirmed for conversation ${write.conversationId}: `
+          + [...drift, ...failures].join('; '),
         );
       },
     },

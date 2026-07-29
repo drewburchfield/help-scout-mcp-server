@@ -90,7 +90,10 @@ server is the permission boundary. `HELPSCOUT_ENABLE_WRITES=true` turns on tier
 `externallyVisible` operations that can reach a customer, each of which still
 requires per-call confirmation metadata naming the operation and the target.
 Both default off, and with them off `tools/list` returns the same three tools as
-2.0 while write operations are absent from search, describe, and dispatch.
+2.0 while write operations are absent from search, describe, and dispatch. The
+advertised surface is built once per process, so a flag changed after the first
+gateway call does not change what the server advertises until it restarts, while
+customer-visible execution is rechecked live at dispatch and stops immediately.
 `destructive` operations are not exposed in 2.1 at all. Where an externally
 visible action has a non-visible variant, the non-visible one is the default:
 `createDraftReply` pins `draft: true`, while `sendReply` and `publishDraft` are

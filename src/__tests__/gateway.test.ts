@@ -367,6 +367,16 @@ describe('GatewayHandler', () => {
       await expect(broken.listOperationNames()).rejects.toThrow('collides with a gateway tool');
     });
 
+    it('reserves write_help_scout even while writes are disabled', async () => {
+      // The name is reserved, not merely taken: an operation may not claim a
+      // name that would become unreachable the moment an operator flips the flag.
+      const broken = new GatewayHandler(stubHandler([
+        { name: WRITE_TOOL_NAME, description: 'colliding operation' },
+      ]), { writeFlags: { enabled: false, customerVisibleEnabled: false } });
+
+      await expect(broken.listOperationNames()).rejects.toThrow('collides with a gateway tool');
+    });
+
     it('does not cache a failed registry build', async () => {
       const listTools = jest.fn()
         .mockRejectedValueOnce(new Error('transient failure'))
@@ -462,6 +472,40 @@ describe('GatewayHandler', () => {
 
         expect(result.isError).toBe(true);
         expect(String(parsePayload(result).error)).toBe('Unknown tool: createNote');
+      });
+
+      it('does not tell the caller to execute an unknown name through read_help_scout', async () => {
+        const result = await callGateway(gateway, 'sendReply', { conversationId: '123' });
+        const hint = String(parsePayload(result).hint);
+
+        expect(hint).toContain(SEARCH_TOOL_NAME);
+        expect(hint).not.toContain(READ_TOOL_NAME);
+      });
+    });
+
+    describe('with the customer-visible flag on but writes off', () => {
+      it('advertises exactly the three read tools and registers no write operation', async () => {
+        // Tier 2 is additive and inert on its own: the customer-visible flag
+        // must not create a write path when writes are off entirely.
+        const handler = new GatewayHandler(toolHandler, {
+          writeFlags: { enabled: false, customerVisibleEnabled: true },
+        });
+
+        expect((await handler.listTools()).map(tool => tool.name)).toEqual([...GATEWAY_TOOL_NAMES]);
+
+        const names = await handler.listOperationNames();
+        for (const operation of [...TIER_1_OPERATIONS, ...TIER_2_OPERATIONS]) {
+          expect(names).not.toContain(operation);
+        }
+
+        const search = await callGateway(handler, SEARCH_TOOL_NAME, { query: 'reply to the customer' });
+        const found = (parsePayload(search).results as { name: string }[]).map(entry => entry.name);
+        for (const operation of [...TIER_1_OPERATIONS, ...TIER_2_OPERATIONS]) {
+          expect(found).not.toContain(operation);
+        }
+
+        const direct = await callGateway(handler, WRITE_TOOL_NAME, { name: 'sendReply' });
+        expect(String(parsePayload(direct).error)).toBe(`Unknown tool: ${WRITE_TOOL_NAME}`);
       });
     });
 
@@ -694,6 +738,90 @@ describe('GatewayHandler', () => {
       expect(result.isError).toBeUndefined();
       expect(scope.isDone()).toBe(true);
     });
+
+    it('accepts a numeric targetId that matches the conversation ID', async () => {
+      const scope = nock(baseURL)
+        .get('/conversations/4242')
+        .reply(200, { primaryCustomer: { id: 500 } })
+        .post('/conversations/4242/reply')
+        .reply(201, '', { 'Resource-Id': '99' });
+
+      const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'sendReply',
+        arguments: replyArgs,
+        confirm: true,
+        confirmOperation: 'sendReply',
+        targetId: 4242,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(parsePayload(result).status).toBe('succeeded');
+      expect(scope.isDone()).toBe(true);
+    });
+
+    it('names the missing target argument when arguments carry no conversationId', async () => {
+      const scope = nock(baseURL).post('/conversations/4242/reply').reply(201);
+
+      const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'sendReply',
+        arguments: { text: 'Thanks for reaching out.' },
+        confirm: true,
+        confirmOperation: 'sendReply',
+        targetId: '4242',
+      });
+      const payload = parsePayload(result);
+
+      expect(result.isError).toBe(true);
+      expect((payload.required as Record<string, unknown>).targetId)
+        .toBe('the conversationId in "arguments"');
+      expect(scope.isDone()).toBe(false);
+    });
+
+    it('refuses an externallyVisible operation the moment the gate is revoked', async () => {
+      // The registry is built once per process. Execution is not: an operator
+      // who turns the flag off mid-process must lose the path immediately, even
+      // though tools/list keeps advertising it until a restart.
+      const flags = { enabled: true, customerVisibleEnabled: true };
+      const revocable = new GatewayHandler(toolHandler, { writeFlags: flags });
+
+      const described = await callGateway(revocable, DESCRIBE_TOOL_NAME, { names: ['sendReply'] });
+      expect((parsePayload(described).schemas as Record<string, unknown>[])[0].tier).toBe(2);
+
+      flags.customerVisibleEnabled = false;
+
+      const scope = nock(baseURL).post('/conversations/4242/reply').reply(201);
+      const result = await callGateway(revocable, WRITE_TOOL_NAME, {
+        name: 'sendReply',
+        arguments: replyArgs,
+        confirm: true,
+        confirmOperation: 'sendReply',
+        targetId: '4242',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(String(parsePayload(result).error)).toContain('customer-visible write gate is off');
+      expect(scope.isDone()).toBe(false);
+    });
+
+    it('refuses a tier-1-labelled operation whose mutation class is externallyVisible', async () => {
+      // Gating reads the mutation class, not the declared tier: a registry
+      // whose tier disagreed with its class must not become a bypass.
+      const writes = new WriteHandler();
+      const mislabelled = {
+        listOperations: () => writes.listOperations().map(operation => (
+          operation.mutationClass === 'externallyVisible'
+            ? { ...operation, tier: 1 as const }
+            : operation
+        )),
+      };
+      const handler = new GatewayHandler(toolHandler, {
+        writes: mislabelled,
+        writeFlags: { enabled: true, customerVisibleEnabled: false },
+      });
+
+      const names = await handler.listOperationNames();
+      expect(names).not.toContain('sendReply');
+    });
   });
 
   describe(`${WRITE_TOOL_NAME} dry run`, () => {
@@ -728,7 +856,6 @@ describe('GatewayHandler', () => {
       });
       expect(String(payload.note)).toContain('Help Scout state was not checked');
       expect(scope.isDone()).toBe(false);
-      expect(nock.pendingMocks()).toEqual(['POST https://api.helpscout.net:443/v2/conversations/4242/notes']);
     });
 
     it('validates arguments before reporting the planned request', async () => {
@@ -768,6 +895,102 @@ describe('GatewayHandler', () => {
       expect(wouldSend.method).toBe('PUT');
       expect(wouldSend.precededBy).toEqual({ method: 'GET', path: '/conversations/4242' });
       expect(typeof wouldSend.bodyNote).toBe('string');
+      // No `body`: the requested tags are not the body that gets sent, and
+      // showing them under that name reads as a full tag replacement.
+      expect(wouldSend).not.toHaveProperty('body');
+      expect(wouldSend.bodyBeforeMerge).toEqual({ tags: ['urgent'] });
+    });
+  });
+
+  describe(`${WRITE_TOOL_NAME} envelope`, () => {
+    let writeGateway: GatewayHandler;
+
+    beforeEach(() => {
+      writeGateway = new GatewayHandler(toolHandler, {
+        writeFlags: { enabled: true, customerVisibleEnabled: true },
+      });
+      nock(baseURL)
+        .persist()
+        .post('/oauth2/token')
+        .reply(200, { access_token: 'mock-access-token', token_type: 'Bearer', expires_in: 3600 });
+    });
+
+    const noteArgs = { conversationId: '4242', text: 'internal' };
+
+    it.each([
+      ['a string "true"', 'true'],
+      ['the number 1', 1],
+      ['null', null],
+    ])('refuses a dryRun that is %s rather than executing the write', async (_case, dryRun) => {
+      const scope = nock(baseURL).post('/conversations/4242/notes').reply(201);
+
+      const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'createNote',
+        arguments: noteArgs,
+        dryRun,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(String(parsePayload(result).error)).toContain('"dryRun" must be a boolean');
+      expect(scope.isDone()).toBe(false);
+    });
+
+    it('refuses an unknown top-level field', async () => {
+      const scope = nock(baseURL).post('/conversations/4242/notes').reply(201);
+
+      const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'createNote',
+        arguments: noteArgs,
+        conversationId: '4242',
+      });
+      const payload = parsePayload(result);
+
+      expect(result.isError).toBe(true);
+      expect(String(payload.error)).toContain('conversationId');
+      expect(payload.allowedFields).toContain('arguments');
+      expect(scope.isDone()).toBe(false);
+    });
+
+    it.each(['dryRun', 'confirm', 'confirmOperation', 'targetId'])(
+      'refuses %s inside "arguments" instead of stripping it',
+      async (field) => {
+        const scope = nock(baseURL).post('/conversations/4242/notes').reply(201);
+
+        const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+          name: 'createNote',
+          arguments: { ...noteArgs, [field]: true },
+        });
+
+        expect(result.isError).toBe(true);
+        expect(String(parsePayload(result).error)).toContain(field);
+        expect(scope.isDone()).toBe(false);
+      },
+    );
+
+    it('tolerates the server-injected __userQuery and keeps it out of the operation', async () => {
+      const scope = nock(baseURL).post('/conversations/4242/notes', { text: 'internal' })
+        .reply(201, '', { 'Resource-Id': '7' });
+
+      const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'createNote',
+        arguments: noteArgs,
+        __userQuery: 'add a note about the refund',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(scope.isDone()).toBe(true);
+    });
+
+    it('refuses a misspelled operation argument rather than dropping it', async () => {
+      const scope = nock(baseURL).post('/conversations/4242/reply').reply(201);
+
+      const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'createDraftReply',
+        arguments: { conversationId: '4242', text: 'hello', customerId: '77', bcc_: ['quiet@example.com'] },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(scope.isDone()).toBe(false);
     });
   });
 });

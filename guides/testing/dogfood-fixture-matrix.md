@@ -168,9 +168,17 @@ Scout and the next run seeds a fresh one.
 | Gateway surface (`write_help_scout`, `describe_help_scout`, `read_help_scout`) | n/a | No Help Scout fixture. Asserts exactly four advertised tools, the write tool's `readOnlyHint: false` and `destructiveHint: true`, mutation class and tier on every enabled write operation, tier-2 operations reported as unknown while their gate is off, and `read_help_scout` refusing a write operation with a redirect. | n/a | Writes disabled. |
 
 A final scenario re-reads the fixture and restores any drift in status, tags,
-snooze, inbox, and assignee. It fails the run and names every field it could not
-restore. Cleanup failure is never reported as a pass, and artifacts that no API
-call can remove are listed in the dogfood summary.
+snooze, inbox, assignee, and the custom field the field scenario touched. A
+restore step that throws does not abandon the ones after it: every failure is
+collected, and the run fails naming all of them. Cleanup failure is never
+reported as a pass, and anything left behind is listed in the dogfood summary,
+including drift the restore pass could not undo.
+
+Read-backs poll: the first attempt goes through the MCP read tool, and later
+attempts go straight to the Help Scout API, which the contract allows as a
+direct API contract check. The server caches conversation and thread reads for
+five minutes, so a retry through the same tool call would re-read the copy the
+first attempt cached and the polling would prove nothing.
 
 ## Current Skips To Eliminate
 

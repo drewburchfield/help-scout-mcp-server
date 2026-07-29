@@ -83,6 +83,14 @@ export async function createProductionGatewayCandidate(options = {}) {
   if (!WRITE_MODES.includes(writes)) {
     throw new Error(`Unknown write mode: ${writes}. Expected one of ${WRITE_MODES.join(', ')}.`);
   }
+  // Without a fixture executor the candidate would fall back to the real write
+  // handler, and an eval would mutate the live Help Scout account. Refuse to
+  // build one rather than let the default decide.
+  if (writes !== 'off' && typeof options.executeOperation !== 'function') {
+    throw new Error(
+      `Write mode "${writes}" requires an executeOperation fixture. Building it without one would run the live write handler against the real Help Scout account.`,
+    );
+  }
 
   const operations = {
     listTools: () => toolHandler.listTools(),

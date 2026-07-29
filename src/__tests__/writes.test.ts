@@ -137,10 +137,28 @@ describe('WriteHandler', () => {
       expect(scope.isDone()).toBe(true);
     });
 
-    it('ignores a caller-supplied draft flag on createDraftReply', async () => {
-      // The schema has no `draft` property, so an argument that tries to flip
-      // the operation into a send is dropped rather than honored. With no
-      // customer named, the primary customer is resolved with a read first.
+    it('refuses a caller-supplied draft flag on createDraftReply', async () => {
+      // The schema has no `draft` property and is strict, so an argument that
+      // tries to flip the operation into a send is refused rather than dropped:
+      // a caller who believes the flag was honored must be told it was not.
+      const scope = nock(baseURL)
+        .post(`/conversations/${CONVERSATION_ID}/reply`)
+        .reply(201);
+
+      const result = await run('createDraftReply', {
+        conversationId: CONVERSATION_ID,
+        text: 'draft body',
+        draft: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(scope.isDone()).toBe(false);
+      expect((operation('createDraftReply').tool.inputSchema as {
+        properties: Record<string, unknown>;
+      }).properties).not.toHaveProperty('draft');
+    });
+
+    it('resolves the primary customer when the caller names none', async () => {
       const scope = nock(baseURL)
         .get(`/conversations/${CONVERSATION_ID}`)
         .reply(200, { primaryCustomer: { id: 500 } })
@@ -151,14 +169,31 @@ describe('WriteHandler', () => {
       const result = await run('createDraftReply', {
         conversationId: CONVERSATION_ID,
         text: 'draft body',
-        draft: false,
       });
 
       expect(result.isError).toBeUndefined();
       expect(scope.isDone()).toBe(true);
-      expect((operation('createDraftReply').tool.inputSchema as {
-        properties: Record<string, unknown>;
-      }).properties).not.toHaveProperty('draft');
+    });
+
+    it('refuses a misspelled argument instead of dropping it', async () => {
+      const scope = nock(baseURL).post(`/conversations/${CONVERSATION_ID}/reply`).reply(201);
+
+      const result = await run('createDraftReply', {
+        conversationId: CONVERSATION_ID,
+        text: 'draft body',
+        customerId: '77',
+        bcc_: ['quiet@example.com'],
+      });
+
+      expect(result.isError).toBe(true);
+      expect(scope.isDone()).toBe(false);
+    });
+
+    it('advertises strict operation schemas so unknown arguments are visible as errors', () => {
+      for (const op of operations.values()) {
+        expect(op.tool.inputSchema as { additionalProperties?: unknown })
+          .toMatchObject({ additionalProperties: false });
+      }
     });
 
     it('sends draft false and inline status on sendReply', async () => {
@@ -241,6 +276,25 @@ describe('WriteHandler', () => {
       expect(payload.notPresent).toEqual(['absent']);
     });
 
+    it('sends one entry for a requested list that repeats a tag in another case', async () => {
+      nock(baseURL)
+        .get(`/conversations/${CONVERSATION_ID}`)
+        .reply(200, { id: 4242, tags: [] });
+      const scope = nock(baseURL)
+        .put(`/conversations/${CONVERSATION_ID}/tags`, { tags: ['urgent'] })
+        .reply(204);
+
+      const result = await run('addConversationTags', {
+        conversationId: CONVERSATION_ID,
+        tags: ['urgent', 'URGENT'],
+      });
+      const payload = parsePayload(result).result as Record<string, unknown>;
+
+      expect(scope.isDone()).toBe(true);
+      expect(payload.added).toEqual(['urgent']);
+      expect(payload.alreadyPresent).toEqual([]);
+    });
+
     it('merges custom fields by id and preserves untouched ones', async () => {
       nock(baseURL)
         .get(`/conversations/${CONVERSATION_ID}`)
@@ -254,6 +308,32 @@ describe('WriteHandler', () => {
       const scope = nock(baseURL)
         .put(`/conversations/${CONVERSATION_ID}/fields`, {
           fields: [{ id: 8, value: '1234' }, { id: 9, value: 'emea' }],
+        })
+        .reply(204);
+
+      const result = await run('updateConversationFields', {
+        conversationId: CONVERSATION_ID,
+        fields: [{ id: '8', value: '1234' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(scope.isDone()).toBe(true);
+    });
+
+    it('echoes untouched custom field values back exactly as Help Scout returned them', async () => {
+      nock(baseURL)
+        .get(`/conversations/${CONVERSATION_ID}`)
+        .reply(200, {
+          id: 4242,
+          customFields: [
+            { id: 8, name: 'Account Type', value: '8518' },
+            { id: 9, name: 'Seats', value: 12 },
+            { id: 10, name: 'Renewal', value: null },
+          ],
+        });
+      const scope = nock(baseURL)
+        .put(`/conversations/${CONVERSATION_ID}/fields`, {
+          fields: [{ id: 8, value: '1234' }, { id: 9, value: 12 }, { id: 10, value: null }],
         })
         .reply(204);
 
@@ -302,6 +382,19 @@ describe('WriteHandler', () => {
 
       expect(result.isError).toBe(true);
       expect(pendingWriteMocks()).toEqual([]);
+    });
+
+    it.each([
+      ['a prose date Date.parse would accept', 'August 1 2099'],
+      ['a US-format date', '08/01/2099'],
+      ['a year alone', '2099'],
+    ])('rejects %s as a snooze time', async (_case, snoozedUntil) => {
+      const scope = nock(baseURL).put(`/conversations/${CONVERSATION_ID}/snooze`).reply(204);
+
+      const result = await run('snoozeConversation', { conversationId: CONVERSATION_ID, snoozedUntil });
+
+      expect(result.isError).toBe(true);
+      expect(scope.isDone()).toBe(false);
     });
 
     it('deletes the snooze to wake a conversation', async () => {
@@ -384,6 +477,71 @@ describe('WriteHandler', () => {
       expect(String((payload.cleanup as Record<string, unknown>).instructions)).toContain('getConversation');
     });
 
+    it('reports a network failure as an unknown outcome with no upstream status', async () => {
+      nock(baseURL)
+        .post(`/conversations/${CONVERSATION_ID}/notes`)
+        .replyWithError('socket hang up');
+
+      const result = await run('createNote', { conversationId: CONVERSATION_ID, text: 'note' });
+      const payload = parsePayload(result);
+
+      expect(result.isError).toBe(true);
+      expect((payload.error as Record<string, unknown>).upstreamStatus).toBeNull();
+      expect((payload.cleanup as Record<string, unknown>).required).toBe(true);
+    });
+
+    it('names re-authentication for a 401 without claiming the write landed', async () => {
+      nock(baseURL).post(`/conversations/${CONVERSATION_ID}/notes`).reply(401, { message: 'unauthorized' });
+
+      const result = await run('createNote', { conversationId: CONVERSATION_ID, text: 'note' });
+      const payload = parsePayload(result);
+      const error = payload.error as Record<string, unknown>;
+
+      expect(result.isError).toBe(true);
+      expect(error.upstreamStatus).toBe(401);
+      expect(String(error.guidance)).toContain('re-authenticates');
+      expect(String(error.guidance)).toContain('nothing was applied');
+      // A 401 is refused before processing, so the outcome is not in doubt.
+      expect((payload.cleanup as Record<string, unknown>).required).toBe(false);
+    });
+
+    it('reports a failed pre-write read as a write that was never attempted', async () => {
+      // 404 rather than 5xx: reads retry a 5xx, and the retry backoff would
+      // dominate the test without changing what it proves.
+      nock(baseURL).get(`/conversations/${CONVERSATION_ID}`).reply(404, {});
+      const scope = nock(baseURL).put(`/conversations/${CONVERSATION_ID}/tags`).reply(204);
+
+      const result = await run('addConversationTags', {
+        conversationId: CONVERSATION_ID,
+        tags: ['urgent'],
+      });
+      const payload = parsePayload(result);
+      const error = payload.error as Record<string, unknown>;
+
+      expect(result.isError).toBe(true);
+      expect(payload.status).toBe('failed');
+      expect(payload.result).toBeNull();
+      expect(error.phase).toBe('preWriteRead');
+      expect(String(error.guidance)).toContain('No mutation was attempted');
+      expect(scope.isDone()).toBe(false);
+    });
+
+    it('refuses a reply with no named customer and no primary customer to fall back on', async () => {
+      nock(baseURL).get(`/conversations/${CONVERSATION_ID}`).reply(200, {});
+      const scope = nock(baseURL).post(`/conversations/${CONVERSATION_ID}/reply`).reply(201);
+
+      const result = await run('createDraftReply', {
+        conversationId: CONVERSATION_ID,
+        text: 'draft body',
+      });
+      const payload = parsePayload(result);
+
+      expect(result.isError).toBe(true);
+      expect(payload.status).toBe('failed');
+      expect(JSON.stringify(payload)).toContain('customerId');
+      expect(scope.isDone()).toBe(false);
+    });
+
     it('says a 204 carries no body and names the read that confirms it', async () => {
       nock(baseURL).patch(`/conversations/${CONVERSATION_ID}`).reply(204);
 
@@ -412,12 +570,50 @@ describe('WriteHandler', () => {
         });
 
       const result = await run('createNote', { conversationId: CONVERSATION_ID, text: 'note' });
-      const error = parsePayload(result).error as Record<string, unknown>;
+      const payload = parsePayload(result);
+      const error = payload.error as Record<string, unknown>;
 
       expect(attempts).toBe(1);
       expect(result.isError).toBe(true);
       expect(error.upstreamStatus).toBe(429);
       expect(String(error.guidance)).toContain('never retried automatically');
+      expect((payload.cleanup as Record<string, unknown>).required).toBe(true);
+    });
+
+    it('surfaces a 429 on a PUT without a second attempt', async () => {
+      nock(baseURL)
+        .get(`/conversations/${CONVERSATION_ID}`)
+        .reply(200, { id: 4242, tags: [] });
+      let attempts = 0;
+      nock(baseURL)
+        .put(`/conversations/${CONVERSATION_ID}/tags`)
+        .times(3)
+        .reply(() => {
+          attempts += 1;
+          return [429, { message: 'rate limited' }];
+        });
+
+      const result = await run('addConversationTags', { conversationId: CONVERSATION_ID, tags: ['urgent'] });
+
+      expect(attempts).toBe(1);
+      expect(result.isError).toBe(true);
+      expect((parsePayload(result).error as Record<string, unknown>).upstreamStatus).toBe(429);
+    });
+
+    it('surfaces a 500 on a DELETE without a second attempt', async () => {
+      let attempts = 0;
+      nock(baseURL)
+        .delete(`/conversations/${CONVERSATION_ID}/snooze`)
+        .times(3)
+        .reply(() => {
+          attempts += 1;
+          return [500, {}];
+        });
+
+      const result = await run('unsnoozeConversation', { conversationId: CONVERSATION_ID });
+
+      expect(attempts).toBe(1);
+      expect(result.isError).toBe(true);
     });
 
     it('surfaces a 500 on a PATCH without a second attempt', async () => {
@@ -434,6 +630,45 @@ describe('WriteHandler', () => {
 
       expect(attempts).toBe(1);
       expect(result.isError).toBe(true);
+    });
+  });
+
+  describe('cache invalidation', () => {
+    /** Prime the read cache the way a getConversation call would. */
+    async function primeCache(payload: Record<string, unknown>): Promise<void> {
+      nock(baseURL).get(`/conversations/${CONVERSATION_ID}`).reply(200, payload);
+      const { helpScoutClient } = await import('../utils/helpscout-client.js');
+      await helpScoutClient.get(`/conversations/${CONVERSATION_ID}`);
+    }
+
+    async function readConversation(): Promise<Record<string, unknown>> {
+      const { helpScoutClient } = await import('../utils/helpscout-client.js');
+      return helpScoutClient.get(`/conversations/${CONVERSATION_ID}`);
+    }
+
+    it('drops the cache after a successful write so the read-back sees new state', async () => {
+      await primeCache({ id: 4242, status: 'active' });
+      nock(baseURL).post(`/conversations/${CONVERSATION_ID}/notes`).reply(201, '', { 'Resource-Id': '881' });
+
+      const result = await run('createNote', { conversationId: CONVERSATION_ID, text: 'note' });
+      expect(result.isError).toBeUndefined();
+
+      nock(baseURL).get(`/conversations/${CONVERSATION_ID}`).reply(200, { id: 4242, status: 'closed' });
+      expect((await readConversation()).status).toBe('closed');
+    });
+
+    it('drops the cache after an uncertain failure so the read-back is not a stale confirmation', async () => {
+      await primeCache({ id: 4242, status: 'active' });
+      nock(baseURL).post(`/conversations/${CONVERSATION_ID}/notes`).reply(429, { message: 'rate limited' });
+
+      const result = await run('createNote', { conversationId: CONVERSATION_ID, text: 'note' });
+      expect(result.isError).toBe(true);
+
+      // The failure envelope tells the caller to read the conversation back. A
+      // cached pre-write copy would answer "the write did not land" whether or
+      // not it did, which is exactly the case that invites a duplicate.
+      nock(baseURL).get(`/conversations/${CONVERSATION_ID}`).reply(200, { id: 4242, status: 'closed' });
+      expect((await readConversation()).status).toBe('closed');
     });
   });
 

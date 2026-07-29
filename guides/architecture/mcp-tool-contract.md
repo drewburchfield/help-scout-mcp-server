@@ -174,9 +174,11 @@ tool.
 `write_help_scout` is advertised only when writes are enabled. With the flags
 off, `tools/list` returns three tools and the advertised set is the 2.0 set.
 
-An operation name may never collide with a gateway tool name. The registry build
-rejects the collision at startup, because a colliding operation would be
-unreachable.
+An operation name may never collide with a gateway tool name. The registry is
+built on the first gateway call and rejects the collision there, because a
+colliding operation would be unreachable. `write_help_scout` is reserved even
+while writes are disabled: an operation may not take a name that would become
+unreachable the moment an operator flips the flag.
 
 ### Registry Operations
 
@@ -233,12 +235,16 @@ discover through `search_help_scout` and execute through `read_help_scout` or
 release.
 
 Confirmation requirements are declared in the `write_help_scout` tool
-description itself, not only in per-operation schemas. A client reading
-`tools/list` learns which mutation classes require `confirm`,
-`confirmOperation`, and `targetId`, and that missing, false, or mismatched
-values are rejected before any Help Scout request, without first calling
-`describe_help_scout`. A host that renders only tool descriptions still shows
-the user what approving this tool permits.
+description itself. The confirmation fields are siblings of `arguments` on the
+`write_help_scout` call, and they are absent from every per-operation schema by
+design: an operation schema describes the Help Scout request, and confirmation
+is a property of the call that authorizes it. A client reading `tools/list`
+learns which mutation classes require `confirm`, `confirmOperation`, and
+`targetId`, and that missing, false, or mismatched values are rejected before
+any Help Scout request, without first calling `describe_help_scout`. A host that
+renders only tool descriptions still shows the user what approving this tool
+permits. A confirmation field sent inside `arguments` is refused rather than
+ignored, because a caller who misplaces one believes it took effect.
 
 Removing or renaming a registry operation is a breaking change. Fold its
 capability into a parent operation, record the mapping in
@@ -287,6 +293,14 @@ still requires per-call confirmation metadata on every call, exactly as
 specified below. The flag decides whether the operation exists; the confirmation
 decides whether a given call proceeds.
 
+Execution gating is live; advertisement is not. The registry is built once per
+process, so flags read after the first gateway call do not change what
+`tools/list`, `search_help_scout`, and `describe_help_scout` report until the
+process restarts. Every `externallyVisible` operation rechecks the flags at
+dispatch, so revoking `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES` refuses the
+next customer-visible write immediately, even while the stale advertisement
+still lists it.
+
 `destructive` operations are not exposed in 2.1 under any flag. No environment
 variable turns them on. Exposing them is a later decision that needs its own
 contract work, not a third flag added by analogy.
@@ -333,11 +347,14 @@ The class also decides the tier: `nonDestructive` and `reversible` are tier 1,
 
 ### Confirmation Metadata
 
-For destructive or externally visible operations, the input schema must include
-confirmation fields that are hard to satisfy accidentally:
+Destructive and externally visible operations require confirmation fields that
+are hard to satisfy accidentally. They travel on the `write_help_scout` call, as
+siblings of `arguments`:
 
 ```json
 {
+  "name": "sendReply",
+  "arguments": { "conversationId": "12345", "text": "..." },
   "confirm": true,
   "confirmOperation": "sendReply",
   "targetId": "12345"
@@ -345,10 +362,12 @@ confirmation fields that are hard to satisfy accidentally:
 ```
 
 The exact confirmation string should name the operation and target. The tool
-must reject calls with missing, false, or mismatched confirmation before making a
-Help Scout request. Confirmation requirements belong in the `write_help_scout`
-tool description, so a client sees them without a `describe_help_scout` call, and
-in validation tests.
+must reject calls with missing, false, or mismatched confirmation before making
+a Help Scout request. These fields do not appear in any per-operation input
+schema, by design: the schema describes the Help Scout request, and confirmation
+authorizes the call that carries it. Confirmation requirements belong in the
+`write_help_scout` tool description, so a client sees them without a
+`describe_help_scout` call, and in validation tests.
 
 ### Dry Run And Preview
 
@@ -429,7 +448,7 @@ Each is met as follows.
 | Explicit naming | Writes execute through `write_help_scout`, a separate advertised tool, never through `read_help_scout`. Write operations use verbs that name the mutation, and they never dispatch through the legacy direct path. |
 | Metadata | `write_help_scout` carries `readOnlyHint: false` and `destructiveHint: true`. Every write operation declares its mutation class and tier, readable through `describe_help_scout`. |
 | Confirmation guidance | The confirmation contract is stated in the `write_help_scout` tool description, so it is visible from `tools/list` without a describe call, and enforced per call by schema validation that rejects missing, false, or mismatched values before any Help Scout request. |
-| Denied and partial action coverage | Permission, plan-limit, and validation failures return structured tool errors carrying the upstream status. Partial failures name what succeeded, what failed, and what cleanup remains. The dogfood lifecycle exercises the denied and gated-off paths, not only the successful ones. |
+| Denied and partial action coverage | Permission, plan-limit, and validation failures return structured tool errors carrying the upstream status. Partial failures name what succeeded, what failed, and what cleanup remains. The dogfood lifecycle exercises the refused and gated-off paths live, and unit tests cover the upstream denials (401, 403, 412, 422, 423, 429, 5xx, and network failure) that cannot be provoked on demand against a real account. |
 
 ## Boundaries
 

@@ -64,15 +64,19 @@ const READ_ANNOTATIONS = { readOnlyHint: true, openWorldHint: true };
 // destructiveHint stays true because a sent customer reply cannot be recalled.
 const WRITE_ANNOTATIONS = { readOnlyHint: false, destructiveHint: true, openWorldHint: true };
 
-/** A read operation, or an enabled write operation, as the registry holds it. */
-interface RegistryEntry {
-  tool: Tool;
-  mutates: boolean;
-  mutationClass?: MutationClass;
-  tier?: WriteTier;
-  targetArgument?: string;
-  plan?: WriteOperation['plan'];
-  execute?: WriteOperation['execute'];
+/**
+ * A read operation, or an enabled write operation, as the registry holds it.
+ *
+ * A write entry carries the whole WriteOperation rather than copies of its
+ * fields. Copying invited entries that mutate but carry no mutation class, and
+ * every consumer then needed a fallback for a case that should not exist.
+ */
+type ReadEntry = { kind: 'read'; tool: Tool };
+type WriteEntry = { kind: 'write'; tool: Tool; operation: WriteOperation };
+type RegistryEntry = ReadEntry | WriteEntry;
+
+function isWriteEntry(entry: RegistryEntry): entry is WriteEntry {
+  return entry.kind === 'write';
 }
 
 interface OperationSummary {
@@ -272,6 +276,10 @@ export class GatewayHandler {
   /**
    * Write operations the operator has actually turned on. Tier 2 is additive:
    * the customer-visible flag is inert unless writes are enabled at all.
+   *
+   * The filter reads the mutation class, not the declared tier. The class is
+   * what decides how far a write reaches; a registry whose tier disagreed with
+   * its class would otherwise admit a customer-visible operation under tier 1.
    */
   private enabledWriteOperations(): WriteOperation[] {
     const flags = this.writeFlags;
@@ -280,7 +288,12 @@ export class GatewayHandler {
     }
     return this.writes
       .listOperations()
-      .filter((operation) => operation.tier === 1 || flags.customerVisibleEnabled);
+      .filter((operation) => this.customerVisibleAllowed(flags, operation.mutationClass));
+  }
+
+  /** Whether the current flags permit executing this mutation class at all. */
+  private customerVisibleAllowed(flags: WriteFlags, mutationClass: MutationClass): boolean {
+    return mutationClass !== 'externallyVisible' || flags.customerVisibleEnabled;
   }
 
   private getRegistry(): Promise<Map<string, RegistryEntry>> {
@@ -300,18 +313,10 @@ export class GatewayHandler {
       };
 
       for (const tool of tools) {
-        add(tool.name, { tool, mutates: false });
+        add(tool.name, { kind: 'read', tool });
       }
       for (const operation of this.enabledWriteOperations()) {
-        add(operation.tool.name, {
-          tool: operation.tool,
-          mutates: true,
-          mutationClass: operation.mutationClass,
-          tier: operation.tier,
-          targetArgument: operation.targetArgument,
-          plan: operation.plan,
-          execute: operation.execute,
-        });
+        add(operation.tool.name, { kind: 'write', tool: operation.tool, operation });
       }
       return registry;
     }).catch((error) => {
@@ -336,7 +341,7 @@ export class GatewayHandler {
   async listTools(): Promise<Tool[]> {
     const registry = await this.getRegistry();
     const entries = Array.from(registry.values());
-    const writeCount = entries.filter((entry) => entry.mutates).length;
+    const writeCount = entries.filter(isWriteEntry).length;
     const tools = gatewayToolDefinitions(entries.length - writeCount, writeCount);
     return writeCount > 0 ? [...tools, writeToolDefinition()] : tools;
   }
@@ -375,13 +380,13 @@ export class GatewayHandler {
     // No pre-2.0 client ever learned a write name, so there is no compatibility
     // debt to honor, and a bare createNote call would slip past the gating,
     // annotations, and confirmation that the write gateway exists to enforce.
-    if (entry && !entry.mutates) {
+    if (entry && entry.kind === 'read') {
       logger.debug('Dispatching legacy direct operation call', { operation: name });
       return this.operations.callTool(request);
     }
     return jsonResult({
       error: `Unknown tool: ${name}`,
-      hint: `Use ${SEARCH_TOOL_NAME} to find the right Help Scout operation, then execute it with ${READ_TOOL_NAME}.`,
+      hint: `Use ${SEARCH_TOOL_NAME} to find the right Help Scout operation, then execute it through the tool the search result names.`,
     }, true);
   }
 
@@ -395,7 +400,7 @@ export class GatewayHandler {
       .map((entry): OperationSummary => ({
         name: entry.tool.name,
         description: entry.tool.description,
-        ...(entry.mutates ? { access: `write (${entry.mutationClass})` } : {}),
+        ...(isWriteEntry(entry) ? { access: `write (${entry.operation.mutationClass})` } : {}),
       }));
 
     return jsonResult({
@@ -429,7 +434,9 @@ export class GatewayHandler {
         name: entry.tool.name,
         description: entry.tool.description,
         inputSchema: entry.tool.inputSchema,
-        ...(entry.mutates ? { mutationClass: entry.mutationClass, tier: entry.tier } : {}),
+        ...(isWriteEntry(entry)
+          ? { mutationClass: entry.operation.mutationClass, tier: entry.operation.tier }
+          : {}),
       };
     });
 
@@ -452,10 +459,10 @@ export class GatewayHandler {
       // does not expose, so the gated surface stays uninventoried.
       return this.unknownOperationResult(registry, name, READ_TOOL_NAME);
     }
-    if (entry.mutates) {
+    if (isWriteEntry(entry)) {
       return jsonResult({
         error: `${name} changes Help Scout state and cannot run through ${READ_TOOL_NAME}.`,
-        mutationClass: entry.mutationClass,
+        mutationClass: entry.operation.mutationClass,
         hint: `Call ${WRITE_TOOL_NAME} with "name": "${name}" instead.`,
       }, true);
     }
@@ -493,23 +500,45 @@ export class GatewayHandler {
       return jsonResult({ error: `${WRITE_TOOL_NAME} "arguments" must be an object matching the ${name} schema.` }, true);
     }
 
+    const envelopeError = envelopeRefusal(args, operationArgs);
+    if (envelopeError) {
+      logger.warn('Write envelope refused', { operation: name, reason: String(envelopeError.error) });
+      return jsonResult(envelopeError, true);
+    }
+
     const registry = await this.getRegistry();
     const entry = registry.get(name);
     if (!entry) {
       return this.unknownOperationResult(registry, name, WRITE_TOOL_NAME);
     }
-    if (!entry.mutates || !entry.execute || !entry.plan) {
+    if (!isWriteEntry(entry)) {
       return jsonResult({
         error: `${name} is a read operation and cannot run through ${WRITE_TOOL_NAME}.`,
         hint: `Call ${READ_TOOL_NAME} with "name": "${name}" instead.`,
       }, true);
     }
 
+    const operation = entry.operation;
     const cleanArgs: Record<string, unknown> = { ...(operationArgs ?? {}) };
     delete cleanArgs.__userQuery;
 
-    if (entry.mutationClass === 'externallyVisible') {
-      const refusal = confirmationRefusal(name, entry, args, cleanArgs);
+    if (operation.mutationClass === 'externallyVisible') {
+      // Checked here, at dispatch, not only when the registry was built. The
+      // registry is built once per process, so an operator who revokes the
+      // customer-visible flag mid-process would otherwise keep a live path to
+      // an operation the flags no longer permit.
+      const flags = this.writeFlags;
+      if (!flags.enabled || !this.customerVisibleAllowed(flags, operation.mutationClass)) {
+        logger.warn('Customer-visible write refused at dispatch', { operation: name });
+        return jsonResult({
+          error: `${name} is externallyVisible and the customer-visible write gate is off. Nothing was sent to Help Scout.`,
+          operation: name,
+          mutationClass: operation.mutationClass,
+          hint: 'This gate is an operator setting on the server and cannot be changed from a tool call. Use a tier-1 operation, such as createDraftReply, or ask the operator to enable it.',
+        }, true);
+      }
+
+      const refusal = confirmationRefusal(name, operation, args, cleanArgs);
       if (refusal) {
         logger.warn('Write confirmation refused', { operation: name, reason: refusal.reason });
         return jsonResult(refusal.payload, true);
@@ -517,10 +546,10 @@ export class GatewayHandler {
     }
 
     if (args.dryRun === true) {
-      return dryRunWrite(name, entry, entry.plan, cleanArgs);
+      return dryRunWrite(name, operation, cleanArgs);
     }
 
-    return entry.execute(cleanArgs);
+    return operation.execute(cleanArgs);
   }
 
   private unknownOperationResult(
@@ -548,6 +577,58 @@ export class GatewayHandler {
   }
 }
 
+/** The fields a caller may send on a write_help_scout call. */
+const WRITE_ENVELOPE_FIELDS = ['name', 'arguments', 'confirm', 'confirmOperation', 'targetId', 'dryRun'] as const;
+
+// __userQuery is added to the arguments by the server when the host supplies
+// one, so it is tolerated here and never forwarded to the operation.
+const WRITE_ENVELOPE_KEYS = new Set<string>([...WRITE_ENVELOPE_FIELDS, '__userQuery']);
+
+/**
+ * Envelope fields that belong beside `arguments`, never inside it. Silently
+ * stripping a misplaced one turned a call the caller believed was a dry run
+ * into a live mutation, so a misplaced field is refused instead.
+ */
+const ENVELOPE_ONLY_KEYS = ['dryRun', 'confirm', 'confirmOperation', 'targetId'] as const;
+
+/**
+ * Reject a malformed `write_help_scout` envelope before the operation is even
+ * resolved. Every refusal names what to change, so the next attempt can be
+ * correct without a schema round trip.
+ */
+function envelopeRefusal(
+  args: Record<string, unknown>,
+  operationArgs: unknown,
+): Record<string, unknown> | undefined {
+  if ('dryRun' in args && typeof args.dryRun !== 'boolean') {
+    return {
+      error: `${WRITE_TOOL_NAME} "dryRun" must be a boolean. Received: ${JSON.stringify(args.dryRun ?? null)}.`,
+      hint: 'Send "dryRun": true to preview the request, or omit the field to execute. A string is not treated as true.',
+    };
+  }
+
+  const unknownKeys = Object.keys(args).filter((key) => !WRITE_ENVELOPE_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    return {
+      error: `${WRITE_TOOL_NAME} received unknown top-level ${unknownKeys.length === 1 ? 'field' : 'fields'}: ${unknownKeys.join(', ')}.`,
+      allowedFields: [...WRITE_ENVELOPE_FIELDS],
+      hint: 'Operation arguments belong inside "arguments". Only the fields listed in allowedFields are accepted at the top level.',
+    };
+  }
+
+  if (isPlainObject(operationArgs)) {
+    const misplaced = ENVELOPE_ONLY_KEYS.filter((key) => key in operationArgs);
+    if (misplaced.length > 0) {
+      return {
+        error: `${WRITE_TOOL_NAME} found ${misplaced.join(', ')} inside "arguments". ${misplaced.length === 1 ? 'That field is' : 'Those fields are'} part of the call envelope, not the operation schema.`,
+        hint: 'Move these fields out of "arguments" so they sit beside it, then repeat the call. Where they are they have no effect, and a misplaced "dryRun" would execute the write for real, so the call is refused rather than run.',
+      };
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Help Scout offers no preview or validate endpoint for these mutations, so a
  * dry run validates the arguments and reports the request that would be sent.
@@ -555,26 +636,28 @@ export class GatewayHandler {
  */
 function dryRunWrite(
   name: string,
-  entry: RegistryEntry,
-  plan: NonNullable<RegistryEntry['plan']>,
+  operation: WriteOperation,
   operationArgs: Record<string, unknown>,
 ): CallToolResult {
   let wouldSend;
   try {
-    wouldSend = plan(operationArgs);
+    wouldSend = operation.plan(operationArgs);
   } catch (error) {
+    const issues = zodIssues(error);
     return jsonResult({
       error: `Invalid arguments for ${name}.`,
       operation: name,
       dryRun: true,
-      validationIssues: zodIssues(error),
+      // Without issues to point at, the raw message is all the caller has;
+      // dropping it would leave "invalid arguments" and nothing else.
+      ...(issues ? { validationIssues: issues } : { reason: error instanceof Error ? error.message : String(error) }),
       hint: `Load the schema with ${DESCRIBE_TOOL_NAME} and correct the arguments.`,
     }, true);
   }
 
   return jsonResult({
     operation: name,
-    mutationClass: entry.mutationClass,
+    mutationClass: operation.mutationClass,
     dryRun: true,
     wouldSend,
     note: 'Help Scout state was not checked. No request was sent, so this does not confirm the target exists, is reachable, or would accept the change.',
@@ -593,11 +676,11 @@ interface ConfirmationRefusal {
  */
 function confirmationRefusal(
   name: string,
-  entry: RegistryEntry,
+  operation: WriteOperation,
   args: Record<string, unknown>,
   operationArgs: Record<string, unknown>,
 ): ConfirmationRefusal | undefined {
-  const targetArgument = entry.targetArgument ?? 'conversationId';
+  const targetArgument = operation.targetArgument;
   const expectedTarget = operationArgs[targetArgument];
   const required = {
     confirm: true,
@@ -606,7 +689,7 @@ function confirmationRefusal(
   };
   const base = {
     operation: name,
-    mutationClass: entry.mutationClass,
+    mutationClass: operation.mutationClass,
     required,
     hint: 'This operation is visible to the customer. Repeat the call with all three confirmation fields set exactly as shown in "required".',
   };
