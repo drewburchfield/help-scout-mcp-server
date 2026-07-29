@@ -139,9 +139,13 @@ describe('WriteHandler', () => {
 
     it('ignores a caller-supplied draft flag on createDraftReply', async () => {
       // The schema has no `draft` property, so an argument that tries to flip
-      // the operation into a send is dropped rather than honored.
+      // the operation into a send is dropped rather than honored. With no
+      // customer named, the primary customer is resolved with a read first.
       const scope = nock(baseURL)
-        .post(`/conversations/${CONVERSATION_ID}/reply`, body => body.draft === true)
+        .get(`/conversations/${CONVERSATION_ID}`)
+        .reply(200, { primaryCustomer: { id: 500 } })
+        .post(`/conversations/${CONVERSATION_ID}/reply`, body =>
+          body.draft === true && body.customer?.id === 500)
         .reply(201);
 
       const result = await run('createDraftReply', {

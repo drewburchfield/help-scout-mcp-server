@@ -642,7 +642,9 @@ describe('GatewayHandler', () => {
 
     it('dispatches sendReply when the full confirmation triple matches', async () => {
       const scope = nock(baseURL)
-        .post('/conversations/4242/reply')
+        .get('/conversations/4242')
+        .reply(200, { primaryCustomer: { id: 500 } })
+        .post('/conversations/4242/reply', body => body.customer?.id === 500)
         .reply(201, '', { 'Resource-Id': '99' });
 
       const result = await callGateway(writeGateway, WRITE_TOOL_NAME, {

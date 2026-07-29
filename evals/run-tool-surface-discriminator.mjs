@@ -63,6 +63,26 @@ function writeResult(operation, mutationClass, conversationId, result, cleanupIn
 
 export function fixtureExecutor(operation, args) {
   switch (operation) {
+    case 'getThreads':
+      return jsonResult({
+        conversationId: String(args.conversationId),
+        threads: [
+          {
+            id: 9001,
+            type: 'customer',
+            createdAt: '2026-07-20T14:02:00Z',
+            customer: { id: '500', firstName: 'Aria', lastName: 'Chen' },
+            body: 'Hi, I was double charged for my June invoice (order 4482). Please refund the duplicate $49 charge.',
+          },
+          {
+            id: 9002,
+            type: 'note',
+            createdAt: '2026-07-21T09:15:00Z',
+            body: 'Finance confirmed the duplicate charge. Refund of $49 to the original card approved, 5-7 business days.',
+          },
+        ],
+        totalThreads: 2,
+      });
     case 'getConversation':
       return jsonResult({
         conversation: {

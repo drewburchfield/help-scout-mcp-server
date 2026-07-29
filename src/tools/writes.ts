@@ -73,6 +73,7 @@ const emailListSchema = z.array(z.string().min(1)).max(10);
 interface ConversationReadModel {
   tags?: Array<{ tag?: string }>;
   customFields?: Array<{ id?: number; value?: unknown }>;
+  primaryCustomer?: { id?: number };
 }
 
 interface PerformOutcome {
@@ -341,7 +342,7 @@ export class WriteHandler {
     const schema = z.object({
       conversationId: conversationIdSchema,
       text: z.string().min(1).describe('Reply body saved as a draft.'),
-      customerId: numericIdSchema('Customer ID').optional().describe('Customer the reply addresses. Help Scout uses the primary customer when omitted.'),
+      customerId: numericIdSchema('Customer ID').optional().describe('Customer the reply addresses. When omitted, the conversation primary customer is resolved and used.'),
       customerEmail: z.string().min(1).optional().describe('Customer email, as an alternative to customerId.'),
       assignTo: numericIdSchema('User ID').optional().describe('Help Scout user ID to assign the conversation to.'),
       cc: emailListSchema.optional().describe('Email addresses to CC when the draft is later sent.'),
@@ -357,12 +358,17 @@ export class WriteHandler {
       plan: (input) => ({
         method: 'POST',
         path: `${conversationPath(input.conversationId as string)}/reply`,
-        body: buildReplyBody(input, true),
+        body: buildReplyBody(input, true, explicitReplyCustomer(input)),
+        ...(explicitReplyCustomer(input) ? {} : {
+          precededBy: { method: 'GET', path: conversationPath(input.conversationId as string) },
+          bodyNote: 'The reply endpoint requires a customer; the conversation primary customer is resolved by that read and added to the sent body.',
+        }),
       }),
       perform: async (input) => {
+        const customer = await resolveReplyCustomer(input);
         const response = await helpScoutClient.post(
           `${conversationPath(input.conversationId as string)}/reply`,
-          buildReplyBody(input, true),
+          buildReplyBody(input, true, customer),
         );
         return {
           result: {
@@ -793,7 +799,7 @@ export class WriteHandler {
     const schema = z.object({
       conversationId: conversationIdSchema,
       text: z.string().min(1).describe('Reply body. This text is emailed to the customer.'),
-      customerId: numericIdSchema('Customer ID').optional().describe('Customer receiving the reply. Help Scout uses the primary customer when omitted.'),
+      customerId: numericIdSchema('Customer ID').optional().describe('Customer receiving the reply. When omitted, the conversation primary customer is resolved and used.'),
       customerEmail: z.string().min(1).optional().describe('Customer email, as an alternative to customerId.'),
       assignTo: numericIdSchema('User ID').optional().describe('Help Scout user ID to assign the conversation to as part of the reply.'),
       status: z.enum(['active', 'closed', 'pending']).optional().describe('Conversation status to set as part of the reply.'),
@@ -810,12 +816,17 @@ export class WriteHandler {
       plan: (input) => ({
         method: 'POST',
         path: `${conversationPath(input.conversationId as string)}/reply`,
-        body: buildReplyBody(input, false),
+        body: buildReplyBody(input, false, explicitReplyCustomer(input)),
+        ...(explicitReplyCustomer(input) ? {} : {
+          precededBy: { method: 'GET', path: conversationPath(input.conversationId as string) },
+          bodyNote: 'The reply endpoint requires a customer; the conversation primary customer is resolved by that read and added to the sent body.',
+        }),
       }),
       perform: async (input) => {
+        const customer = await resolveReplyCustomer(input);
         const response = await helpScoutClient.post(
           `${conversationPath(input.conversationId as string)}/reply`,
-          buildReplyBody(input, false),
+          buildReplyBody(input, false, customer),
         );
         return {
           result: {
@@ -885,13 +896,36 @@ export class WriteHandler {
  * argument: the draft-first rule forbids a tier-1 operation from exposing a
  * parameter that would make it externally visible.
  */
-function buildReplyBody(input: Record<string, unknown>, draft: boolean): Record<string, unknown> {
-  const customer = input.customerId
-    ? { id: Number(input.customerId) }
-    : input.customerEmail
-      ? { email: input.customerEmail }
-      : undefined;
+function explicitReplyCustomer(input: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (input.customerId) return { id: Number(input.customerId) };
+  if (input.customerEmail) return { email: input.customerEmail };
+  return undefined;
+}
 
+/**
+ * The reply endpoint requires a customer object. When the caller names none,
+ * resolve the conversation's primary customer with a fresh read so the reply
+ * addresses the person already on the conversation.
+ */
+async function resolveReplyCustomer(input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const explicit = explicitReplyCustomer(input);
+  if (explicit) return explicit;
+
+  const conversation = await readConversation(input.conversationId as string);
+  const primaryId = conversation.primaryCustomer?.id;
+  if (!primaryId) {
+    throw new Error(
+      'This conversation has no primary customer to address. Pass customerId or customerEmail explicitly.',
+    );
+  }
+  return { id: primaryId };
+}
+
+function buildReplyBody(
+  input: Record<string, unknown>,
+  draft: boolean,
+  customer: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   return {
     text: input.text,
     draft,
