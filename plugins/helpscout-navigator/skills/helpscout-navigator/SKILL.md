@@ -87,7 +87,7 @@ Tell the user:
 
 ## Overview
 
-The Help Scout MCP server advertises exactly three tools. Behind them sits a registry of 55 read-only operations covering conversations, customers, organizations, reports, metadata, and Docs:
+The Help Scout MCP server advertises three tools. Behind them sits a registry of 55 read operations covering conversations, customers, organizations, reports, metadata, and Docs:
 
 | Tool | Purpose |
 |------|---------|
@@ -96,6 +96,8 @@ The Help Scout MCP server advertises exactly three tools. Behind them sits a reg
 | `read_help_scout` | Execute one operation: `{"name": "<operation>", "arguments": {...}}` |
 
 **The flow is always:** search for operations → describe the one(s) you picked → execute with `read_help_scout`.
+
+A fourth tool, `write_help_scout`, appears only when the operator enabled writes. If you do not see it, this install is read-only. See [Write Operations](#write-operations-only-when-enabled).
 
 **Core problems this skill solves:**
 1. Users guess argument shapes instead of calling `describe_help_scout` first
@@ -280,6 +282,41 @@ read_help_scout(name: "getOrganizationConversations", arguments: { organizationI
 
 ---
 
+## Write Operations (only when enabled)
+
+Writes are off unless the operator set `HELPSCOUT_ENABLE_WRITES=true`. When they are on, `write_help_scout` is advertised alongside the three read tools and the same gateway flow applies:
+
+1. `search_help_scout(query: "<intent>")`. Write operations come back labeled with their access and mutation class, for example `write (reversible)`.
+2. `describe_help_scout(names: ["<operation>"])` for the schema, which also reports `mutationClass` and `tier`.
+3. `write_help_scout(name: "<operation>", arguments: {...})` to execute.
+
+**Draft first.** `createDraftReply` saves an unsent draft and has no parameter that could send it. `createNote` is internal to your team. Neither notifies the customer. Compose in a draft, show it to the user, and stop there.
+
+**Never send on your own initiative.** `sendReply` and `publishDraft` email the customer and cannot be recalled. Call them only when the user has explicitly asked to send. They need a second gate (`HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true`) plus all three confirmation fields on every call, as siblings of `arguments`:
+
+```javascript
+write_help_scout({
+  name: "sendReply",
+  arguments: { conversationId: "12345", text: "Thanks for your patience..." },
+  confirm: true,
+  confirmOperation: "sendReply",
+  targetId: "12345"
+})
+```
+
+Missing, false, or mismatched confirmation is refused before anything reaches Help Scout.
+
+**Preview anything.** Add `dryRun: true` beside `arguments` to see the exact request that would be sent without contacting Help Scout.
+
+| Tier | Gate | Operations |
+|------|------|------------|
+| 1 | `HELPSCOUT_ENABLE_WRITES` | `createNote`, `createDraftReply`, `updateConversationStatus`, `assignConversation`, `unassignConversation`, `addConversationTags`, `removeConversationTags`, `updateConversationFields`, `snoozeConversation`, `unsnoozeConversation`, `moveConversation` |
+| 2 | plus `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES` | `sendReply`, `publishDraft` |
+
+Deletes and admin configuration writes are not exposed under any flag. See [references/tool-reference.md](references/tool-reference.md) for the full operation list.
+
+---
+
 ## Anti-Patterns (What NOT to Do)
 
 | Mistake | Why It Fails | Correct Approach |
@@ -290,7 +327,9 @@ read_help_scout(name: "getOrganizationConversations", arguments: { organizationI
 | Passing an inbox name as `inboxId` | IDs are numeric strings, not names | Use the ID from server instructions |
 | Adding `status: "active"` to keyword searches "to be safe" | Default already covers active + pending + closed | Omit `status` unless narrowing on purpose |
 | Hardcoding "today" in date filters | Server clock may differ | `getServerTime` first |
-| Asking any operation to create or modify data | Every operation is read-only | Do it in the Help Scout UI |
+| Calling `read_help_scout` for a write operation | `read_help_scout` refuses anything that changes state | `write_help_scout`, when writes are enabled |
+| Putting `confirm` or `dryRun` inside `arguments` | They are envelope fields; the call is refused, not silently corrected | Put them beside `arguments` |
+| Sending a customer reply the user did not ask for | `sendReply` emails immediately and cannot be recalled | `createDraftReply`, then let the user decide |
 
 See [references/common-mistakes.md](references/common-mistakes.md) for more anti-patterns.
 

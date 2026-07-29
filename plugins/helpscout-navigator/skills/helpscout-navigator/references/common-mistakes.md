@@ -13,7 +13,7 @@ mcp__helpscout__searchConversations({ contentTerms: ["billing"] })
 // Error: no such tool
 ```
 
-**Why it fails:** The server advertises exactly three tools: `search_help_scout`, `describe_help_scout`, and `read_help_scout`. The 55 operations live behind them.
+**Why it fails:** The server advertises three tools: `search_help_scout`, `describe_help_scout`, and `read_help_scout`, plus `write_help_scout` when writes are enabled. The 55 read operations live behind them.
 
 **Correct approach:**
 ```javascript
@@ -240,13 +240,63 @@ export REDACT_MESSAGE_CONTENT=true
 
 ---
 
-## Mistake 12: Expecting Write Operations
+## Mistake 12: Attempting a Write on a Read-Only Install
 
-**What happens:** Asking any operation to reply, tag, assign, or close a ticket.
+**What happens:**
+```javascript
+write_help_scout({ name: "createNote", arguments: { conversationId: "12345678", text: "..." } })
+// Error: Unknown tool: write_help_scout
 
-**Why it fails:** Every operation in the registry is read-only. There is no create, update, or delete surface.
+read_help_scout({ name: "createNote", arguments: { ... } })
+// Error: Unknown Help Scout operation: createNote
+```
 
-**Correct approach:** Do the write in the Help Scout UI, then verify with a read operation.
+**Why it fails:** Writes are off by default. With the gates unset, `write_help_scout` is not advertised and write operation names are reported as unknown rather than as gated, so nothing distinguishes "turned off here" from "does not exist". A retry, a rephrase, or a different operation name will not help.
+
+**Correct approach:** Check whether the operator enabled writes.
+
+```bash
+echo "HELPSCOUT_ENABLE_WRITES: ${HELPSCOUT_ENABLE_WRITES:-unset}"
+echo "HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES: ${HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES:-unset}"
+```
+
+If both are unset, this install is read-only: do the change in the Help Scout UI and verify it with a read operation. If only the first is set, tier-1 writes work but `sendReply` and `publishDraft` stay unknown. Setting either one is an operator decision on the server, not something a tool call can change, and it takes a server restart to appear.
+
+---
+
+## Mistake 13: Putting confirm or dryRun Inside arguments
+
+**What happens:**
+```javascript
+// WRONG:
+write_help_scout({
+  name: "sendReply",
+  arguments: {
+    conversationId: "12345678",
+    text: "...",
+    confirm: true,
+    confirmOperation: "sendReply",
+    targetId: "12345678",
+    dryRun: true
+  }
+})
+// Refused: those fields are part of the call envelope, not the operation schema
+```
+
+**Why it fails:** `confirm`, `confirmOperation`, `targetId`, and `dryRun` authorize the call; `arguments` describes the Help Scout request. They never appear in an operation schema. The server refuses the call instead of ignoring the misplaced fields, because a `dryRun` the caller believed was set would otherwise have performed the live mutation.
+
+**Correct approach:** Put them beside `arguments`.
+```javascript
+write_help_scout({
+  name: "sendReply",
+  arguments: { conversationId: "12345678", text: "..." },
+  confirm: true,
+  confirmOperation: "sendReply",
+  targetId: "12345678"
+})
+```
+
+`confirmOperation` must repeat the operation name exactly and `targetId` must equal `arguments.conversationId`. Tier-1 operations need none of the three.
 
 ---
 
@@ -264,3 +314,5 @@ Before any HelpScout operation, verify:
 | Filtering by assignee? | Need a numeric user ID (`listUsers` first; -1 = unassigned) |
 | Large result set expected? | Handle pagination with `limit` and `page` |
 | Date-relative query? | `getServerTime` first, then ISO dates |
+| Changing something? | `write_help_scout`, only if it is advertised; `confirm`/`dryRun` go beside `arguments` |
+| Replying to a customer? | `createDraftReply` unless the user explicitly asked to send |

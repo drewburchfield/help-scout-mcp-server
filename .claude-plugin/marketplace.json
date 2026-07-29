@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Help Scout MCP server with navigator plugin for Claude Code and Cowork",
-    "version": "1.3.0"
+    "version": "1.4.0"
   },
   "plugins": [
     {
       "name": "helpscout-navigator",
       "source": "./plugins/helpscout-navigator",
-      "description": "Help Scout support, customer, organization, report, metadata, and Docs navigation guidance. Bundles the read-only Help Scout MCP server and pins the 2.0.0 runtime.",
-      "version": "1.3.0",
+      "description": "Help Scout support, customer, organization, report, metadata, and Docs navigation guidance. Bundles the Help Scout MCP server, pins the 2.1.0 runtime, and covers the opt-in write surface.",
+      "version": "1.4.0",
       "author": {
         "name": "Drew Burchfield"
       },

@@ -2,7 +2,9 @@
 
 Core workflow reference for the most common Help Scout MCP tools.
 
-As of v2.0.0 the server advertises three tools (`search_help_scout`, `describe_help_scout`, `read_help_scout`) over a registry of 55 read-only operations. Discover operations with `search_help_scout`, load schemas with `describe_help_scout`, and execute with `read_help_scout`. Operation names in the current registry still dispatch directly for compatibility; names consolidated away in v2.0.0 (searchInboxes, comprehensiveConversationSearch, structuredConversationFilter, advancedConversationSearch) do not, and their capabilities live in `listAllInboxes` and `searchConversations`. New work should go through the gateway.
+As of v2.0.0 the server advertises three tools (`search_help_scout`, `describe_help_scout`, `read_help_scout`) over a registry of 55 read operations. Discover operations with `search_help_scout`, load schemas with `describe_help_scout`, and execute with `read_help_scout`. Operation names in the current registry still dispatch directly for compatibility; names consolidated away in v2.0.0 (searchInboxes, comprehensiveConversationSearch, structuredConversationFilter, advancedConversationSearch) do not, and their capabilities live in `listAllInboxes` and `searchConversations`. New work should go through the gateway.
+
+v2.1.0 adds an optional fourth tool, `write_help_scout`, advertised only when the operator enabled writes. See [Write Operations](#write-operations). Write operation names never dispatch directly.
 
 ---
 
@@ -346,6 +348,71 @@ read_help_scout({ name: "getOrganizationMembers", arguments: { organizationId: "
 ```javascript
 read_help_scout({ name: "getOrganizationConversations", arguments: { organizationId: "456" } })
 ```
+
+---
+
+## Write Operations
+
+Present only when the operator set `HELPSCOUT_ENABLE_WRITES=true`. On a read-only install these names come back as unknown operations, exactly like a name that does not exist. Discover them with `search_help_scout` (results are labeled `write (<mutationClass>)`), load schemas with `describe_help_scout` (which also reports `mutationClass` and `tier`), and execute with `write_help_scout`.
+
+Every operation targets one conversation and takes `conversationId` as a numeric string.
+
+### Tier 1: `HELPSCOUT_ENABLE_WRITES`
+
+No tier-1 operation notifies a customer, and none accepts a parameter that would make it do so.
+
+| Operation | Class | Arguments beyond `conversationId` | Notes |
+|-----------|-------|-----------------------------------|-------|
+| `createNote` | nonDestructive | `text` | Internal note, teammates only. No delete endpoint exists. |
+| `createDraftReply` | nonDestructive | `text`, optional `customerId`/`customerEmail`, `assignTo`, `cc`, `bcc` | Saved unsent. Cannot send. The primary customer is resolved when none is named. |
+| `updateConversationStatus` | reversible | `status` (active, closed, pending) | Reverse by setting the previous status. |
+| `assignConversation` | reversible | `userId` | User IDs come from `listUsers`. |
+| `unassignConversation` | reversible | none | Reverse with `assignConversation`. |
+| `addConversationTags` | reversible | `tags` | Reads current tags and sends the merged list. |
+| `removeConversationTags` | reversible | `tags` | Case-insensitive match; keeps the rest. |
+| `updateConversationFields` | reversible | `fields` (`[{ id, value }]`) | Field IDs come from `getInbox` `include: ["fields"]`. Unlisted fields are preserved. |
+| `snoozeConversation` | reversible | `snoozedUntil` (future ISO 8601), optional `unsnoozeOnCustomerReply` | Each call replaces any previous snooze. |
+| `unsnoozeConversation` | reversible | none | Wakes the conversation immediately. |
+| `moveConversation` | reversible | `mailboxId` | Inbox IDs come from `listAllInboxes`. |
+
+### Tier 2: also `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES`
+
+Both email the customer and cannot be recalled. Both require `confirm`, `confirmOperation`, and `targetId` on every call.
+
+| Operation | Class | Arguments beyond `conversationId` | Notes |
+|-----------|-------|-----------------------------------|-------|
+| `sendReply` | externallyVisible | `text`, optional `customerId`/`customerEmail`, `assignTo`, `status`, `cc`, `bcc` | Emails immediately. |
+| `publishDraft` | externallyVisible | none | Clears the draft flag, sending the pending reply. |
+
+### Envelope fields
+
+`confirm`, `confirmOperation`, `targetId`, and `dryRun` are siblings of `arguments`, never inside it. A misplaced one is refused rather than ignored.
+
+```javascript
+// Tier 1: no confirmation needed
+write_help_scout({
+  name: "addConversationTags",
+  arguments: { conversationId: "12345678", tags: ["escalated"] }
+})
+
+// Preview without contacting Help Scout
+write_help_scout({
+  name: "updateConversationStatus",
+  arguments: { conversationId: "12345678", status: "closed" },
+  dryRun: true
+})
+
+// Tier 2: confirmation required on every call
+write_help_scout({
+  name: "sendReply",
+  arguments: { conversationId: "12345678", text: "Thanks for your patience..." },
+  confirm: true,
+  confirmOperation: "sendReply",
+  targetId: "12345678"
+})
+```
+
+Results carry `operation`, `mutationClass`, `target`, `status`, `result`, and a `cleanup` block naming how to undo the change. Most Help Scout mutation endpoints answer with no body, so the result names the read that confirms the new state.
 
 ---
 

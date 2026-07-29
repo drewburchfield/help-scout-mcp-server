@@ -12,7 +12,8 @@
   "tools": [
     "search_help_scout",
     "describe_help_scout",
-    "read_help_scout"
+    "read_help_scout",
+    "write_help_scout"
   ],
   "prompts": [
     "search-last-7-days",
