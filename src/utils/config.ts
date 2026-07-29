@@ -5,6 +5,21 @@ if (process.env.NODE_ENV !== 'test') {
   dotenv.config();
 }
 
+/**
+ * Operator-set gates for the Help Scout write surface. Both default off.
+ *
+ * The Mailbox API has no granular scopes: a token that can read a conversation
+ * can also reply to it. The server is therefore the permission boundary, and
+ * these flags are a deliberate operator choice, never a claim about what the
+ * credential itself restricts.
+ */
+export interface WriteFlags {
+  /** Tier 1: the nonDestructive and reversible operations. */
+  enabled: boolean;
+  /** Tier 2: adds the externallyVisible operations. Inert unless `enabled`. */
+  customerVisibleEnabled: boolean;
+}
+
 export interface Config {
   helpscout: {
     apiKey: string;         // Deprecated: kept for backwards compatibility only
@@ -25,6 +40,7 @@ export interface Config {
   security: {
     redactMessageContent: boolean;
   };
+  writes: WriteFlags;
   connectionPool: {
     maxSockets: number;
     maxFreeSockets: number;
@@ -71,6 +87,16 @@ export const config: Config = {
   security: {
     // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies.
     redactMessageContent: process.env.REDACT_MESSAGE_CONTENT === 'true',
+  },
+  // Read live rather than snapshotted at import, unlike every other value here.
+  // The gate decides which tools exist, so an embedding host (or a test) that
+  // sets the flags after this module loads must still get the surface it asked
+  // for instead of whatever the environment happened to hold at import time.
+  get writes(): WriteFlags {
+    return {
+      enabled: process.env.HELPSCOUT_ENABLE_WRITES === 'true',
+      customerVisibleEnabled: process.env.HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES === 'true',
+    };
   },
   connectionPool: {
     maxSockets: parseIntegerEnv('HTTP_MAX_SOCKETS', 50, 1),

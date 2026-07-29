@@ -1,6 +1,13 @@
 import { Tool, CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../utils/logger.js';
+import { config, WriteFlags } from '../utils/config.js';
 import { toolHandler } from './index.js';
+import {
+  MutationClass,
+  WriteOperation,
+  WriteTier,
+  writeHandler,
+} from './writes.js';
 
 /** The two-method seam the gateway actually depends on. */
 export interface OperationRegistry {
@@ -8,11 +15,30 @@ export interface OperationRegistry {
   callTool(request: CallToolRequest): Promise<CallToolResult>;
 }
 
+/** The one-method seam the gateway depends on for writes. */
+export interface WriteRegistry {
+  listOperations(): WriteOperation[];
+}
+
+export interface GatewayOptions {
+  writes?: WriteRegistry;
+  /** Overrides the environment gates. Tests inject these instead of mutating process.env. */
+  writeFlags?: Partial<WriteFlags>;
+}
+
 export const SEARCH_TOOL_NAME = 'search_help_scout';
 export const DESCRIBE_TOOL_NAME = 'describe_help_scout';
 export const READ_TOOL_NAME = 'read_help_scout';
+export const WRITE_TOOL_NAME = 'write_help_scout';
 
+/**
+ * Every name reserved by the advertised surface. write_help_scout is reserved
+ * even while writes are disabled: an operation may not take a name that would
+ * become unreachable the moment an operator flips the flag.
+ */
 export const GATEWAY_TOOL_NAMES = [SEARCH_TOOL_NAME, DESCRIBE_TOOL_NAME, READ_TOOL_NAME] as const;
+
+export const RESERVED_TOOL_NAMES = [...GATEWAY_TOOL_NAMES, WRITE_TOOL_NAME] as const;
 
 const SEARCH_RESULT_LIMIT = 8;
 const DESCRIBE_NAME_LIMIT = 10;
@@ -33,13 +59,34 @@ const SYNONYM_GROUPS: readonly (readonly string[])[] = [
 
 const READ_ANNOTATIONS = { readOnlyHint: true, openWorldHint: true };
 
+// Worst case, not best case: one advertised tool covers every mutation class,
+// and a host approves the tool rather than the operation chosen inside it.
+// destructiveHint stays true because a sent customer reply cannot be recalled.
+const WRITE_ANNOTATIONS = { readOnlyHint: false, destructiveHint: true, openWorldHint: true };
+
+/** A read operation, or an enabled write operation, as the registry holds it. */
+interface RegistryEntry {
+  tool: Tool;
+  mutates: boolean;
+  mutationClass?: MutationClass;
+  tier?: WriteTier;
+  targetArgument?: string;
+  plan?: WriteOperation['plan'];
+  execute?: WriteOperation['execute'];
+}
+
 interface OperationSummary {
   name: string;
   description: string | undefined;
+  access?: string;
 }
 
-interface OperationSchema extends OperationSummary {
+interface OperationSchema {
+  name: string;
+  description: string | undefined;
   inputSchema: Tool['inputSchema'];
+  mutationClass?: MutationClass;
+  tier?: WriteTier;
 }
 
 function tokenize(value: unknown): string[] {
@@ -82,12 +129,62 @@ function jsonResult(payload: Record<string, unknown>, isError = false): CallTool
   };
 }
 
-function gatewayToolDefinitions(operationCount: number): Tool[] {
+function writeToolDefinition(): Tool {
+  return {
+    name: WRITE_TOOL_NAME,
+    title: 'Write to Help Scout',
+    description:
+      `Execute one enabled Help Scout write operation using arguments that match the schema loaded with ${DESCRIBE_TOOL_NAME}. ` +
+      'Every operation changes Help Scout state. Operations whose mutation class is externallyVisible can email a customer, ' +
+      'and each call to one is rejected before any Help Scout request unless it carries all three of: "confirm": true, ' +
+      '"confirmOperation" set to the exact operation name, and "targetId" equal to the conversation ID in "arguments". ' +
+      'Missing, false, or mismatched confirmation is refused. Operations classed nonDestructive or reversible need no confirmation. ' +
+      'Set "dryRun": true to validate arguments and see the request that would be sent without contacting Help Scout.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Exact Help Scout write operation name.',
+        },
+        arguments: {
+          type: 'object',
+          description: 'Arguments matching the selected operation schema.',
+        },
+        confirm: {
+          type: 'boolean',
+          description: 'Must be true for externallyVisible operations. Ignored otherwise.',
+        },
+        confirmOperation: {
+          type: 'string',
+          description: 'Must repeat the operation name exactly, for externallyVisible operations.',
+        },
+        targetId: {
+          type: 'string',
+          description: 'Must match the conversation ID in "arguments", for externallyVisible operations.',
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'Validate arguments and report the request that would be sent, without contacting Help Scout.',
+        },
+      },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    annotations: WRITE_ANNOTATIONS,
+  };
+}
+
+function gatewayToolDefinitions(readCount: number, writeCount: number): Tool[] {
+  const surface = writeCount > 0
+    ? `${readCount} Help Scout read operations and ${writeCount} enabled write operations`
+    : `${readCount} Help Scout read operations`;
+
   return [
     {
       name: SEARCH_TOOL_NAME,
       title: 'Search Help Scout capabilities',
-      description: `Search ${operationCount} Help Scout read operations by user intent (conversations, customers, organizations, inboxes, users, reports, Docs articles, attachments). Returns matching operation names and descriptions. Start here, then load schemas with ${DESCRIBE_TOOL_NAME}.`,
+      description: `Search ${surface} by user intent (conversations, customers, organizations, inboxes, users, reports, Docs articles, attachments). Returns matching operation names and descriptions. Start here, then load schemas with ${DESCRIBE_TOOL_NAME}.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -104,7 +201,9 @@ function gatewayToolDefinitions(operationCount: number): Tool[] {
     {
       name: DESCRIBE_TOOL_NAME,
       title: 'Describe Help Scout capabilities',
-      description: `Return the complete input schemas for selected Help Scout read operations. Use exact operation names returned by ${SEARCH_TOOL_NAME}.`,
+      description: writeCount > 0
+        ? `Return the complete input schemas for selected Help Scout operations, plus the mutation class and tier of write operations. Use exact operation names returned by ${SEARCH_TOOL_NAME}.`
+        : `Return the complete input schemas for selected Help Scout read operations. Use exact operation names returned by ${SEARCH_TOOL_NAME}.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -124,7 +223,9 @@ function gatewayToolDefinitions(operationCount: number): Tool[] {
     {
       name: READ_TOOL_NAME,
       title: 'Read from Help Scout',
-      description: `Execute one Help Scout read operation using arguments that match the schema loaded with ${DESCRIBE_TOOL_NAME}. All operations are read-only.`,
+      description: writeCount > 0
+        ? `Execute one Help Scout read operation using arguments that match the schema loaded with ${DESCRIBE_TOOL_NAME}. Read-only: operations that change Help Scout state are refused here and run through ${WRITE_TOOL_NAME}.`
+        : `Execute one Help Scout read operation using arguments that match the schema loaded with ${DESCRIBE_TOOL_NAME}. All operations are read-only.`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -152,24 +253,65 @@ function gatewayToolDefinitions(operationCount: number): Tool[] {
  * discovery (search), schema retrieval (describe), and dispatch (read).
  */
 export class GatewayHandler {
-  private registryPromise?: Promise<Map<string, Tool>>;
+  private registryPromise?: Promise<Map<string, RegistryEntry>>;
+  private readonly writes: WriteRegistry;
+  private readonly writeFlagOverrides: Partial<WriteFlags>;
 
-  constructor(private readonly operations: OperationRegistry = toolHandler) {}
+  constructor(
+    private readonly operations: OperationRegistry = toolHandler,
+    options: GatewayOptions = {},
+  ) {
+    this.writes = options.writes ?? writeHandler;
+    this.writeFlagOverrides = options.writeFlags ?? {};
+  }
 
-  private getRegistry(): Promise<Map<string, Tool>> {
+  private get writeFlags(): WriteFlags {
+    return { ...config.writes, ...this.writeFlagOverrides };
+  }
+
+  /**
+   * Write operations the operator has actually turned on. Tier 2 is additive:
+   * the customer-visible flag is inert unless writes are enabled at all.
+   */
+  private enabledWriteOperations(): WriteOperation[] {
+    const flags = this.writeFlags;
+    if (!flags.enabled) {
+      return [];
+    }
+    return this.writes
+      .listOperations()
+      .filter((operation) => operation.tier === 1 || flags.customerVisibleEnabled);
+  }
+
+  private getRegistry(): Promise<Map<string, RegistryEntry>> {
     // Operation definitions are static for the life of the process, so the
     // registry is built once and reused for every discovery call. A failed
     // build is not cached: one bad attempt must not poison every later call.
     this.registryPromise ??= this.operations.listTools().then((tools) => {
-      const registry = new Map<string, Tool>();
+      const registry = new Map<string, RegistryEntry>();
+      const add = (name: string, entry: RegistryEntry): void => {
+        if (registry.has(name)) {
+          throw new Error(`Duplicate operation name in capability registry: ${name}`);
+        }
+        if ((RESERVED_TOOL_NAMES as readonly string[]).includes(name)) {
+          throw new Error(`Operation name collides with a gateway tool and would be unreachable: ${name}`);
+        }
+        registry.set(name, entry);
+      };
+
       for (const tool of tools) {
-        if (registry.has(tool.name)) {
-          throw new Error(`Duplicate operation name in capability registry: ${tool.name}`);
-        }
-        if ((GATEWAY_TOOL_NAMES as readonly string[]).includes(tool.name)) {
-          throw new Error(`Operation name collides with a gateway tool and would be unreachable: ${tool.name}`);
-        }
-        registry.set(tool.name, tool);
+        add(tool.name, { tool, mutates: false });
+      }
+      for (const operation of this.enabledWriteOperations()) {
+        add(operation.tool.name, {
+          tool: operation.tool,
+          mutates: true,
+          mutationClass: operation.mutationClass,
+          tier: operation.tier,
+          targetArgument: operation.targetArgument,
+          plan: operation.plan,
+          execute: operation.execute,
+        });
       }
       return registry;
     }).catch((error) => {
@@ -187,10 +329,16 @@ export class GatewayHandler {
     return Array.from((await this.getRegistry()).keys());
   }
 
-  /** The advertised tool surface: exactly the three gateway tools. */
+  /**
+   * The advertised tool surface: the three read gateway tools, plus
+   * write_help_scout when the operator has enabled writes.
+   */
   async listTools(): Promise<Tool[]> {
     const registry = await this.getRegistry();
-    return gatewayToolDefinitions(registry.size);
+    const entries = Array.from(registry.values());
+    const writeCount = entries.filter((entry) => entry.mutates).length;
+    const tools = gatewayToolDefinitions(entries.length - writeCount, writeCount);
+    return writeCount > 0 ? [...tools, writeToolDefinition()] : tools;
   }
 
   async callTool(request: CallToolRequest): Promise<CallToolResult> {
@@ -205,6 +353,12 @@ export class GatewayHandler {
         return this.describeOperations(args.names);
       case READ_TOOL_NAME:
         return this.readOperation(args.name, args.arguments, userQuery);
+      case WRITE_TOOL_NAME:
+        // Not advertised while writes are disabled, so it must behave like any
+        // other unknown name rather than announcing a gated tool.
+        return this.writeFlags.enabled
+          ? this.writeOperation(args)
+          : this.callLegacyOperation(request, name);
       default:
         return this.callLegacyOperation(request, name);
     }
@@ -217,7 +371,11 @@ export class GatewayHandler {
    */
   private async callLegacyOperation(request: CallToolRequest, name: string): Promise<CallToolResult> {
     const registry = await this.getRegistry();
-    if (registry.has(name)) {
+    const entry = registry.get(name);
+    // No pre-2.0 client ever learned a write name, so there is no compatibility
+    // debt to honor, and a bare createNote call would slip past the gating,
+    // annotations, and confirmation that the write gateway exists to enforce.
+    if (entry && !entry.mutates) {
       logger.debug('Dispatching legacy direct operation call', { operation: name });
       return this.operations.callTool(request);
     }
@@ -234,7 +392,11 @@ export class GatewayHandler {
 
     const registry = await this.getRegistry();
     const results = this.rankOperations(registry, query, SEARCH_RESULT_LIMIT)
-      .map((tool): OperationSummary => ({ name: tool.name, description: tool.description }));
+      .map((entry): OperationSummary => ({
+        name: entry.tool.name,
+        description: entry.tool.description,
+        ...(entry.mutates ? { access: `write (${entry.mutationClass})` } : {}),
+      }));
 
     return jsonResult({
       query,
@@ -256,10 +418,19 @@ export class GatewayHandler {
 
     const registry = await this.getRegistry();
     const schemas = names.map((name): OperationSchema | { name: string; unknown: true } => {
-      const tool = registry.get(name);
-      return tool
-        ? { name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
-        : { name, unknown: true };
+      const entry = registry.get(name);
+      if (!entry) {
+        // A gated-off write operation is reported as unknown, not as gated, so
+        // the disabled surface is not a discoverable inventory of what an
+        // operator could turn on.
+        return { name, unknown: true };
+      }
+      return {
+        name: entry.tool.name,
+        description: entry.tool.description,
+        inputSchema: entry.tool.inputSchema,
+        ...(entry.mutates ? { mutationClass: entry.mutationClass, tier: entry.tier } : {}),
+      };
     });
 
     return jsonResult({ schemas });
@@ -274,12 +445,18 @@ export class GatewayHandler {
     }
 
     const registry = await this.getRegistry();
-    if (!registry.has(name)) {
-      const suggestions = this.rankOperations(registry, name, 3).map((tool) => tool.name);
+    const entry = registry.get(name);
+    if (!entry) {
+      // With writes disabled this is also the answer for a write operation
+      // name: the same unknown-operation error as any other name the server
+      // does not expose, so the gated surface stays uninventoried.
+      return this.unknownOperationResult(registry, name, READ_TOOL_NAME);
+    }
+    if (entry.mutates) {
       return jsonResult({
-        error: `Unknown Help Scout operation: ${name}`,
-        ...(suggestions.length > 0 ? { didYouMean: suggestions } : {}),
-        hint: `Use ${SEARCH_TOOL_NAME} to discover valid operation names.`,
+        error: `${name} changes Help Scout state and cannot run through ${READ_TOOL_NAME}.`,
+        mutationClass: entry.mutationClass,
+        hint: `Call ${WRITE_TOOL_NAME} with "name": "${name}" instead.`,
       }, true);
     }
 
@@ -300,16 +477,179 @@ export class GatewayHandler {
     });
   }
 
-  private rankOperations(registry: Map<string, Tool>, query: string, limit: number): Tool[] {
+  /**
+   * Execute one enabled write operation. Confirmation and dry-run handling sit
+   * here rather than in the operations so that no Help Scout request can be
+   * reached without passing them first.
+   */
+  private async writeOperation(args: Record<string, unknown>): Promise<CallToolResult> {
+    const name = args.name;
+    const operationArgs = args.arguments;
+
+    if (typeof name !== 'string' || !name.trim()) {
+      return jsonResult({ error: `${WRITE_TOOL_NAME} requires a non-empty string "name".` }, true);
+    }
+    if (operationArgs !== undefined && !isPlainObject(operationArgs)) {
+      return jsonResult({ error: `${WRITE_TOOL_NAME} "arguments" must be an object matching the ${name} schema.` }, true);
+    }
+
+    const registry = await this.getRegistry();
+    const entry = registry.get(name);
+    if (!entry) {
+      return this.unknownOperationResult(registry, name, WRITE_TOOL_NAME);
+    }
+    if (!entry.mutates || !entry.execute || !entry.plan) {
+      return jsonResult({
+        error: `${name} is a read operation and cannot run through ${WRITE_TOOL_NAME}.`,
+        hint: `Call ${READ_TOOL_NAME} with "name": "${name}" instead.`,
+      }, true);
+    }
+
+    const cleanArgs: Record<string, unknown> = { ...(operationArgs ?? {}) };
+    delete cleanArgs.__userQuery;
+
+    if (entry.mutationClass === 'externallyVisible') {
+      const refusal = confirmationRefusal(name, entry, args, cleanArgs);
+      if (refusal) {
+        logger.warn('Write confirmation refused', { operation: name, reason: refusal.reason });
+        return jsonResult(refusal.payload, true);
+      }
+    }
+
+    if (args.dryRun === true) {
+      return dryRunWrite(name, entry, entry.plan, cleanArgs);
+    }
+
+    return entry.execute(cleanArgs);
+  }
+
+  private unknownOperationResult(
+    registry: Map<string, RegistryEntry>,
+    name: string,
+    tool: string,
+  ): CallToolResult {
+    const suggestions = this.rankOperations(registry, name, 3).map((entry) => entry.tool.name);
+    return jsonResult({
+      error: `Unknown Help Scout operation: ${name}`,
+      ...(suggestions.length > 0 ? { didYouMean: suggestions } : {}),
+      hint: `Use ${SEARCH_TOOL_NAME} to discover valid operation names for ${tool}.`,
+    }, true);
+  }
+
+  private rankOperations(registry: Map<string, RegistryEntry>, query: string, limit: number): RegistryEntry[] {
     // Expand once per search; the synonym set depends only on the query.
     const expanded = expandTerms(tokenize(query));
     return Array.from(registry.values())
-      .map((tool) => ({ tool, score: scoreOperation(tool, expanded) }))
+      .map((entry) => ({ entry, score: scoreOperation(entry.tool, expanded) }))
       .filter(({ score }) => score > 0)
-      .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name))
+      .sort((a, b) => b.score - a.score || a.entry.tool.name.localeCompare(b.entry.tool.name))
       .slice(0, limit)
-      .map(({ tool }) => tool);
+      .map(({ entry }) => entry);
   }
+}
+
+/**
+ * Help Scout offers no preview or validate endpoint for these mutations, so a
+ * dry run validates the arguments and reports the request that would be sent.
+ * It never contacts Help Scout and never simulates a result.
+ */
+function dryRunWrite(
+  name: string,
+  entry: RegistryEntry,
+  plan: NonNullable<RegistryEntry['plan']>,
+  operationArgs: Record<string, unknown>,
+): CallToolResult {
+  let wouldSend;
+  try {
+    wouldSend = plan(operationArgs);
+  } catch (error) {
+    return jsonResult({
+      error: `Invalid arguments for ${name}.`,
+      operation: name,
+      dryRun: true,
+      validationIssues: zodIssues(error),
+      hint: `Load the schema with ${DESCRIBE_TOOL_NAME} and correct the arguments.`,
+    }, true);
+  }
+
+  return jsonResult({
+    operation: name,
+    mutationClass: entry.mutationClass,
+    dryRun: true,
+    wouldSend,
+    note: 'Help Scout state was not checked. No request was sent, so this does not confirm the target exists, is reachable, or would accept the change.',
+  });
+}
+
+interface ConfirmationRefusal {
+  reason: string;
+  payload: Record<string, unknown>;
+}
+
+/**
+ * Reject a customer-visible write whose confirmation metadata is missing,
+ * false, or mismatched, before any Help Scout request is made. Each refusal
+ * names the exact values the next attempt needs.
+ */
+function confirmationRefusal(
+  name: string,
+  entry: RegistryEntry,
+  args: Record<string, unknown>,
+  operationArgs: Record<string, unknown>,
+): ConfirmationRefusal | undefined {
+  const targetArgument = entry.targetArgument ?? 'conversationId';
+  const expectedTarget = operationArgs[targetArgument];
+  const required = {
+    confirm: true,
+    confirmOperation: name,
+    targetId: expectedTarget === undefined ? `the ${targetArgument} in "arguments"` : String(expectedTarget),
+  };
+  const base = {
+    operation: name,
+    mutationClass: entry.mutationClass,
+    required,
+    hint: 'This operation is visible to the customer. Repeat the call with all three confirmation fields set exactly as shown in "required".',
+  };
+
+  if (args.confirm !== true) {
+    return {
+      reason: args.confirm === undefined ? 'confirm missing' : 'confirm not true',
+      payload: {
+        ...base,
+        error: `${name} is externallyVisible and requires "confirm": true. Received: ${JSON.stringify(args.confirm ?? null)}.`,
+      },
+    };
+  }
+
+  if (args.confirmOperation !== name) {
+    return {
+      reason: 'confirmOperation mismatch',
+      payload: {
+        ...base,
+        error: `"confirmOperation" must be exactly "${name}". Received: ${JSON.stringify(args.confirmOperation ?? null)}.`,
+      },
+    };
+  }
+
+  if (expectedTarget === undefined || String(args.targetId) !== String(expectedTarget)) {
+    return {
+      reason: 'targetId mismatch',
+      payload: {
+        ...base,
+        error: `"targetId" must match "arguments.${targetArgument}" (${JSON.stringify(expectedTarget ?? null)}). Received: ${JSON.stringify(args.targetId ?? null)}.`,
+      },
+    };
+  }
+
+  return undefined;
+}
+
+function zodIssues(error: unknown): Array<{ field: string; message: string }> | undefined {
+  if (!error || typeof error !== 'object' || !('issues' in error)) {
+    return undefined;
+  }
+  const issues = (error as { issues: Array<{ path: Array<string | number>; message: string }> }).issues;
+  return issues.map((issue) => ({ field: issue.path.join('.'), message: issue.message }));
 }
 
 export const gatewayHandler = new GatewayHandler();

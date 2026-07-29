@@ -52,6 +52,41 @@ const DEFAULT_POOL_CONFIG: ConnectionPoolConfig = {
   keepAliveMsecs: 1000,  // Keep-alive probe interval
 };
 
+export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+/**
+ * Outcome of a non-idempotent request. Mailbox v2 answers most mutations with
+ * `204 No Content`, so the status and headers carry more than the body does:
+ * `Resource-Id` is the only place a newly created thread ID appears.
+ */
+export interface WriteResponse<T = unknown> {
+  status: number;
+  data: T;
+  headers: Record<string, string>;
+}
+
+/**
+ * Failure of a non-idempotent request, carrying the upstream status so a write
+ * handler can map it to model-correctable guidance.
+ *
+ * Writes deliberately do not reuse `transformError`: that path flattens 403 and
+ * 404 into prose without a status code, and its suggestions promise automatic
+ * retries that writes never perform.
+ */
+export class HelpScoutWriteError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | undefined,
+    readonly body: unknown,
+    readonly method: WriteMethod,
+    readonly path: string,
+    readonly requestId: string,
+  ) {
+    super(message);
+    this.name = 'HelpScoutWriteError';
+  }
+}
+
 export interface PaginatedResponse<T> {
   _embedded: { [key: string]: T[] };
   _links?: {
@@ -587,6 +622,95 @@ export class HelpScoutClient {
         headers: options.headers,
       })
     );
+  }
+
+  /**
+   * Issue a non-idempotent request exactly once.
+   *
+   * This bypasses `executeWithRetry` on purpose. Reads keep retrying 429 and
+   * 5xx because a repeated GET costs nothing; a repeated POST is a second
+   * customer email or a duplicate note, and a 5xx never proves the first
+   * attempt failed. Backoff is the caller's decision, because only the caller
+   * can read the target back and check whether the first attempt landed.
+   *
+   * Every failure surfaces as a HelpScoutWriteError carrying the upstream
+   * status. A 401 invalidates the cached OAuth token so the next call
+   * re-authenticates, but this call still fails rather than replaying the body.
+   */
+  private async writeRequest<T>(
+    method: WriteMethod,
+    endpoint: string,
+    body?: unknown,
+  ): Promise<WriteResponse<T>> {
+    try {
+      const response = await this.client.request<T>({
+        method,
+        url: endpoint,
+        ...(body === undefined ? {} : { data: body }),
+      });
+
+      return {
+        status: response.status,
+        data: response.data,
+        headers: this.normalizeHeaders(response.headers),
+      };
+    } catch (error) {
+      if (!axios.isAxiosError(error)) {
+        throw error;
+      }
+
+      const axiosError = error as AxiosError;
+      const status = axiosError.response?.status;
+      const requestId = axiosError.config?.metadata?.requestId || 'unknown';
+
+      if (status === 401) {
+        this.invalidateAccessToken();
+      }
+
+      logger.error('Write request failed', { requestId, method, endpoint, status });
+
+      throw new HelpScoutWriteError(
+        axiosError.message,
+        status,
+        axiosError.response?.data,
+        method,
+        endpoint,
+        requestId,
+      );
+    }
+  }
+
+  private normalizeHeaders(headers: unknown): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    if (!headers || typeof headers !== 'object') {
+      return normalized;
+    }
+    for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (typeof value === 'string' || typeof value === 'number') {
+        normalized[key.toLowerCase()] = String(value);
+      }
+    }
+    return normalized;
+  }
+
+  /** Single-attempt POST. See writeRequest for why writes are never retried. */
+  async post<T = unknown>(endpoint: string, body?: unknown): Promise<WriteResponse<T>> {
+    return this.writeRequest<T>('POST', endpoint, body);
+  }
+
+  /** Single-attempt PUT. See writeRequest for why writes are never retried. */
+  async put<T = unknown>(endpoint: string, body?: unknown): Promise<WriteResponse<T>> {
+    return this.writeRequest<T>('PUT', endpoint, body);
+  }
+
+  /** Single-attempt PATCH. See writeRequest for why writes are never retried. */
+  async patch<T = unknown>(endpoint: string, body?: unknown): Promise<WriteResponse<T>> {
+    return this.writeRequest<T>('PATCH', endpoint, body);
+  }
+
+  /** Single-attempt DELETE. See writeRequest for why writes are never retried. */
+  async delete<T = unknown>(endpoint: string): Promise<WriteResponse<T>> {
+    return this.writeRequest<T>('DELETE', endpoint);
   }
 
   private getDefaultCacheTtl(endpoint: string): number {
