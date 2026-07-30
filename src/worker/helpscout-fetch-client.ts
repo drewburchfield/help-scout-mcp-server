@@ -121,6 +121,24 @@ export class ReauthRequiredError extends Error {
   }
 }
 
+/**
+ * A refresh succeeded upstream but the rotated pair could not be saved. This
+ * must never be retried as if it were a transport blip: the old refresh token
+ * is already spent, so a second exchange with it would fail with invalid_grant
+ * and bury the real (storage) problem under wrong re-consent advice.
+ */
+export class TokenPersistenceError extends Error {
+  readonly code = 'TOKEN_PERSISTENCE_FAILED' as const;
+
+  constructor(
+    message: string,
+    readonly requestId: string,
+  ) {
+    super(message);
+    this.name = 'TokenPersistenceError';
+  }
+}
+
 /** The subset of a failed response `transformError` reasons about. */
 interface ErrorContext {
   status?: number;
@@ -146,6 +164,9 @@ export class HelpScoutFetchClient implements HelpScoutApi {
 
   constructor(private readonly deps: FetchClientDeps) {
     this.validateHttpsBaseUrl(deps.baseUrl);
+    // The token endpoint receives the refresh token and the client secret, so
+    // it gets the same HTTPS requirement as the API base.
+    this.validateHttpsUrl(deps.tokenUrl, 'Help Scout token URL');
     this.timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
@@ -165,6 +186,19 @@ export class HelpScoutFetchClient implements HelpScoutApi {
 
     if (parsed.protocol !== 'https:') {
       throw new Error('HELPSCOUT_BASE_URL must use HTTPS to protect OAuth2 credentials');
+    }
+  }
+
+  private validateHttpsUrl(url: string, label: string): void {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid ${label}: ${url}`);
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new Error(`${label} must use HTTPS to protect OAuth2 credentials`);
     }
   }
 
@@ -293,15 +327,22 @@ export class HelpScoutFetchClient implements HelpScoutApi {
 
       logger.error('Token refresh rejected', { requestId, status: response.status, oauthError });
 
-      // A 400/401 (invalid_grant) means the refresh token is spent or the
-      // grant was revoked: no retry can recover it, only re-consent. Anything
-      // else (a 5xx from the token endpoint, a 429) is Help Scout misbehaving,
-      // not a dead grant, and must not tell the user to reconnect.
-      if (response.status === 400 || response.status === 401) {
+      // Only invalid_grant means the refresh token is spent or the grant was
+      // revoked, which re-consent can fix. Everything else (invalid_client is
+      // a bad deployment secret, a 5xx is Help Scout misbehaving) is not the
+      // user's session, and telling them to reconnect would be wrong advice.
+      if ((response.status === 400 || response.status === 401) && oauthError === 'invalid_grant') {
         throw new ReauthRequiredError(
           'Your Help Scout session has expired or was revoked. Please reconnect the Help Scout connector to continue.',
           requestId,
         );
+      }
+      if (response.status === 400 || response.status === 401) {
+        throw {
+          code: 'UPSTREAM_ERROR',
+          message: `Help Scout rejected the token refresh (${typeof oauthError === 'string' ? oauthError : `status ${response.status}`}). This points at the deployment's OAuth configuration, not your session.`,
+          details: { requestId, suggestion: 'Check the deployment client ID and secret against the Help Scout app.' },
+        } as ApiError;
       }
       throw this.transformError({
         status: response.status,
@@ -311,37 +352,69 @@ export class HelpScoutFetchClient implements HelpScoutApi {
       });
     }
 
-    const data = (await response.json()) as {
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
-    };
+    const data = (await this.safeJson(response)) as
+      | { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown }
+      | undefined;
+
+    const accessToken = data?.access_token;
+    const refreshToken = data?.refresh_token;
+    const expiresIn = data?.expires_in;
+
+    // A 2xx with a malformed body must not overwrite usable grant state with
+    // undefined tokens and a NaN expiry.
+    if (
+      typeof accessToken !== 'string' || accessToken === '' ||
+      typeof refreshToken !== 'string' || refreshToken === '' ||
+      typeof expiresIn !== 'number' || !Number.isFinite(expiresIn)
+    ) {
+      logger.error('Token refresh returned a malformed response', { requestId });
+      throw {
+        code: 'UPSTREAM_ERROR',
+        message: 'Help Scout returned a malformed token refresh response.',
+        details: { requestId, suggestion: 'Retry later; if it persists, check Help Scout status.' },
+      } as ApiError;
+    }
 
     const rotated: UserTokenContext = {
-      accessToken: data.access_token,
-      refreshToken: data.refresh_token,
-      expiresAt: Date.now() + data.expires_in * 1000,
+      accessToken,
+      refreshToken,
+      expiresAt: Date.now() + expiresIn * 1000,
     };
 
     // Persist the rotated pair atomically (both tokens + expiry together) before
     // any request uses it, so a crash never leaves a spent refresh token stored.
-    await this.deps.persistTokens(rotated);
+    // A persistence failure is NOT retryable: the exchange already consumed the
+    // old refresh token, and repeating it would fail with invalid_grant.
+    try {
+      await this.deps.persistTokens(rotated);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Refreshed tokens could not be persisted', { requestId, error: message });
+      throw new TokenPersistenceError(
+        'Help Scout issued new session tokens but they could not be saved. Retry shortly; if this persists the connection may need to be re-authorized.',
+        requestId,
+      );
+    }
 
     logger.info('Refreshed Help Scout access token', { requestId });
 
     return rotated;
   }
 
-  /** Issue a single GET, injecting the current per-user bearer token. */
+  /**
+   * Issue a single GET, injecting the current per-user bearer token. Returns
+   * the token it sent alongside the response so the retry loop can tell a 401
+   * produced by a since-rotated token from one produced by the current token.
+   */
   private async sendGet(
     endpoint: string,
     params?: Record<string, unknown>,
     headers?: Record<string, string>,
-  ): Promise<Response> {
+  ): Promise<{ response: Response; accessTokenUsed: string }> {
     await this.maybeProactiveRefresh();
 
     const tokens = this.deps.getTokens();
-    return fetch(this.buildUrl(endpoint, params), {
+    const response = await fetch(this.buildUrl(endpoint, params), {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -350,6 +423,7 @@ export class HelpScoutFetchClient implements HelpScoutApi {
       },
       signal: AbortSignal.timeout(this.timeoutMs),
     });
+    return { response, accessTokenUsed: tokens.accessToken };
   }
 
   // --- Read path with retry --------------------------------------------------
@@ -368,17 +442,20 @@ export class HelpScoutFetchClient implements HelpScoutApi {
   ): Promise<Response> {
     const requestId = this.newRequestId();
     let refreshedOn401 = false;
+    let staleTokenRetryDone = false;
     let lastError: ErrorContext | undefined;
 
     for (let attempt = 0; attempt <= this.retryConfig.retries; attempt++) {
       let response: Response;
+      let accessTokenUsed: string;
 
       try {
-        response = await this.sendGet(endpoint, params, headers);
+        ({ response, accessTokenUsed } = await this.sendGet(endpoint, params, headers));
       } catch (error) {
         // A refresh that failed with invalid_grant must surface as re-consent,
-        // not be swallowed as a retryable network blip.
-        if (error instanceof ReauthRequiredError) {
+        // and a spent-then-unsaved rotation must not be repeated; neither is a
+        // retryable network blip.
+        if (error instanceof ReauthRequiredError || error instanceof TokenPersistenceError) {
           throw error;
         }
 
@@ -408,6 +485,17 @@ export class HelpScoutFetchClient implements HelpScoutApi {
       }
 
       const status = response.status;
+
+      // A 401 produced under a token that has since rotated (another caller
+      // refreshed while this response was in flight) is stale: retry with the
+      // current token instead of spending another refresh on a token that was
+      // never rejected.
+      if (status === 401 && !staleTokenRetryDone && this.deps.getTokens().accessToken !== accessTokenUsed) {
+        staleTokenRetryDone = true;
+        logger.warn('Stale 401 under a rotated token, retrying with the current token', { attempt: attempt + 1, requestId });
+        attempt--;
+        continue;
+      }
 
       // Reactive refresh: a single 401 refreshes the token and retries once.
       // A second 401 (token still rejected) is a real auth failure. The retry

@@ -3,6 +3,7 @@ import {
   HelpScoutFetchClient,
   RefreshMutex,
   ReauthRequiredError,
+  TokenPersistenceError,
   type FetchClientDeps,
   type UserTokenContext,
 } from '../worker/helpscout-fetch-client.js';
@@ -550,6 +551,96 @@ describe('HelpScoutFetchClient', () => {
       // must still get its post-refresh retry rather than running the loop out.
       await expect(promise).resolves.toEqual({ ok: true });
       expect(apiCalls).toBe(5);
+    });
+
+    it('does not repeat the exchange when persisting the rotated pair fails', async () => {
+      // Near expiry so the proactive refresh fires before the read.
+      const { client, persistTokens } = makeHarness({}, { expiresAt: Date.now() + 1000 });
+      persistTokens.mockRejectedValue(new Error('KV write failed'));
+      let tokenCalls = 0;
+      fetchMock.mockImplementation(async (input) => {
+        if ((input as string) === TOKEN_URL) {
+          tokenCalls++;
+          return jsonResponse({ access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 172800 });
+        }
+        return jsonResponse({ ok: true });
+      });
+
+      const error = (await client.get('/conversations/1').catch((e) => e)) as TokenPersistenceError;
+
+      // The old refresh token is already spent; a retry would exchange it
+      // again and manufacture an invalid_grant on top of a storage failure.
+      expect(error).toBeInstanceOf(TokenPersistenceError);
+      expect(error).not.toBeInstanceOf(ReauthRequiredError);
+      expect(tokenCalls).toBe(1);
+    });
+
+    it('does not tell the user to reconnect when the deployment credentials are rejected', async () => {
+      const { client } = makeHarness();
+      fetchMock.mockImplementation(async (input) => {
+        if ((input as string) === TOKEN_URL) {
+          return jsonResponse({ error: 'invalid_client' }, 401);
+        }
+        return jsonResponse({ error: 'unauthorized' }, 401);
+      });
+
+      const error = (await client.get('/conversations/1').catch((e) => e)) as { code: string; message: string };
+
+      // invalid_client is a bad deployment secret; reconnecting cannot fix it.
+      expect(error).not.toBeInstanceOf(ReauthRequiredError);
+      expect(error.code).toBe('UPSTREAM_ERROR');
+      expect(error.message).toContain('invalid_client');
+    });
+
+    it('refuses to persist a malformed token refresh response', async () => {
+      const { client, persistTokens } = makeHarness();
+      fetchMock.mockImplementation(async (input) => {
+        if ((input as string) === TOKEN_URL) {
+          // 200 but missing refresh_token: persisting would corrupt the grant.
+          return jsonResponse({ access_token: 'access-2', expires_in: 172800 });
+        }
+        return jsonResponse({ error: 'unauthorized' }, 401);
+      });
+
+      const error = (await client.get('/conversations/1').catch((e) => e)) as { code: string };
+
+      expect(persistTokens).not.toHaveBeenCalled();
+      expect(error.code).toBe('UPSTREAM_ERROR');
+    });
+
+    it('retries a stale 401 with the current token instead of rotating again', async () => {
+      const harness = makeHarness();
+      let apiCalls = 0;
+      let tokenCalls = 0;
+      fetchMock.mockImplementation(async (input) => {
+        if ((input as string) === TOKEN_URL) {
+          tokenCalls++;
+          return jsonResponse({ access_token: 'access-3', refresh_token: 'refresh-3', expires_in: 172800 });
+        }
+        apiCalls++;
+        if (apiCalls === 1) {
+          // While this response was in flight, another session rotated the
+          // token: the 401 below was produced under access-1, not access-2.
+          await harness.deps.persistTokens({
+            accessToken: 'access-2',
+            refreshToken: 'refresh-2',
+            expiresAt: Date.now() + 3_600_000,
+          });
+          return jsonResponse({ error: 'unauthorized' }, 401);
+        }
+        return jsonResponse({ ok: true });
+      });
+
+      await expect(harness.client.get('/conversations/1')).resolves.toEqual({ ok: true });
+
+      expect(tokenCalls).toBe(0);
+      expect(authHeader(1)).toBe('Bearer access-2');
+    });
+  });
+
+  describe('token URL validation', () => {
+    it('rejects a non-HTTPS token URL', () => {
+      expect(() => makeHarness({ tokenUrl: 'http://api.helpscout.net/v2/oauth2/token' })).toThrow(/HTTPS/);
     });
   });
 
