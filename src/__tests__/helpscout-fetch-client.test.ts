@@ -644,6 +644,51 @@ describe('HelpScoutFetchClient', () => {
     });
   });
 
+  describe('proactive refresh failure classification', () => {
+    it('propagates a classified token-endpoint outage once instead of retrying it per attempt', async () => {
+      const { client } = makeHarness({}, { expiresAt: Date.now() + 1000 });
+      let tokenCalls = 0;
+      fetchMock.mockImplementation(async (input) => {
+        if ((input as string) === TOKEN_URL) {
+          tokenCalls++;
+          return jsonResponse({ error: 'server_error' }, 503);
+        }
+        return jsonResponse({ ok: true });
+      });
+
+      const error = (await client.get('/conversations/1').catch((e) => e)) as { code: string; message: string };
+
+      // The refresh path already classified this; the read retry loop must
+      // not flatten it into an unknown error or hammer the token endpoint.
+      expect(error.code).toBe('UPSTREAM_ERROR');
+      expect(error.message).toContain('503');
+      expect(tokenCalls).toBe(1);
+    });
+  });
+
+  describe('unknown expiry', () => {
+    it('forces a refresh before a write when the expiry is unknown', async () => {
+      // expiresAt 0 is the contract for "expiry unknown": refresh first.
+      const { client } = makeHarness({}, { expiresAt: 0 });
+      let tokenCalls = 0;
+      fetchMock.mockImplementation(async (input, init) => {
+        if ((input as string) === TOKEN_URL) {
+          tokenCalls++;
+          return jsonResponse({ access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 172800 });
+        }
+        const auth = (init as { headers?: Record<string, string> })?.headers?.Authorization;
+        // The write must run under the freshly rotated token, never the stale one.
+        expect(auth).toBe('Bearer access-2');
+        return jsonResponse({ id: 99 }, 201, { 'resource-id': '99' });
+      });
+
+      const result = await client.post('/conversations/1/notes', { text: 'hi' });
+
+      expect(tokenCalls).toBe(1);
+      expect(result.status).toBe(201);
+    });
+  });
+
   describe('validateHttpsBaseUrl', () => {
     it('rejects a non-HTTPS base URL', () => {
       expect(() => makeHarness({ baseUrl: 'http://api.helpscout.net/v2/' })).toThrow(/HTTPS/);

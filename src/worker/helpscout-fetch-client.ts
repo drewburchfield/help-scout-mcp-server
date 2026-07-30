@@ -47,13 +47,17 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 
 /**
  * The per-user OAuth pair the client reads for every request. `expiresAt`
- * (epoch ms) drives proactive refresh; it is optional so a caller that only has
- * the tokens still works, falling back to reactive refresh on a 401.
+ * (epoch ms) drives proactive refresh, which is what keeps writes usable:
+ * writes never retry a 401, so they depend on never meeting an expired token.
+ * A caller that does not know the expiry must pass 0, which forces a refresh
+ * before first use and self-heals (the refresh response carries the real
+ * expiry). It is deliberately not optional: an absent expiry would silently
+ * disable proactive refresh and strand every write once the token expires.
  */
 export interface UserTokenContext {
   accessToken: string;
   refreshToken: string;
-  expiresAt?: number;
+  expiresAt: number;
 }
 
 /**
@@ -272,7 +276,6 @@ export class HelpScoutFetchClient implements HelpScoutApi {
    */
   private async maybeProactiveRefresh(): Promise<void> {
     const tokens = this.deps.getTokens();
-    if (tokens.expiresAt === undefined) return;
     if (Date.now() > tokens.expiresAt - REFRESH_BUFFER_MS) {
       await this.refresh();
     }
@@ -411,8 +414,6 @@ export class HelpScoutFetchClient implements HelpScoutApi {
     params?: Record<string, unknown>,
     headers?: Record<string, string>,
   ): Promise<{ response: Response; accessTokenUsed: string }> {
-    await this.maybeProactiveRefresh();
-
     const tokens = this.deps.getTokens();
     const response = await fetch(this.buildUrl(endpoint, params), {
       method: 'GET',
@@ -448,6 +449,12 @@ export class HelpScoutFetchClient implements HelpScoutApi {
     for (let attempt = 0; attempt <= this.retryConfig.retries; attempt++) {
       let response: Response;
       let accessTokenUsed: string;
+
+      // Outside the transport try/catch, like the reactive refresh below: a
+      // refresh failure arrives already classified (re-consent, persistence,
+      // rate limit, upstream) and must propagate as-is, not be flattened into
+      // a retryable network blip that hammers the token endpoint per attempt.
+      await this.maybeProactiveRefresh();
 
       try {
         ({ response, accessTokenUsed } = await this.sendGet(endpoint, params, headers));
