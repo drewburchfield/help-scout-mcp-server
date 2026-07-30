@@ -59,13 +59,21 @@ if [ "$PARSE_OK" = false ]; then
   exit 1
 fi
 
-# Check for consistency
-ALL_VERSIONS=("$PKG_VERSION" "$SRC_VERSION" "$DOCKER_VERSION" "$TEST_VERSION" "$MCP_VERSION" "$SERVER_VERSION" "$MANIFEST_VERSION" "$README_PIN")
-FIRST_VERSION=${ALL_VERSIONS[0]}
+# Check for consistency. Comparison and diagnostics iterate the same list so
+# a source can never fail the audit without being named in the output.
+SOURCES=(
+  "src/index.ts|$SRC_VERSION"
+  "Dockerfile|$DOCKER_VERSION"
+  "src/__tests__/index.test.ts|$TEST_VERSION"
+  "mcp.json|$MCP_VERSION"
+  "server.json|$SERVER_VERSION"
+  "helpscout-mcp-extension/manifest.json|$MANIFEST_VERSION"
+  "README.md + guides/cowork-setup.md install pins|$README_PIN"
+)
 CONSISTENT=true
 
-for version in "${ALL_VERSIONS[@]}"; do
-  if [ "$version" != "$FIRST_VERSION" ]; then
+for entry in "${SOURCES[@]}"; do
+  if [ "${entry#*|}" != "$PKG_VERSION" ]; then
     CONSISTENT=false
     break
   fi
@@ -73,7 +81,7 @@ done
 
 echo ""
 if [ "$CONSISTENT" = true ]; then
-  echo "✅ All versions are consistent: $FIRST_VERSION"
+  echo "✅ All versions are consistent: $PKG_VERSION"
   echo ""
   echo "🚀 Ready for release!"
   exit 0
@@ -81,23 +89,15 @@ else
   echo "❌ Version mismatch detected!"
   echo ""
   echo "🔧 Files that need updating:"
-  
-  if [ "$SRC_VERSION" != "$PKG_VERSION" ]; then
-    echo "  - src/index.ts (currently: $SRC_VERSION, should be: $PKG_VERSION)"
-  fi
-  
-  if [ "$DOCKER_VERSION" != "$PKG_VERSION" ]; then
-    echo "  - Dockerfile (currently: $DOCKER_VERSION, should be: $PKG_VERSION)"
-  fi
-  
-  if [ "$TEST_VERSION" != "$PKG_VERSION" ]; then
-    echo "  - src/__tests__/index.test.ts (currently: $TEST_VERSION, should be: $PKG_VERSION)"
-  fi
 
-  if [ "$README_PIN" != "$PKG_VERSION" ]; then
-    echo "  - README.md install pins (currently: ${README_PIN:-inconsistent}, should be: $PKG_VERSION)"
-  fi
-  
+  for entry in "${SOURCES[@]}"; do
+    label=${entry%%|*}
+    version=${entry#*|}
+    if [ "$version" != "$PKG_VERSION" ]; then
+      echo "  - $label (currently: ${version:-inconsistent}, should be: $PKG_VERSION)"
+    fi
+  done
+
   echo ""
   echo "📋 Update these files manually, then run this script again."
   exit 1

@@ -78,6 +78,35 @@ describe('package scripts', () => {
     expect(result.stdout).toBe('env-app:env-secret');
   });
 
+  it('names the mismatched file when version sources disagree', async () => {
+    const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'helpscout-version-audit-'));
+    await fs.promises.mkdir(path.join(tempRoot, 'src', '__tests__'), { recursive: true });
+    await fs.promises.mkdir(path.join(tempRoot, 'helpscout-mcp-extension'), { recursive: true });
+    await fs.promises.mkdir(path.join(tempRoot, 'guides'), { recursive: true });
+
+    await fs.promises.writeFile(path.join(tempRoot, 'package.json'), '{ "version": "1.0.0" }');
+    await fs.promises.writeFile(path.join(tempRoot, 'src', 'index.ts'), "const metadata = { version: '1.0.0' };\n");
+    await fs.promises.writeFile(path.join(tempRoot, 'Dockerfile'), 'LABEL version="1.0.0"\n');
+    await fs.promises.writeFile(path.join(tempRoot, 'src', '__tests__', 'index.test.ts'), "const expected = { version: '1.0.0' };\n");
+    await fs.promises.writeFile(path.join(tempRoot, 'mcp.json'), '{ "version": "1.0.0" }');
+    await fs.promises.writeFile(path.join(tempRoot, 'server.json'), '{ "version": "9.9.9" }');
+    await fs.promises.writeFile(path.join(tempRoot, 'helpscout-mcp-extension', 'manifest.json'), '{ "version": "1.0.0" }');
+    await fs.promises.writeFile(path.join(tempRoot, 'README.md'), 'Run npx help-scout-mcp-server@1.0.0\n');
+    await fs.promises.writeFile(path.join(tempRoot, 'guides', 'cowork-setup.md'), 'Run npx help-scout-mcp-server@1.0.0\n');
+
+    try {
+      const result = spawnSync('bash', [path.join(process.cwd(), 'scripts/version-audit.sh')], {
+        cwd: tempRoot,
+        encoding: 'utf8',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('server.json (currently: 9.9.9, should be: 1.0.0)');
+    } finally {
+      await fs.promises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('fails version audit when any version source cannot be parsed', async () => {
     const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'helpscout-version-audit-'));
     await fs.promises.mkdir(path.join(tempRoot, 'src', '__tests__'), { recursive: true });
