@@ -1,7 +1,7 @@
 {
   "name": "helpscout-navigator",
-  "version": "1.3.0",
-  "description": "Help Scout support, customer, organization, report, metadata, and Docs navigation guidance. Bundles the read-only Help Scout MCP server and pins the 2.0.0 runtime.",
+  "version": "1.4.0",
+  "description": "Help Scout support, customer, organization, report, metadata, and Docs navigation guidance. Bundles the Help Scout MCP server, pins the 2.1.0 runtime, and covers the opt-in write surface.",
   "author": {
     "name": "Drew Burchfield",
     "url": "https://github.com/drewburchfield"

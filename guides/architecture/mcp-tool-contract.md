@@ -32,13 +32,17 @@ Source references:
 
 The server presents two layers, and the rules below distinguish them.
 
-- **Advertised gateway tools** are the three tools returned by `tools/list`:
-  `search_help_scout`, `describe_help_scout`, and `read_help_scout`. They are
-  defined in `src/tools/gateway.ts`.
-- **Registry operations** are the 55 read-only Help Scout operations defined in
-  `src/tools/index.ts`. They are discovered through `search_help_scout`,
-  schema-loaded through `describe_help_scout`, and executed through
-  `read_help_scout`.
+- **Advertised gateway tools** are the tools returned by `tools/list`, defined in
+  `src/tools/gateway.ts`. `search_help_scout`, `describe_help_scout`, and
+  `read_help_scout` are always advertised. `write_help_scout` is advertised only
+  when write support is enabled, per
+  [Gating And Permission Model](#gating-and-permission-model).
+- **Registry operations** are the Help Scout operations defined in
+  `src/tools/index.ts`: 55 read operations, plus the write operations added in
+  2.1, which stay gated behind environment flags. Read operations are discovered
+  through `search_help_scout`, schema-loaded through `describe_help_scout`, and
+  executed through `read_help_scout`. Enabled write operations are discovered
+  and schema-loaded the same way, and executed through `write_help_scout`.
 
 "Tool" in the sections below means an advertised gateway tool. "Operation" means
 a registry entry. Both share the result, error, and envelope rules.
@@ -48,20 +52,43 @@ a registry entry. Both share the result, error, and envelope rules.
 Each advertised gateway tool and each registry operation should have:
 
 - A stable machine name. Advertised gateway tools use snake_case
-  (`search_help_scout`, `describe_help_scout`, `read_help_scout`). Registry
-  operations use the existing camelCase style (`getConversation`, `listUsers`).
+  (`search_help_scout`, `describe_help_scout`, `read_help_scout`,
+  `write_help_scout`). Registry operations use the existing camelCase style
+  (`getConversation`, `listUsers`, `createNote`).
 - A human-readable `title` for MCP hosts that render display names.
 - A direct, user-intent description, not an internal endpoint description. For
   registry operations the description is also the ranking text for
   `search_help_scout`, so it should carry the words a user would actually type.
 - A valid `inputSchema`. Entries with no arguments should explicitly accept an
   empty object.
-- `annotations.readOnlyHint: true`, which currently applies to every advertised
-  tool and every registry operation.
+- Annotations that state the worst case, per [Annotations](#annotations).
 - `outputSchema` once the returned structure is intentionally stable.
 
 Icons are optional display metadata. Add them only when supported by the server
 SDK and packaged clients can consume them consistently.
+
+### Annotations
+
+Annotations describe the worst case for the tool a host is about to approve, not
+the best case for a particular call.
+
+- `search_help_scout`, `describe_help_scout`, and `read_help_scout` carry
+  `annotations.readOnlyHint: true`, and so does every read registry operation.
+  That is the full extent of the read-only claim. It is not a property of the
+  advertised surface as a whole.
+- `write_help_scout` carries `readOnlyHint: false` and `destructiveHint: true`.
+  Per-tool hints are worst-case by necessity: one advertised tool covers a range
+  of mutation classes, and hosts gate approval on the tool rather than on the
+  operation chosen inside it. Annotating the safest case would understate what
+  an approval permits. `destructiveHint` stays true even though the
+  `destructive` mutation class is not exposed in 2.1, because a sent customer
+  reply cannot be recalled.
+- Write operations never carry `readOnlyHint: true`, whatever their mutation
+  class.
+- Per-operation risk travels in the operation's mutation class and its
+  confirmation requirements, not in the advertised tool's annotations. A host
+  that wants finer granularity than `destructiveHint` reads the mutation class
+  through `describe_help_scout`.
 
 ## Result Shape
 
@@ -130,16 +157,28 @@ operation, and model-correctable guidance when available.
 
 ### Advertised Gateway Tools
 
-The three advertised tools use snake_case verb-first names that read as
-capabilities rather than Help Scout resources: `search_help_scout`,
-`describe_help_scout`, `read_help_scout`. This set is intentionally closed. Do
-not add a fourth advertised tool to expose a Help Scout resource; add a registry
-operation instead. A new advertised tool is justified only by a new interaction
-mode, and a write path would be the first candidate.
+The advertised tools use snake_case verb-first names that read as capabilities
+rather than Help Scout resources: `search_help_scout`, `describe_help_scout`,
+`read_help_scout`, and `write_help_scout`. This set is intentionally closed. Do
+not add a fifth advertised tool to expose a Help Scout resource; add a registry
+operation instead.
 
-An operation name may never collide with a gateway tool name. The registry build
-rejects the collision at startup, because a colliding operation would be
-unreachable.
+A new advertised tool is justified only by a new interaction mode.
+`write_help_scout` is the one addition that clears that bar, and it is the write
+path the 2.0 contract named as the first candidate. Mutation is a different
+interaction mode from discovery, schema loading, and reading: it needs different
+annotations, an operator-controlled gate, per-call confirmation, and a separate
+host approval decision. Nothing about a Help Scout resource justifies another
+tool.
+
+`write_help_scout` is advertised only when writes are enabled. With the flags
+off, `tools/list` returns three tools and the advertised set is the 2.0 set.
+
+An operation name may never collide with a gateway tool name. The registry is
+built on the first gateway call and rejects the collision there, because a
+colliding operation would be unreachable. `write_help_scout` is reserved even
+while writes are disabled: an operation may not take a name that would become
+unreachable the moment an operator flips the flag.
 
 ### Registry Operations
 
@@ -159,23 +198,53 @@ Prefer a parameter on an existing operation over a near-duplicate operation:
 API-version variants belong behind a flag, sub-resources behind an `include`
 list, and report families behind a `report` or `channel` selector.
 
-Avoid adding write verbs until the write-tool contract below is satisfied.
+A write verb is allowed only for an operation that satisfies the write tool
+contract below: a declared mutation class, a tier, confirmation metadata where
+the class requires it, and dispatch through `write_help_scout` alone.
 
 ## Name Compatibility Rule
 
 This is the canonical statement of what names a client may call.
 
-1. The three advertised gateway tool names always dispatch.
-2. Any operation name currently in the registry also dispatches directly, as a
-   compatibility path for clients that learned the pre-2.0 names. Direct calls
-   bypass discovery and behave identically to the same operation invoked through
-   `read_help_scout`.
+1. The advertised gateway tool names always dispatch, except that
+   `write_help_scout` is absent, and therefore unknown, while writes are
+   disabled.
+2. Any read operation name currently in the registry also dispatches directly,
+   as a compatibility path for clients that learned the pre-2.0 names. Direct
+   calls bypass discovery and behave identically to the same operation invoked
+   through `read_help_scout`.
 3. Names removed in the 2.0.0 consolidation do not dispatch. They return a tool
    error naming the unknown tool and pointing at `search_help_scout`.
+4. Write operation names never dispatch through the legacy direct path in rule
+   2. No pre-2.0 client ever learned a write name, so there is no compatibility
+   debt to honor, and a bare `createNote` call would slip past the gating,
+   annotations, and confirmation that the write gateway exists to enforce. A
+   write operation name called as a tool returns the same unknown-tool error as
+   a removed name, pointing at `search_help_scout`.
+5. `read_help_scout` never executes an operation marked as mutating. With writes
+   enabled it rejects the call with an error that names the operation, states
+   that the operation changes Help Scout state, and redirects the caller to
+   `write_help_scout`. With writes disabled it returns the same
+   unknown-operation error as any other name the server does not expose, which
+   matches what `describe_help_scout` reports and keeps the disabled surface
+   uninventoried. Neither path falls through and executes.
 
 Rule 2 is compatibility, not a supported second surface. New clients should
-discover through `search_help_scout` and execute through `read_help_scout`;
-direct-dispatch support may be withdrawn in a later major release.
+discover through `search_help_scout` and execute through `read_help_scout` or
+`write_help_scout`; direct-dispatch support may be withdrawn in a later major
+release.
+
+Confirmation requirements are declared in the `write_help_scout` tool
+description itself. The confirmation fields are siblings of `arguments` on the
+`write_help_scout` call, and they are absent from every per-operation schema by
+design: an operation schema describes the Help Scout request, and confirmation
+is a property of the call that authorizes it. A client reading `tools/list`
+learns which mutation classes require `confirm`, `confirmOperation`, and
+`targetId`, and that missing, false, or mismatched values are rejected before
+any Help Scout request, without first calling `describe_help_scout`. A host that
+renders only tool descriptions still shows the user what approving this tool
+permits. A confirmation field sent inside `arguments` is refused rather than
+ignored, because a caller who misplaces one believes it took effect.
 
 Removing or renaming a registry operation is a breaking change. Fold its
 capability into a parent operation, record the mapping in
@@ -188,6 +257,73 @@ Write tools are direct Help Scout API parity tools. They are not operator
 workflow products, MCP Apps views, or hidden multi-step automations. Each write
 tool should map to one Help Scout mutation endpoint or one tightly scoped API
 operation family.
+
+Writes execute through the `write_help_scout` gateway tool. The rules below
+apply to every write operation in the registry.
+
+### Gating And Permission Model
+
+The Mailbox API has no granular OAuth scopes. A token that can read a
+conversation can also reply to it, and Help Scout offers no way to say "this
+integration may read conversations but may not email customers." So the server
+is the permission boundary. Gating is configuration an operator sets
+deliberately, never a claim about what the credential itself restricts.
+
+Two environment variables, both default off:
+
+| Flag | Enables |
+| --- | --- |
+| `HELPSCOUT_ENABLE_WRITES=true` | Tier 1: the `nonDestructive` and `reversible` operations. |
+| `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true` | Tier 2: adds the `externallyVisible` operations. |
+
+Tier 2 is additive and inert on its own. `HELPSCOUT_ENABLE_WRITES` must also be
+true for any write path to exist.
+
+With both unset, the server behaves exactly as 2.0 did:
+
+- `write_help_scout` is not returned by `tools/list`.
+- Write operations do not appear in `search_help_scout` results.
+- `describe_help_scout` reports a write operation name as unknown rather than as
+  gated, so the disabled surface is not a discoverable inventory of what an
+  operator could turn on.
+- No dispatch path reaches a write handler.
+
+Enabling tier 2 is a gate, not a bypass. Every `externallyVisible` operation
+still requires per-call confirmation metadata on every call, exactly as
+specified below. The flag decides whether the operation exists; the confirmation
+decides whether a given call proceeds.
+
+Execution gating is live; advertisement is not. The registry is built once per
+process, so flags read after the first gateway call do not change what
+`tools/list`, `search_help_scout`, and `describe_help_scout` report until the
+process restarts. Every `externallyVisible` operation rechecks the flags at
+dispatch, so revoking `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES` refuses the
+next customer-visible write immediately, even while the stale advertisement
+still lists it.
+
+`destructive` operations are not exposed in 2.1 under any flag. No environment
+variable turns them on. Exposing them is a later decision that needs its own
+contract work, not a third flag added by analogy.
+
+### Draft-First Rule
+
+When an externally visible action has a non-visible variant, the non-visible
+variant is the default operation and the visible one is a separate operation in
+the customer-visible tier. The safe path is the one a caller reaches without
+asking; making a customer see something takes a deliberate second step under a
+second flag.
+
+- `createDraftReply` pins `draft: true`. It exposes no parameter that flips it
+  into a send. Composing reply text stays in tier 1 and never notifies anyone.
+- `sendReply` and `publishDraft` are separate `externallyVisible` operations,
+  reachable only under `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES`, and each
+  requires confirmation metadata.
+
+The rule generalizes. No tier-1 operation may accept a parameter that makes it
+externally visible. Where one Help Scout endpoint offers both behaviors through
+a request field, split it into two registry operations and put the visible one
+in tier 2, rather than exposing the field and relying on the caller to leave it
+alone.
 
 ### Mutation Classes
 
@@ -206,23 +342,32 @@ Classify each write tool in its implementation notes, tests, and dogfood plan:
 
 Externally visible and destructive tools require explicit confirmation metadata.
 
+The class also decides the tier: `nonDestructive` and `reversible` are tier 1,
+`externallyVisible` is tier 2, and `destructive` has no tier in 2.1.
+
 ### Confirmation Metadata
 
-For destructive or externally visible operations, the input schema must include
-confirmation fields that are hard to satisfy accidentally:
+Destructive and externally visible operations require confirmation fields that
+are hard to satisfy accidentally. They travel on the `write_help_scout` call, as
+siblings of `arguments`:
 
 ```json
 {
+  "name": "sendReply",
+  "arguments": { "conversationId": "12345", "text": "..." },
   "confirm": true,
-  "confirmOperation": "deleteCustomer",
+  "confirmOperation": "sendReply",
   "targetId": "12345"
 }
 ```
 
 The exact confirmation string should name the operation and target. The tool
-must reject calls with missing, false, or mismatched confirmation before making a
-Help Scout request. Confirmation requirements belong in the tool description and
-validation tests.
+must reject calls with missing, false, or mismatched confirmation before making
+a Help Scout request. These fields do not appear in any per-operation input
+schema, by design: the schema describes the Help Scout request, and confirmation
+authorizes the call that carries it. Confirmation requirements belong in the
+`write_help_scout` tool description, so a client sees them without a
+`describe_help_scout` call, and in validation tests.
 
 ### Dry Run And Preview
 
@@ -282,6 +427,29 @@ errors are expected API outcomes. Return them as tool errors with the upstream
 status/code and model-correctable guidance. Do not retry non-idempotent writes
 unless the endpoint and request body are explicitly safe to repeat.
 
+Implementation note: the retry behavior in the shared HTTP client must exempt
+non-idempotent write requests. Reads keep retrying on 429 and 5xx as they do
+today. Every `POST`, and any `PATCH` whose result depends on the record's
+current state, must surface the 429 or 5xx to the caller instead of retrying. A
+retried reply is a second customer email and a retried note is a duplicate note,
+and a 5xx does not prove the first request failed. Backoff is the caller's
+decision, because only the caller can read the target back and check whether the
+first attempt landed.
+
+### Gate Conditions From The Roadmap
+
+[`guides/roadmap/mcp-tool-surface.md`](../roadmap/mcp-tool-surface.md) set four
+conditions on mixing a write surface into the read gateway: explicit naming,
+metadata, confirmation guidance, and coverage for denied or partial actions.
+Each is met as follows.
+
+| Condition | How it is met |
+| --- | --- |
+| Explicit naming | Writes execute through `write_help_scout`, a separate advertised tool, never through `read_help_scout`. Write operations use verbs that name the mutation, and they never dispatch through the legacy direct path. |
+| Metadata | `write_help_scout` carries `readOnlyHint: false` and `destructiveHint: true`. Every write operation declares its mutation class and tier, readable through `describe_help_scout`. |
+| Confirmation guidance | The confirmation contract is stated in the `write_help_scout` tool description, so it is visible from `tools/list` without a describe call, and enforced per call by schema validation that rejects missing, false, or mismatched values before any Help Scout request. |
+| Denied and partial action coverage | Permission, plan-limit, and validation failures return structured tool errors carrying the upstream status. Partial failures name what succeeded, what failed, and what cleanup remains. The dogfood lifecycle exercises the refused and gated-off paths live, and unit tests cover the upstream denials (401, 403, 412, 422, 423, 429, 5xx, and network failure) that cannot be provoked on demand against a real account. |
+
 ## Boundaries
 
 Tools and operations are model-controlled and should stay focused on Help Scout
@@ -298,7 +466,7 @@ data access. Use the other MCP feature surfaces deliberately:
 ## Output Schema Rollout
 
 `title`, read-only annotations, explicit empty input schemas, and
-`structuredContent` alongside serialized JSON text are in place across the
+`structuredContent` alongside serialized JSON text are in place across the read
 registry. Remaining work is `outputSchema` per operation, sequenced by envelope
 stability:
 

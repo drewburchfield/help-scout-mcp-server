@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "help-scout-mcp-server",
   "display_name": "Help Scout MCP Server",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Connect Claude to Help Scout with full read coverage: conversations, customers, organizations, reports, metadata, and Docs through a compact three-tool surface.",
-  "long_description": "Connect your AI assistant to Help Scout for read-only support investigation and account-level analysis.\n\n**How it works:**\nThe extension advertises three tools that together reach all 55 supported read operations across the Help Scout Mailbox v2 and Docs v1 APIs:\n• **search_help_scout** finds operations by intent (\"customer conversation history\", \"happiness report\")\n• **describe_help_scout** loads the full input schemas for the operations you selected\n• **read_help_scout** executes one operation with schema-matched arguments\n\n**Read coverage:**\n• Conversations: search, summaries, full threads, attachments, original email source\n• Customers and organizations: profiles, contact channels, membership, conversation history\n• Reports: company, conversations, productivity, happiness, users, channels, Docs\n• Metadata: inboxes, custom fields, folders, routing, tags, users, teams, saved replies, workflows, webhooks\n• Docs: sites, collections, categories, articles, revisions, redirects\n\n**Security:**\n• OAuth2 Client Credentials authentication\n• Read-only: no write operations are included\n• Optional message content redaction to reduce context size\n• Built-in caching and rate-limit handling",
+  "long_description": "Connect your AI assistant to Help Scout for support investigation and account-level analysis, read-only unless you turn writes on.\n\n**How it works:**\nThe extension advertises three tools that together reach all 55 supported read operations across the Help Scout Mailbox v2 and Docs v1 APIs:\n• **search_help_scout** finds operations by intent (\"customer conversation history\", \"happiness report\")\n• **describe_help_scout** loads the full input schemas for the operations you selected\n• **read_help_scout** executes one operation with schema-matched arguments\n\n**Read coverage:**\n• Conversations: search, summaries, full threads, attachments, original email source\n• Customers and organizations: profiles, contact channels, membership, conversation history\n• Reports: company, conversations, productivity, happiness, users, channels, Docs\n• Metadata: inboxes, custom fields, folders, routing, tags, users, teams, saved replies, workflows, webhooks\n• Docs: sites, collections, categories, articles, revisions, redirects\n\n**Write support (off by default):**\nEnable writes in settings and a fourth tool, **write_help_scout**, appears with 11 tier-1 conversation operations: draft replies, internal notes, status, assign and unassign, tags, custom fields, snooze and unsnooze, and moving a conversation between inboxes. None of those email anyone. Enable customer-visible writes as well and two more operations become reachable, sendReply and publishDraft, each of which emails the customer and demands per-call confirmation naming the operation and the target conversation. Deletes and admin configuration writes are not exposed. Any write accepts a dry run that reports the exact request without contacting Help Scout.\n\n**Security:**\n• OAuth2 Client Credentials authentication\n• Read-only by default: both write settings are off unless you turn them on\n• Optional message content redaction to reduce context size\n• Built-in caching and rate-limit handling",
   "author": {
     "name": "Drew Burchfield",
     "url": "https://github.com/drewburchfield"
@@ -32,6 +32,8 @@
         "HELPSCOUT_DOCS_API_KEY": "${user_config.docs_api_key}",
         "HELPSCOUT_DOCS_BASE_URL": "${user_config.docs_base_url}",
         "REDACT_MESSAGE_CONTENT": "${user_config.redact_message_content}",
+        "HELPSCOUT_ENABLE_WRITES": "${user_config.enable_writes}",
+        "HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES": "${user_config.enable_customer_visible_writes}",
         "LOG_LEVEL": "${user_config.log_level}",
         "CACHE_TTL_SECONDS": "${user_config.cache_ttl}",
         "MAX_CACHE_SIZE": "${user_config.max_cache_size}"
@@ -89,6 +91,20 @@
       "default": false,
       "required": false
     },
+    "enable_writes": {
+      "type": "boolean",
+      "title": "Enable Write Operations",
+      "description": "Add the write_help_scout tool with 11 conversation write operations: draft replies, internal notes, status, assign and unassign, tags, custom fields, snooze and unsnooze, and moving a conversation between inboxes. None of these email anyone. Leave off for a read-only install.",
+      "default": false,
+      "required": false
+    },
+    "enable_customer_visible_writes": {
+      "type": "boolean",
+      "title": "Enable Customer-Visible Writes (Sends Email)",
+      "description": "Also allow sendReply and publishDraft. Both email the customer immediately and cannot be recalled. Requires Enable Write Operations as well, and every such call must carry confirmation naming the operation and the target conversation. Leave off unless you intend the assistant to be able to email customers.",
+      "default": false,
+      "required": false
+    },
     "log_level": {
       "type": "string",
       "title": "Log Level",
@@ -123,6 +139,10 @@
     {
       "name": "read_help_scout",
       "description": "Execute one Help Scout read operation using arguments that match its loaded schema. All operations are read-only."
+    },
+    {
+      "name": "write_help_scout",
+      "description": "Execute one Help Scout conversation write operation. Appears only when writes are enabled in settings. Customer-visible operations additionally require the customer-visible setting and per-call confirmation naming the operation and target conversation."
     }
   ],
   "prompts": [
@@ -169,5 +189,5 @@
       "node": ">=18.0.0"
     }
   },
-  "tools_generated": false
+  "tools_generated": true
 }

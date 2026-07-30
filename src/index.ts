@@ -9,7 +9,7 @@ import {
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { validateConfig } from './utils/config.js';
+import { config, validateConfig } from './utils/config.js';
 import { logger } from './utils/logger.js';
 import { helpScoutClient, type PaginatedResponse } from './utils/helpscout-client.js';
 import { resourceHandler } from './resources/index.js';
@@ -26,6 +26,28 @@ function formatInstructionValue(value: unknown): string {
   return JSON.stringify(value == null ? '' : String(value));
 }
 
+/**
+ * The write section of the server instructions, appended only when the operator
+ * has enabled writes. With writes off the instructions stay byte-identical to
+ * the read-only ones, so a default install never learns that a gated surface
+ * exists.
+ */
+function writeInstructionBlock(writesEnabled: boolean): string {
+  if (!writesEnabled) {
+    return '\n- Everything is read-only; write operations are not available';
+  }
+
+  return `
+
+## Write Operations (enabled on this server)
+- write_help_scout executes one write operation: { "name": "<operation>", "arguments": { ... } }
+- Discover write operations through search_help_scout like any other; they are labeled with their mutation class
+- Draft first: createDraftReply saves an unsent draft and cannot send. Notes are internal and never notify the customer
+- sendReply and publishDraft email the customer and cannot be recalled. Each call must also carry "confirm": true, "confirmOperation" set to the operation name, and "targetId" equal to the conversation ID in "arguments"
+- Confirm with the user before any customer-visible write. Never send on your own initiative
+- Set "dryRun": true to see the exact request that would be sent without contacting Help Scout`;
+}
+
 export class HelpScoutMCPServer {
   private server: Server;
   private discoveredInboxes: Inbox[] = [];
@@ -38,7 +60,7 @@ export class HelpScoutMCPServer {
     this.server = new Server(
       {
         name: 'helpscout-search',
-        version: '2.0.0',
+        version: '2.1.0',
       },
       {
         capabilities: {
@@ -135,8 +157,7 @@ Three tools cover every read capability:
 ## Notes
 - Always use inbox IDs from the list above (not names)
 - Search operations default to active+pending+closed statuses
-- Use getServerTime for date-relative queries
-- Everything is read-only; write operations are not available`;
+- Use getServerTime for date-relative queries${writeInstructionBlock(config.writes.enabled)}`;
 
       logger.info('Inbox discovery successful', { inboxCount: inboxes.length });
       return { instructions, inboxes };

@@ -107,6 +107,8 @@ The server advertises three tools that together reach every supported read opera
 
 This keeps the advertised surface small enough that AI clients don't drown in schemas, while every read capability stays one search away. Operations in the current registry also remain callable by name directly. Tool names removed in the v2.0.0 consolidation (for example `comprehensiveConversationSearch`, `structuredConversationFilter`, and `searchInboxes`) are not; their capabilities live in `searchConversations` and `listAllInboxes`.
 
+An optional fourth tool, `write_help_scout`, appears only when an operator turns writes on. See [Write operations (opt-in)](#write-operations-opt-in).
+
 For the MCP compatibility contract and roadmap, see:
 
 - [MCP tool contract](guides/architecture/mcp-tool-contract.md)
@@ -141,6 +143,35 @@ Run any of these via `read_help_scout`:
 
 Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in their instructions automatically, so no lookup step is needed.
 
+## Write operations (opt-in)
+
+A default install is read-only. It advertises the three tools above and nothing else, unchanged from 2.0. Writes exist only after an operator sets a flag.
+
+| Flag | What it adds |
+|------|--------------|
+| `HELPSCOUT_ENABLE_WRITES=true` | A fourth tool, `write_help_scout`, carrying 11 tier-1 conversation operations |
+| `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true` | Two more operations on that same tool: `sendReply` and `publishDraft` |
+
+Tier 1 covers draft replies, internal notes, status changes, assign and unassign, adding and removing tags, custom field values, snooze and unsnooze, and moving a conversation to another inbox. None of it emails anyone: a draft is saved unsent, and a note is visible to teammates only.
+
+Tier 2 is the only path that reaches a customer, and it needs both flags. Every call to `sendReply` or `publishDraft` must also carry confirmation naming the operation and the target:
+
+```json
+{
+  "name": "sendReply",
+  "arguments": { "conversationId": "12345", "text": "..." },
+  "confirm": true,
+  "confirmOperation": "sendReply",
+  "targetId": "12345"
+}
+```
+
+Missing, false, or mismatched confirmation is refused before anything reaches Help Scout. Deletes and admin configuration writes are deliberately not exposed, under any flag.
+
+Set `"dryRun": true` on any write to validate the arguments and see the exact request that would be sent, without contacting Help Scout.
+
+Full rules: [write tool contract](guides/architecture/mcp-tool-contract.md#write-tool-contract).
+
 ## Configuration
 
 | Variable | Description | Default |
@@ -152,6 +183,8 @@ Inboxes are auto-discovered when the server connects. AI agents get inbox IDs in
 | `HELPSCOUT_DOCS_API_KEY` | Optional Docs API key for knowledge base tools | None |
 | `HELPSCOUT_DOCS_BASE_URL` | Help Scout Docs API endpoint | `https://docsapi.helpscout.net/v1/` |
 | `REDACT_MESSAGE_CONTENT` | Replace message bodies with placeholders | `false` |
+| `HELPSCOUT_ENABLE_WRITES` | Advertise `write_help_scout` with the tier-1 conversation writes | Unset (`false`) |
+| `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES` | Also enable `sendReply` and `publishDraft`, which email the customer | Unset (`false`) |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 

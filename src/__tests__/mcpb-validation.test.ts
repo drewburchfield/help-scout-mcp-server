@@ -67,16 +67,34 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(userConfig.personal_access_token).toBeUndefined();
     });
 
-    it('should declare exactly the three advertised gateway tools', () => {
+    it('should declare exactly the four advertised gateway tools', () => {
       const toolNames = manifest.tools.map((tool: any) => tool.name);
       expect(toolNames).toEqual([
         'search_help_scout',
         'describe_help_scout',
         'read_help_scout',
+        'write_help_scout',
       ]);
 
-      // The manifest advertises the static gateway surface, not runtime additions
-      expect(manifest.tools_generated).toBe(false);
+      // write_help_scout is advertised only when the operator enables writes, so
+      // the live surface varies with user config and the manifest says so.
+      expect(manifest.tools_generated).toBe(true);
+    });
+
+    it('should expose both write gates as opt-in booleans', () => {
+      const userConfig = manifest.user_config;
+
+      expect(userConfig.enable_writes.type).toBe('boolean');
+      expect(userConfig.enable_writes.default).toBe(false);
+      expect(userConfig.enable_writes.required).toBe(false);
+
+      expect(userConfig.enable_customer_visible_writes.type).toBe('boolean');
+      expect(userConfig.enable_customer_visible_writes.default).toBe(false);
+      expect(userConfig.enable_customer_visible_writes.required).toBe(false);
+
+      // The second gate is the one that can email a customer; say so in the UI.
+      expect(userConfig.enable_customer_visible_writes.title).toMatch(/email/i);
+      expect(userConfig.enable_customer_visible_writes.description).toMatch(/email the customer/i);
     });
 
     it('should declare compatibility, support, and privacy policy metadata', () => {
@@ -118,6 +136,8 @@ describeIfNotSkipped('MCPB Extension Validation', () => {
       expect(env.HELPSCOUT_DOCS_API_KEY).toBe('${user_config.docs_api_key}');
       expect(env.HELPSCOUT_DOCS_BASE_URL).toBe('${user_config.docs_base_url}');
       expect(env.REDACT_MESSAGE_CONTENT).toBe('${user_config.redact_message_content}');
+      expect(env.HELPSCOUT_ENABLE_WRITES).toBe('${user_config.enable_writes}');
+      expect(env.HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES).toBe('${user_config.enable_customer_visible_writes}');
       expect(env.LOG_LEVEL).toBe('${user_config.log_level}');
       expect(env.CACHE_TTL_SECONDS).toBe('${user_config.cache_ttl}');
       expect(env.MAX_CACHE_SIZE).toBe('${user_config.max_cache_size}');

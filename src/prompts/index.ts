@@ -117,7 +117,8 @@ export class PromptHandler {
     logger.info('Prompt request started', {
       requestId,
       promptName: request.params.name,
-      arguments: request.params.arguments,
+      // Keys only: argument values can carry customer emails or search terms
+      argumentKeys: Object.keys(request.params.arguments || {}),
     });
 
     try {

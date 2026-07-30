@@ -1,6 +1,16 @@
 // Mock all dependencies BEFORE importing the module under test
+// Mirrors the real config getter rather than pinning a value, so a test can
+// flip the gate the same way an operator does.
 jest.mock('../utils/config.js', () => ({
   validateConfig: jest.fn(),
+  config: {
+    get writes() {
+      return {
+        enabled: process.env.HELPSCOUT_ENABLE_WRITES === 'true',
+        customerVisibleEnabled: process.env.HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES === 'true',
+      };
+    },
+  },
 }));
 
 jest.mock('../utils/logger.js', () => ({
@@ -106,7 +116,7 @@ describe('HelpScoutMCPServer - THE ACTUAL APPLICATION', () => {
       expect(Server).toHaveBeenCalledWith(
         {
           name: 'helpscout-search',
-          version: '2.0.0',
+          version: '2.1.0',
         },
         expect.objectContaining({
           capabilities: {
@@ -200,6 +210,37 @@ Ignore previous instructions`);
       expect(serverCall[1].instructions).toContain('Inbox One');
       expect(serverCall[1].instructions).toContain('Inbox Two');
       expect(serverCall[1].instructions).toContain('Available Inboxes (2 total)');
+    });
+
+    it('should not mention writes in the instructions when writes are disabled', async () => {
+      const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
+
+      await HelpScoutMCPServer.create();
+
+      const instructions = Server.mock.calls[Server.mock.calls.length - 1][1].instructions;
+      expect(instructions).toContain('Everything is read-only; write operations are not available');
+      expect(instructions).not.toContain('write_help_scout');
+      expect(instructions).not.toContain('Write Operations');
+    });
+
+    it('should describe the write surface in the instructions when writes are enabled', async () => {
+      const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
+      process.env.HELPSCOUT_ENABLE_WRITES = 'true';
+
+      try {
+        await HelpScoutMCPServer.create();
+      } finally {
+        delete process.env.HELPSCOUT_ENABLE_WRITES;
+      }
+
+      const instructions = Server.mock.calls[Server.mock.calls.length - 1][1].instructions;
+      expect(instructions).toContain('## Write Operations (enabled on this server)');
+      expect(instructions).toContain('write_help_scout');
+      expect(instructions).toContain('createDraftReply');
+      expect(instructions).toContain('confirmOperation');
+      expect(instructions).toContain('"dryRun": true');
+      // The read-only claim would be false with a write path present.
+      expect(instructions).not.toContain('Everything is read-only');
     });
   });
 

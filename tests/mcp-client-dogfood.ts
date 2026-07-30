@@ -14,6 +14,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
+import axios, { AxiosInstance } from 'axios';
 import { resolve } from 'path';
 import 'dotenv/config';
 import { INTEGRATION_ACCOUNT_FIXTURES } from './dogfood-fixtures.js';
@@ -127,7 +128,26 @@ type JsonObject = Record<string, unknown>;
 // The advertised surface: three gateway tools over the operation registry.
 // Operations in EXPECTED_TOOLS execute through read_help_scout.
 const GATEWAY_TOOLS = ['search_help_scout', 'describe_help_scout', 'read_help_scout'] as const;
+const WRITE_GATEWAY_TOOL = 'write_help_scout';
 const DESCRIBE_CHUNK_SIZE = 10;
+
+/** Tier-1 write operations the live lifecycle drives, in mutation-class order. */
+const TIER_ONE_WRITE_OPERATIONS = [
+  'createNote',
+  'createDraftReply',
+  'updateConversationStatus',
+  'assignConversation',
+  'unassignConversation',
+  'addConversationTags',
+  'removeConversationTags',
+  'updateConversationFields',
+  'snoozeConversation',
+  'unsnoozeConversation',
+  'moveConversation',
+] as const;
+
+/** Tier-2 write operations, reachable only under the customer-visible gate. */
+const TIER_TWO_WRITE_OPERATIONS = ['sendReply', 'publishDraft'] as const;
 
 interface DogfoodContext {
   tools: Tool[];
@@ -185,18 +205,28 @@ interface Scenario {
 
 interface ScenarioResult {
   name: string;
-  tool: ToolName;
+  // Read scenarios name a registry operation; write scenarios name the write
+  // operation or the gateway surface claim they prove.
+  tool: string;
   status: 'PASS' | 'FAIL' | 'SKIP';
   durationMs: number;
   detail?: string;
 }
+
+/** Which write gate a session's server process is started with. */
+interface WriteGate {
+  enabled: boolean;
+  customerVisible: boolean;
+}
+
+const WRITES_OFF: WriteGate = { enabled: false, customerVisible: false };
 
 class McpDogfoodSession {
   private readonly client = new Client({ name: 'helpscout-mcp-dogfood', version: '1.0.0' });
   private readonly transport: StdioClientTransport;
   private stderr = '';
 
-  constructor(redactMessageContent: boolean) {
+  constructor(redactMessageContent: boolean, writes: WriteGate = WRITES_OFF) {
     this.transport = new StdioClientTransport({
       command: 'node',
       args: [SERVER_PATH],
@@ -205,6 +235,11 @@ class McpDogfoodSession {
       env: {
         ...process.env,
         REDACT_MESSAGE_CONTENT: redactMessageContent ? 'true' : 'false',
+        // Write gates are set per session, never inherited. The read matrices
+        // assert a three-tool surface, and they must not change shape because
+        // the shell running dogfood has writes enabled.
+        HELPSCOUT_ENABLE_WRITES: writes.enabled ? 'true' : 'false',
+        HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES: writes.customerVisible ? 'true' : 'false',
         LOG_LEVEL: process.env.LOG_LEVEL ?? 'error',
       } as Record<string, string>,
     });
@@ -2209,6 +2244,997 @@ async function runRedactionMatrix(baseCtx: DogfoodContext): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Write lifecycle matrix
+//
+// Tier 1 (nonDestructive and reversible) runs whenever HELPSCOUT_ENABLE_WRITES
+// is true. Tier 2 (externallyVisible) additionally needs the Help Scout
+// customer-visible gate and a dogfood-specific opt-in, because passing that
+// gate emails a real address. Every mutation runs through MCP over stdio and is
+// verified by reading the conversation back. Cleanup failures are never hidden.
+// ---------------------------------------------------------------------------
+
+const WRITE_FIXTURE_SUBJECT = 'MCP-TEST: write lifecycle fixture';
+const WRITES_ENABLED = process.env.HELPSCOUT_ENABLE_WRITES === 'true';
+// Two independent switches: the server-side gate the contract defines, and a
+// dogfood opt-in so a server configured for customer-visible writes does not
+// email anyone merely because a test run inherited its environment.
+const CUSTOMER_VISIBLE_WRITES_ENABLED = WRITES_ENABLED
+  && process.env.HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES === 'true'
+  && process.env.MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE === 'true';
+const WRITE_TAG = process.env.MCP_DOGFOOD_WRITE_TAG ?? 'mcp-test-write-lifecycle';
+const READ_BACK_ATTEMPTS = 3;
+const READ_BACK_DELAY_MS = 1500;
+/** Help Scout caps a conversation at 100 threads; stop short of it. */
+const THREAD_BUDGET = 80;
+
+const writeArtifacts: string[] = [];
+const writeHints: string[] = [];
+
+interface WriteContext {
+  conversationId: string;
+  conversationCreated: boolean;
+  customerEmail: string;
+  inboxId: string;
+  runMarker: string;
+  originalStatus: string;
+  originalAssigneeId?: number;
+  userId?: string;
+  secondInboxId?: string;
+  customFieldId?: string;
+  customFieldPreviousValue?: string;
+  draftThreadCreated: boolean;
+  /** Discovery reads that failed, so a skip can name the real reason. */
+  discoveryFailures: string[];
+}
+
+/** The discovery failure behind a missing optional fixture, if that is why it is missing. */
+function discoveryFailureFor(write: WriteContext, tool: string): string | undefined {
+  return write.discoveryFailures.find((failure) => failure.startsWith(`${tool} failed`));
+}
+
+interface WriteScenario {
+  name: string;
+  /** The write operation, or the gateway surface claim, this scenario proves. */
+  operation: string;
+  skipIf?: (write: WriteContext) => string | undefined;
+  run: (session: McpDogfoodSession, write: WriteContext, ctx: DogfoodContext) => Promise<void>;
+}
+
+const HELPSCOUT_API_BASE = process.env.HELPSCOUT_BASE_URL ?? 'https://api.helpscout.net/v2/';
+let seedClient: AxiosInstance | undefined;
+
+/**
+ * Direct Help Scout client, used for fixture setup only.
+ *
+ * The registry exposes no create-conversation write operation, and inventing
+ * one for a test would put a mutation on the surface that the contract did not
+ * approve. So the disposable fixture conversation is seeded the same way
+ * tests/seed-integration-data.ts seeds its conversations, and every mutation
+ * under test still runs through MCP over stdio.
+ */
+async function getSeedClient(): Promise<AxiosInstance> {
+  if (seedClient) return seedClient;
+
+  const clientId = process.env.HELPSCOUT_APP_ID || process.env.HELPSCOUT_CLIENT_ID || '';
+  const clientSecret = process.env.HELPSCOUT_APP_SECRET || process.env.HELPSCOUT_CLIENT_SECRET || '';
+  const token = await axios.post('https://api.helpscout.net/v2/oauth2/token', {
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+  });
+
+  seedClient = axios.create({
+    baseURL: HELPSCOUT_API_BASE,
+    timeout: 30000,
+    headers: { Authorization: `Bearer ${token.data.access_token}` },
+    validateStatus: () => true,
+  });
+  return seedClient;
+}
+
+/**
+ * The two ways one read-back can be taken: through the MCP read tool, which is
+ * what the write contract wants proved, and through the Help Scout API
+ * directly, which the contract also allows as a direct API contract check.
+ */
+interface ReadBack<T> {
+  viaTool: () => Promise<T>;
+  fresh: () => Promise<T>;
+}
+
+/**
+ * Re-read until the expected state appears; Help Scout can lag a beat after a
+ * write.
+ *
+ * The first attempt goes through the MCP read tool. Every later attempt goes
+ * to the API directly, because the server caches conversation and thread reads
+ * for five minutes: the first attempt repopulates that cache, so retrying the
+ * same tool call would re-read the same stale copy and the retry loop would
+ * prove nothing.
+ */
+async function readBackUntil<T>(
+  reader: ReadBack<T>,
+  satisfied: (value: T) => boolean,
+): Promise<T> {
+  let latest = await reader.viaTool();
+  for (let attempt = 1; attempt < READ_BACK_ATTEMPTS && !satisfied(latest); attempt++) {
+    await new Promise((wait) => setTimeout(wait, READ_BACK_DELAY_MS));
+    latest = await reader.fresh();
+  }
+  return latest;
+}
+
+function conversationReadBack(session: McpDogfoodSession, conversationId: string): ReadBack<JsonObject> {
+  return {
+    viaTool: () => readConversation(session, conversationId),
+    fresh: () => readConversationDirect(conversationId),
+  };
+}
+
+function threadsReadBack(session: McpDogfoodSession, conversationId: string): ReadBack<JsonObject[]> {
+  return {
+    viaTool: () => readThreads(session, conversationId),
+    fresh: () => readThreadsDirect(conversationId),
+  };
+}
+
+/** Uncached conversation read, straight from Help Scout. */
+async function readConversationDirect(conversationId: string): Promise<JsonObject> {
+  const client = await getSeedClient();
+  const response = await client.get(`/conversations/${conversationId}`);
+  requireCondition(
+    response.status === 200,
+    `Direct read of conversation ${conversationId} returned ${response.status}`,
+  );
+  return response.data as JsonObject;
+}
+
+/** Uncached thread read, straight from Help Scout, paged to the thread budget. */
+async function readThreadsDirect(conversationId: string): Promise<JsonObject[]> {
+  const client = await getSeedClient();
+  const threads: JsonObject[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const response = await client.get(`/conversations/${conversationId}/threads`, { params: { page } });
+    requireCondition(
+      response.status === 200,
+      `Direct read of threads for conversation ${conversationId} returned ${response.status}`,
+    );
+    threads.push(...((response.data?._embedded?.threads ?? []) as JsonObject[]));
+    totalPages = Number(response.data?.page?.totalPages ?? 1);
+    page += 1;
+  } while (page <= totalPages && threads.length < THREAD_BUDGET);
+
+  return threads;
+}
+
+async function readConversation(session: McpDogfoodSession, conversationId: string): Promise<JsonObject> {
+  const result = await session.callTool('getConversation', { conversationId });
+  requireCondition(!result.isError, `getConversation failed for ${conversationId}: ${textFromResult(result).slice(0, 200)}`);
+  const conversation = getObject(parseToolData(result), 'conversation');
+  requireCondition(conversation, `getConversation returned no conversation for ${conversationId}`);
+  return conversation;
+}
+
+async function readThreads(session: McpDogfoodSession, conversationId: string): Promise<JsonObject[]> {
+  // No limit: getThreads pages through the whole history by default, and a
+  // conversation holds at most 100 threads, so a marker written by this run is
+  // always in the result regardless of thread ordering.
+  const result = await session.callTool('getThreads', { conversationId });
+  requireCondition(!result.isError, `getThreads failed for ${conversationId}: ${textFromResult(result).slice(0, 200)}`);
+  return requireArray(parseToolData(result), ['threads'], 'threads') as JsonObject[];
+}
+
+function conversationTags(conversation: JsonObject): string[] {
+  return (Array.isArray(conversation.tags) ? conversation.tags as JsonObject[] : [])
+    .map((entry) => getString(entry.tag))
+    .filter(Boolean);
+}
+
+function hasTag(conversation: JsonObject, tag: string): boolean {
+  return conversationTags(conversation).some((entry) => entry.toLowerCase() === tag.toLowerCase());
+}
+
+function assigneeId(conversation: JsonObject): number | undefined {
+  const assignee = getObject(conversation, 'assignee');
+  return typeof assignee?.id === 'number' ? assignee.id : undefined;
+}
+
+/** The value of one custom field, as a string, or '' when the field is unset. */
+function customFieldValue(conversation: JsonObject, fieldId: string): string {
+  const field = (getArray(conversation, ['customFields']) as JsonObject[])
+    .find((entry) => String(entry.id) === fieldId);
+  return getString(field?.value);
+}
+
+function snoozedUntil(conversation: JsonObject): string | undefined {
+  const snooze = getObject(conversation, 'snooze');
+  return getString(snooze?.snoozedUntil) || undefined;
+}
+
+function threadBodies(threads: JsonObject[]): string[] {
+  return threads.map((thread) => `${getString(thread.body)} ${getString(thread.text)}`);
+}
+
+/**
+ * Execute one write operation through the gateway and check the envelope the
+ * write contract specifies. A missing or non-succeeded envelope is a failure
+ * even when the transport call itself worked.
+ */
+async function callWrite(
+  session: McpDogfoodSession,
+  name: string,
+  operationArgs: JsonObject,
+  extra: JsonObject = {},
+): Promise<JsonObject> {
+  const result = await session.callGatewayTool(WRITE_GATEWAY_TOOL, {
+    name,
+    arguments: operationArgs,
+    ...extra,
+  });
+  const payload = parseToolData(result) as JsonObject | null;
+  requireCondition(
+    !result.isError,
+    `${name} returned a tool error: ${textFromResult(result).slice(0, 400)}`,
+  );
+  requireCondition(payload?.operation === name, `${name} envelope named ${String(payload?.operation)}`);
+  requireCondition(payload?.status === 'succeeded', `${name} did not report success: ${JSON.stringify(payload).slice(0, 400)}`);
+  requireCondition(typeof payload?.mutationClass === 'string', `${name} envelope has no mutationClass`);
+  requireCondition(getObject(payload, 'target')?.id !== undefined, `${name} envelope has no target id`);
+  requireCondition(getObject(payload, 'cleanup') !== undefined, `${name} envelope has no cleanup block`);
+  return payload as JsonObject;
+}
+
+/** Find, or seed, the disposable conversation every write scenario operates on. */
+async function resolveWriteFixture(session: McpDogfoodSession, ctx: DogfoodContext): Promise<WriteContext> {
+  const customerEmail = process.env.MCP_DOGFOOD_WRITE_CUSTOMER_EMAIL ?? ctx.customerEmail;
+  const inboxId = ctx.inboxId;
+  const client = await getSeedClient();
+
+  const existing = await client.get('/conversations', {
+    params: { query: `(subject:"${WRITE_FIXTURE_SUBJECT}")`, mailbox: inboxId, status: 'all' },
+  });
+  // Anything but a 200 means the search did not run, not that the fixture is
+  // absent. Treating the two the same seeds a duplicate fixture on every failed
+  // search, so fail setup loudly instead.
+  requireCondition(
+    existing.status === 200,
+    `Searching for the write fixture conversation returned ${existing.status}: ${JSON.stringify(existing.data).slice(0, 200)}`,
+  );
+  const found = (existing.data?._embedded?.conversations ?? []).find(
+    (conversation: JsonObject) => getString(conversation.subject).startsWith(WRITE_FIXTURE_SUBJECT),
+  );
+
+  let conversationId = found ? String(found.id) : '';
+  let conversationCreated = false;
+
+  if (!conversationId) {
+    const created = await client.post('/conversations', {
+      subject: WRITE_FIXTURE_SUBJECT,
+      type: 'email',
+      mailboxId: Number(inboxId),
+      status: 'active',
+      customer: { email: customerEmail },
+      threads: [{
+        type: 'customer',
+        customer: { email: customerEmail },
+        text: 'Disposable fixture for the MCP write lifecycle dogfood. Safe to close, tag, snooze, and reassign.',
+      }],
+      tags: [GOLDEN.tag],
+      // Imported conversations do not trigger outbound notification on create.
+      imported: true,
+    });
+    requireCondition(
+      created.status === 201,
+      `Could not seed the write fixture conversation: ${created.status} ${JSON.stringify(created.data).slice(0, 200)}`,
+    );
+    const resourceId = (created.headers as Record<string, string>)['resource-id'];
+    requireCondition(/^\d+$/.test(resourceId ?? ''), 'Seeded write fixture but Help Scout returned no resource-id');
+    conversationId = resourceId;
+    conversationCreated = true;
+    writeArtifacts.push(`conversation ${conversationId} "${WRITE_FIXTURE_SUBJECT}" (created by this run)`);
+  }
+
+  const conversation = await readConversation(session, conversationId);
+  // Each run adds a note and a draft that no endpoint can delete, and Help
+  // Scout rejects updates once a conversation holds 100 threads. Stop while the
+  // fixture is still usable rather than failing later with a 412.
+  const threadCount = (await readThreads(session, conversationId)).length;
+  requireCondition(
+    threadCount < THREAD_BUDGET,
+    `Fixture conversation ${conversationId} holds ${threadCount} threads and is near the 100-thread limit. `
+    + 'Delete it in Help Scout; the next run seeds a fresh one.',
+  );
+
+  const write: WriteContext = {
+    conversationId,
+    conversationCreated,
+    customerEmail,
+    inboxId,
+    runMarker: `MCP-TEST write lifecycle ${new Date().toISOString()}`,
+    originalStatus: getString(conversation.status) || 'active',
+    originalAssigneeId: assigneeId(conversation),
+    draftThreadCreated: false,
+    discoveryFailures: [],
+  };
+
+  await discoverWriteTargets(session, write);
+  return write;
+}
+
+/**
+ * Resolve the user, inbox, and custom field the optional scenarios need.
+ *
+ * A discovery call that fails is reported as a failed discovery, never as an
+ * absent fixture: "no user resolved from listUsers" would send the operator
+ * looking for a missing record when the read tool is what broke.
+ */
+async function discoverWriteTargets(session: McpDogfoodSession, write: WriteContext): Promise<void> {
+  const discoveryFailures: string[] = [];
+
+  const users = await session.callTool('listUsers', { page: 1 });
+  if (users.isError) {
+    discoveryFailures.push(`listUsers failed: ${textFromResult(users).slice(0, 200)}`);
+  } else {
+    const userItems = getArray(parseToolData(users), ['users', 'results']) as JsonObject[];
+    const pinnedUser = process.env.MCP_DOGFOOD_WRITE_USER_ID;
+    const matchedUser = pinnedUser
+      ? userItems.find((user) => String(user.id) === pinnedUser)
+      : userItems[0];
+    if (matchedUser?.id) write.userId = String(matchedUser.id);
+  }
+
+  const inboxes = await session.callTool('listAllInboxes', { limit: 100 });
+  if (inboxes.isError) {
+    discoveryFailures.push(`listAllInboxes failed: ${textFromResult(inboxes).slice(0, 200)}`);
+  } else {
+    const inboxItems = getArray(parseToolData(inboxes), ['inboxes', 'results']) as JsonObject[];
+    const pinnedInbox = process.env.MCP_DOGFOOD_WRITE_SECOND_INBOX_ID;
+    const secondInbox = pinnedInbox
+      ? inboxItems.find((inbox) => String(inbox.id) === pinnedInbox)
+      : inboxItems.find((inbox) => String(inbox.id) !== write.inboxId);
+    if (secondInbox?.id) write.secondInboxId = String(secondInbox.id);
+  }
+
+  const inboxDetail = await session.callTool('getInbox', { inboxId: write.inboxId, include: ['fields'] });
+  if (inboxDetail.isError) {
+    discoveryFailures.push(`getInbox failed: ${textFromResult(inboxDetail).slice(0, 200)}`);
+  } else {
+    const fields = getArray(getObject(parseToolData(inboxDetail), 'customFields'), ['fields']) as JsonObject[];
+    const pinnedField = process.env.MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID;
+    // Only free-text fields are safe to set blind: a dropdown or date needs a
+    // valid option ID or format that this harness cannot invent.
+    const textField = pinnedField
+      ? fields.find((field) => String(field.id) === pinnedField)
+      : fields.find((field) => getString(field.type).toLowerCase().includes('text'));
+    if (textField?.id) write.customFieldId = String(textField.id);
+  }
+
+  write.discoveryFailures = discoveryFailures;
+}
+
+async function runWriteScenario(
+  session: McpDogfoodSession,
+  ctx: DogfoodContext,
+  write: WriteContext,
+  scenario: WriteScenario,
+): Promise<void> {
+  const skipReason = scenario.skipIf?.(write);
+  if (skipReason) {
+    results.push({ name: scenario.name, tool: scenario.operation, status: 'SKIP', durationMs: 0, detail: skipReason });
+    process.stderr.write(`  ${scenario.operation}: ${scenario.name}... SKIP (${skipReason})\n`);
+    return;
+  }
+
+  process.stderr.write(`  ${scenario.operation}: ${scenario.name}...`);
+  const start = Date.now();
+  try {
+    await scenario.run(session, write, ctx);
+    const durationMs = Date.now() - start;
+    results.push({ name: scenario.name, tool: scenario.operation, status: 'PASS', durationMs });
+    process.stderr.write(` PASS (${durationMs}ms)\n`);
+  } catch (err) {
+    const durationMs = Date.now() - start;
+    const detail = err instanceof Error ? err.message : String(err);
+    results.push({ name: scenario.name, tool: scenario.operation, status: 'FAIL', durationMs, detail });
+    process.stderr.write(` FAIL: ${detail.slice(0, 240)}\n`);
+  }
+
+  // Writes are rate-limited the same way reads are, and a write scenario makes
+  // several calls, so it honors the same cooldown the read matrix uses.
+  if (SCENARIO_COOLDOWN_MS > 0) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, SCENARIO_COOLDOWN_MS));
+  }
+}
+
+function customerVisibleSkipReason(): string | undefined {
+  if (CUSTOMER_VISIBLE_WRITES_ENABLED) return undefined;
+  return 'customer-visible writes need HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true and MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE=true; this run emails no one';
+}
+
+function buildWriteScenarios(): WriteScenario[] {
+  return [
+    {
+      operation: 'write_help_scout',
+      name: 'advertised surface is exactly four gateway tools',
+      run: async (_session, _write, ctx) => {
+        const advertised = [...ctx.toolNames].sort();
+        const expected = [...GATEWAY_TOOLS, WRITE_GATEWAY_TOOL].sort();
+        requireCondition(
+          advertised.length === expected.length && expected.every((name) => ctx.toolNames.has(name)),
+          `Advertised surface with writes enabled is ${advertised.join(', ')}, expected ${expected.join(', ')}`,
+        );
+        const writeTool = ctx.tools.find((tool) => tool.name === WRITE_GATEWAY_TOOL);
+        const annotations = writeTool?.annotations as Record<string, unknown> | undefined;
+        requireCondition(annotations?.readOnlyHint === false, 'write_help_scout must not claim readOnlyHint');
+        requireCondition(annotations?.destructiveHint === true, 'write_help_scout must carry destructiveHint');
+        requireCondition(
+          getString(writeTool?.description).includes('confirmOperation'),
+          'write_help_scout description must state the confirmation contract',
+        );
+      },
+    },
+    {
+      operation: 'describe_help_scout',
+      name: 'write operations report mutation class and tier',
+      run: async (session) => {
+        const enabled = CUSTOMER_VISIBLE_WRITES_ENABLED
+          ? [...TIER_ONE_WRITE_OPERATIONS, ...TIER_TWO_WRITE_OPERATIONS]
+          : [...TIER_ONE_WRITE_OPERATIONS];
+        for (let start = 0; start < enabled.length; start += DESCRIBE_CHUNK_SIZE) {
+          const names = enabled.slice(start, start + DESCRIBE_CHUNK_SIZE);
+          const result = await session.callGatewayTool('describe_help_scout', { names });
+          const schemas = getArray(parseToolData(result), ['schemas']) as JsonObject[];
+          requireCondition(schemas.length === names.length, `describe_help_scout returned ${schemas.length} schemas for ${names.length} names`);
+          for (const schema of schemas) {
+            requireCondition(!schema.unknown, `${String(schema.name)} is not discoverable with writes enabled`);
+            requireCondition(typeof schema.mutationClass === 'string', `${String(schema.name)} has no mutationClass`);
+            requireCondition(schema.tier === 1 || schema.tier === 2, `${String(schema.name)} has no tier`);
+          }
+        }
+        const tierTwoNames = [...TIER_TWO_WRITE_OPERATIONS];
+        if (!CUSTOMER_VISIBLE_WRITES_ENABLED) {
+          const gated = await session.callGatewayTool('describe_help_scout', { names: tierTwoNames });
+          const schemas = getArray(parseToolData(gated), ['schemas']) as JsonObject[];
+          requireCondition(
+            schemas.every((schema) => schema.unknown === true),
+            'Tier-2 operations must report as unknown while the customer-visible gate is off',
+          );
+        }
+      },
+    },
+    {
+      operation: 'read_help_scout',
+      name: 'a write operation is refused with a redirect to write_help_scout',
+      run: async (session, write) => {
+        const result = await session.callGatewayTool('read_help_scout', {
+          name: 'createNote',
+          arguments: { conversationId: write.conversationId, text: 'must not run' },
+        });
+        const payload = parseToolData(result) as JsonObject;
+        requireCondition(result.isError === true, 'read_help_scout accepted a write operation');
+        requireCondition(
+          getString(payload?.hint).includes(WRITE_GATEWAY_TOOL),
+          `Refusal did not redirect to ${WRITE_GATEWAY_TOOL}: ${JSON.stringify(payload).slice(0, 200)}`,
+        );
+      },
+    },
+    {
+      operation: 'createNote',
+      name: 'note lands on the fixture conversation',
+      run: async (session, write) => {
+        const marker = `${write.runMarker} note`;
+        await callWrite(session, 'createNote', { conversationId: write.conversationId, text: marker });
+        const threads = await readBackUntil(
+          threadsReadBack(session, write.conversationId),
+          (items) => threadBodies(items).some((body) => body.includes(marker)),
+        );
+        requireCondition(
+          threadBodies(threads).some((body) => body.includes(marker)),
+          'Note was reported as created but is not visible in getThreads',
+        );
+        // The Mailbox API exposes no delete-thread endpoint, so this note stays.
+        writeArtifacts.push(`note on conversation ${write.conversationId} (no delete endpoint; remove in the web app if unwanted)`);
+      },
+    },
+    {
+      operation: 'createDraftReply',
+      name: 'draft reply is stored without notifying the customer',
+      run: async (session, write) => {
+        const marker = `${write.runMarker} draft`;
+        const envelope = await callWrite(session, 'createDraftReply', {
+          conversationId: write.conversationId,
+          text: marker,
+        });
+        requireCondition(getObject(envelope, 'result')?.draft === true, 'createDraftReply did not report a draft');
+        const threads = await readBackUntil(
+          threadsReadBack(session, write.conversationId),
+          (items) => threadBodies(items).some((body) => body.includes(marker)),
+        );
+        const draft = threads.find((thread) => `${getString(thread.body)} ${getString(thread.text)}`.includes(marker));
+        requireCondition(draft, 'Draft reply was reported as created but is not visible in getThreads');
+        requireCondition(
+          getString(draft.state).toLowerCase() === 'draft',
+          `Draft thread state is ${getString(draft.state) || 'missing'}, expected draft`,
+        );
+        write.draftThreadCreated = true;
+        writeArtifacts.push(`draft reply on conversation ${write.conversationId} (no delete endpoint; discard in the web app if unwanted)`);
+      },
+    },
+    {
+      operation: 'updateConversationStatus',
+      name: 'close then restore the previous status',
+      run: async (session, write) => {
+        await callWrite(session, 'updateConversationStatus', {
+          conversationId: write.conversationId,
+          status: 'closed',
+        });
+        const closed = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => getString(conversation.status) === 'closed',
+        );
+        requireCondition(getString(closed.status) === 'closed', `Status after close is ${getString(closed.status)}`);
+
+        await callWrite(session, 'updateConversationStatus', {
+          conversationId: write.conversationId,
+          status: write.originalStatus,
+        });
+        const restored = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => getString(conversation.status) === write.originalStatus,
+        );
+        requireCondition(
+          getString(restored.status) === write.originalStatus,
+          `Cleanup failed: status is ${getString(restored.status)}, expected ${write.originalStatus}`,
+        );
+      },
+    },
+    {
+      operation: 'assignConversation',
+      name: 'assign the fixture to the discovered user',
+      skipIf: (write) => write.userId
+        ? undefined
+        : (discoveryFailureFor(write, 'listUsers')
+          ?? 'no user resolved from listUsers; set MCP_DOGFOOD_WRITE_USER_ID to pin one'),
+      run: async (session, write) => {
+        const userId = write.userId as string;
+        await callWrite(session, 'assignConversation', { conversationId: write.conversationId, userId });
+        const assigned = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => assigneeId(conversation) === Number(userId),
+        );
+        requireCondition(
+          assigneeId(assigned) === Number(userId),
+          `Assignee after assignConversation is ${String(assigneeId(assigned))}, expected ${userId}`,
+        );
+      },
+    },
+    {
+      operation: 'unassignConversation',
+      // Only meaningful when something is assigned: Help Scout has nothing to
+      // remove when the fixture never had an assignee and the assign scenario
+      // could not resolve a user.
+      name: 'clear the assignee, then restore the pre-run one',
+      skipIf: (write) => write.userId !== undefined || write.originalAssigneeId !== undefined
+        ? undefined
+        : (discoveryFailureFor(write, 'listUsers')
+          ?? 'the fixture has no assignee to clear; set MCP_DOGFOOD_WRITE_USER_ID so assignConversation can run first'),
+      run: async (session, write) => {
+        await callWrite(session, 'unassignConversation', { conversationId: write.conversationId });
+        // An unassigned Help Scout conversation carries no assignee field at all.
+        const unassigned = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => assigneeId(conversation) === undefined,
+        );
+        requireCondition(
+          assigneeId(unassigned) === undefined,
+          `unassignConversation left the conversation assigned to ${String(assigneeId(unassigned))}`,
+        );
+
+        if (write.originalAssigneeId === undefined) return;
+        await callWrite(session, 'assignConversation', {
+          conversationId: write.conversationId,
+          userId: String(write.originalAssigneeId),
+        });
+        const restored = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => assigneeId(conversation) === write.originalAssigneeId,
+        );
+        requireCondition(
+          assigneeId(restored) === write.originalAssigneeId,
+          `Cleanup failed: assignee is ${String(assigneeId(restored))}, expected ${String(write.originalAssigneeId)}`,
+        );
+      },
+    },
+    {
+      operation: 'addConversationTags',
+      name: 'add a test tag while keeping the existing ones',
+      run: async (session, write) => {
+        const before = conversationTags(await readConversation(session, write.conversationId));
+        await callWrite(session, 'addConversationTags', {
+          conversationId: write.conversationId,
+          tags: [WRITE_TAG],
+        });
+        const tagged = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => hasTag(conversation, WRITE_TAG),
+        );
+        requireCondition(hasTag(tagged, WRITE_TAG), `Tag ${WRITE_TAG} is not on the conversation after addConversationTags`);
+        for (const tag of before) {
+          requireCondition(hasTag(tagged, tag), `addConversationTags dropped the existing tag ${tag}`);
+        }
+      },
+    },
+    {
+      operation: 'removeConversationTags',
+      name: 'remove the test tag and keep the rest',
+      run: async (session, write) => {
+        const before = conversationTags(await readConversation(session, write.conversationId))
+          .filter((tag) => tag.toLowerCase() !== WRITE_TAG.toLowerCase());
+        await callWrite(session, 'removeConversationTags', {
+          conversationId: write.conversationId,
+          tags: [WRITE_TAG],
+        });
+        const cleaned = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => !hasTag(conversation, WRITE_TAG),
+        );
+        requireCondition(!hasTag(cleaned, WRITE_TAG), `Cleanup failed: tag ${WRITE_TAG} is still on the conversation`);
+        for (const tag of before) {
+          requireCondition(hasTag(cleaned, tag), `Cleanup failed: removeConversationTags dropped the existing tag ${tag}`);
+        }
+      },
+    },
+    {
+      operation: 'snoozeConversation',
+      name: 'snooze the fixture until tomorrow',
+      run: async (session, write) => {
+        const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+        await callWrite(session, 'snoozeConversation', {
+          conversationId: write.conversationId,
+          snoozedUntil: until,
+          unsnoozeOnCustomerReply: true,
+        });
+        const snoozed = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => Boolean(snoozedUntil(conversation)),
+        );
+        requireCondition(
+          snoozedUntil(snoozed),
+          'Conversation reports no snooze after snoozeConversation; getConversation exposes snooze.snoozedUntil when one is set',
+        );
+      },
+    },
+    {
+      operation: 'unsnoozeConversation',
+      name: 'wake the snoozed conversation',
+      run: async (session, write) => {
+        await callWrite(session, 'unsnoozeConversation', { conversationId: write.conversationId });
+        const awake = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => !snoozedUntil(conversation),
+        );
+        requireCondition(
+          !snoozedUntil(awake),
+          `Cleanup failed: conversation is still snoozed until ${String(snoozedUntil(awake))}`,
+        );
+      },
+    },
+    {
+      operation: 'updateConversationFields',
+      name: 'set a custom field value, then restore it',
+      skipIf: (write) => write.customFieldId
+        ? undefined
+        : (discoveryFailureFor(write, 'getInbox')
+          ?? 'no free-text custom field on the fixture inbox; add one or set MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID'),
+      run: async (session, write) => {
+        const fieldId = write.customFieldId as string;
+        const before = (getArray(await readConversation(session, write.conversationId), ['customFields']) as JsonObject[])
+          .find((field) => String(field.id) === fieldId);
+        write.customFieldPreviousValue = getString(before?.value);
+
+        const value = `${write.runMarker} field`;
+        await callWrite(session, 'updateConversationFields', {
+          conversationId: write.conversationId,
+          fields: [{ id: fieldId, value }],
+        });
+        const updated = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => (getArray(conversation, ['customFields']) as JsonObject[])
+            .some((field) => String(field.id) === fieldId && getString(field.value) === value),
+        );
+        requireCondition(
+          (getArray(updated, ['customFields']) as JsonObject[])
+            .some((field) => String(field.id) === fieldId && getString(field.value) === value),
+          `Custom field ${fieldId} does not hold the written value`,
+        );
+
+        await callWrite(session, 'updateConversationFields', {
+          conversationId: write.conversationId,
+          fields: [{ id: fieldId, value: write.customFieldPreviousValue ?? '' }],
+        });
+        const restored = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => (getArray(conversation, ['customFields']) as JsonObject[])
+            .every((field) => String(field.id) !== fieldId || getString(field.value) !== value),
+        );
+        requireCondition(
+          (getArray(restored, ['customFields']) as JsonObject[])
+            .every((field) => String(field.id) !== fieldId || getString(field.value) !== value),
+          `Cleanup failed: custom field ${fieldId} still holds the test value`,
+        );
+      },
+    },
+    {
+      operation: 'moveConversation',
+      name: 'move to a second inbox, then move back',
+      skipIf: (write) => write.secondInboxId
+        ? undefined
+        : (discoveryFailureFor(write, 'listAllInboxes')
+          ?? 'the account exposes only one inbox; add a second or set MCP_DOGFOOD_WRITE_SECOND_INBOX_ID'),
+      run: async (session, write) => {
+        const destination = write.secondInboxId as string;
+        await callWrite(session, 'moveConversation', {
+          conversationId: write.conversationId,
+          mailboxId: destination,
+        });
+        const moved = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => String(conversation.mailboxId) === destination,
+        );
+        requireCondition(
+          String(moved.mailboxId) === destination,
+          `Conversation is in inbox ${String(moved.mailboxId)}, expected ${destination}`,
+        );
+
+        await callWrite(session, 'moveConversation', {
+          conversationId: write.conversationId,
+          mailboxId: write.inboxId,
+        });
+        const restored = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (conversation) => String(conversation.mailboxId) === write.inboxId,
+        );
+        requireCondition(
+          String(restored.mailboxId) === write.inboxId,
+          `Cleanup failed: conversation is in inbox ${String(restored.mailboxId)}, expected ${write.inboxId}`,
+        );
+      },
+    },
+    {
+      operation: 'sendReply',
+      name: 'confirmation is required, then the reply reaches the test customer',
+      skipIf: (write) => customerVisibleSkipReason()
+        ?? (getString(write.customerEmail).includes('@')
+          ? undefined
+          : 'the fixture conversation has no resolvable test customer email'),
+      run: async (session, write) => {
+        const marker = `${write.runMarker} reply`;
+        const args = { conversationId: write.conversationId, text: marker };
+
+        // The gate decides whether the operation exists; the confirmation
+        // decides whether a given call proceeds. Prove the second half first.
+        const refused = await session.callGatewayTool(WRITE_GATEWAY_TOOL, { name: 'sendReply', arguments: args });
+        requireCondition(refused.isError === true, 'sendReply ran without confirmation metadata');
+        const refusal = parseToolData(refused) as JsonObject;
+        requireCondition(
+          getObject(refusal, 'required')?.confirmOperation === 'sendReply',
+          `Refusal did not name the required confirmation: ${JSON.stringify(refusal).slice(0, 200)}`,
+        );
+
+        await callWrite(session, 'sendReply', args, {
+          confirm: true,
+          confirmOperation: 'sendReply',
+          targetId: write.conversationId,
+        });
+        const threads = await readBackUntil(
+          threadsReadBack(session, write.conversationId),
+          (items) => items.some((thread) => `${getString(thread.body)} ${getString(thread.text)}`.includes(marker)
+            && getString(thread.state).toLowerCase() !== 'draft'),
+        );
+        requireCondition(
+          threads.some((thread) => `${getString(thread.body)} ${getString(thread.text)}`.includes(marker)
+            && getString(thread.state).toLowerCase() !== 'draft'),
+          'sendReply reported success but no published reply is visible in getThreads',
+        );
+        writeArtifacts.push(`sent reply on conversation ${write.conversationId} to ${write.customerEmail} (cannot be recalled)`);
+      },
+    },
+    {
+      operation: 'publishDraft',
+      name: 'publish a draft conversation',
+      skipIf: () => customerVisibleSkipReason()
+        ?? (process.env.MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID
+          ? undefined
+          : 'publishDraft needs a conversation whose state is draft; the harness does not create one because publishing cannot be undone. Set MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID'),
+      run: async (session) => {
+        const conversationId = process.env.MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID as string;
+        await callWrite(session, 'publishDraft', { conversationId }, {
+          confirm: true,
+          confirmOperation: 'publishDraft',
+          targetId: conversationId,
+        });
+        const published = await readBackUntil(
+          conversationReadBack(session, conversationId),
+          (conversation) => getString(conversation.state).toLowerCase() !== 'draft',
+        );
+        requireCondition(
+          getString(published.state).toLowerCase() !== 'draft',
+          `Conversation ${conversationId} is still in draft state after publishDraft`,
+        );
+        writeArtifacts.push(`published draft conversation ${conversationId} (cannot be returned to draft)`);
+      },
+    },
+    {
+      operation: 'write_help_scout',
+      name: 'fixture is restored to its pre-run state',
+      run: async (session, write) => {
+        const drift: string[] = [];
+        const failures: string[] = [];
+        const conversation = await readConversation(session, write.conversationId);
+
+        // One restore step that throws must not abandon the rest: every field
+        // left unrestored is worth restoring, and the operator needs the whole
+        // list, not the first entry in it.
+        const restoreStep = async (label: string, step: () => Promise<unknown>): Promise<void> => {
+          try {
+            await step();
+          } catch (err) {
+            failures.push(`${label}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        };
+
+        if (getString(conversation.status) !== write.originalStatus) {
+          await restoreStep('restore status', () => callWrite(session, 'updateConversationStatus', {
+            conversationId: write.conversationId,
+            status: write.originalStatus,
+          }));
+        }
+        if (hasTag(conversation, WRITE_TAG)) {
+          await restoreStep('remove the test tag', () => callWrite(session, 'removeConversationTags', {
+            conversationId: write.conversationId,
+            tags: [WRITE_TAG],
+          }));
+        }
+        if (snoozedUntil(conversation)) {
+          await restoreStep('wake the conversation', () => callWrite(session, 'unsnoozeConversation', {
+            conversationId: write.conversationId,
+          }));
+        }
+        if (String(conversation.mailboxId) !== write.inboxId) {
+          await restoreStep('move back to the original inbox', () => callWrite(session, 'moveConversation', {
+            conversationId: write.conversationId,
+            mailboxId: write.inboxId,
+          }));
+        }
+        if (write.originalAssigneeId !== undefined && assigneeId(conversation) !== write.originalAssigneeId) {
+          await restoreStep('restore the assignee', () => callWrite(session, 'assignConversation', {
+            conversationId: write.conversationId,
+            userId: String(write.originalAssigneeId),
+          }));
+        }
+        if (write.customFieldId && customFieldValue(conversation, write.customFieldId) !== (write.customFieldPreviousValue ?? '')) {
+          await restoreStep('restore the custom field value', () => callWrite(session, 'updateConversationFields', {
+            conversationId: write.conversationId,
+            fields: [{ id: write.customFieldId as string, value: write.customFieldPreviousValue ?? '' }],
+          }));
+        }
+
+        const final = await readBackUntil(
+          conversationReadBack(session, write.conversationId),
+          (current) => getString(current.status) === write.originalStatus && !hasTag(current, WRITE_TAG),
+        );
+        if (getString(final.status) !== write.originalStatus) {
+          drift.push(`status is ${getString(final.status)}, expected ${write.originalStatus}`);
+        }
+        if (hasTag(final, WRITE_TAG)) drift.push(`tag ${WRITE_TAG} is still applied`);
+        if (snoozedUntil(final)) drift.push(`still snoozed until ${String(snoozedUntil(final))}`);
+        if (String(final.mailboxId) !== write.inboxId) {
+          drift.push(`is in inbox ${String(final.mailboxId)}, expected ${write.inboxId}`);
+        }
+        if (write.originalAssigneeId !== undefined && assigneeId(final) !== write.originalAssigneeId) {
+          drift.push(`assignee is ${String(assigneeId(final))}, expected ${String(write.originalAssigneeId)}`);
+        }
+        if (write.customFieldId) {
+          const expected = write.customFieldPreviousValue ?? '';
+          const actual = customFieldValue(final, write.customFieldId);
+          if (actual !== expected) {
+            drift.push(`custom field ${write.customFieldId} holds "${actual}", expected "${expected}"`);
+          }
+        }
+
+        // Never hide a cleanup failure: name every field that could not be
+        // restored so the operator knows exactly what to fix by hand, and leave
+        // it in the artifact list, which prints even when this scenario fails.
+        for (const item of drift) {
+          writeArtifacts.push(`conversation ${write.conversationId} was not restored: ${item}`);
+        }
+        for (const failure of failures) {
+          writeArtifacts.push(`conversation ${write.conversationId} restore step failed: ${failure}`);
+        }
+
+        requireCondition(
+          drift.length === 0 && failures.length === 0,
+          `Cleanup could not be confirmed for conversation ${write.conversationId}: `
+          + [...drift, ...failures].join('; '),
+        );
+      },
+    },
+  ];
+}
+
+async function runWriteMatrix(baseCtx: DogfoodContext): Promise<void> {
+  const scenarios = buildWriteScenarios();
+  process.stderr.write('\n=== MCP Dogfood: Write Lifecycle Matrix ===\n\n');
+
+  if (!WRITES_ENABLED) {
+    const reason = 'HELPSCOUT_ENABLE_WRITES is not true; live writes are opt-in';
+    for (const scenario of scenarios) {
+      results.push({ name: scenario.name, tool: scenario.operation, status: 'SKIP', durationMs: 0, detail: reason });
+      process.stderr.write(`  ${scenario.operation}: ${scenario.name}... SKIP (${reason})\n`);
+    }
+    process.stderr.write('\n  No Help Scout write was attempted.\n');
+    writeHints.push('HELPSCOUT_ENABLE_WRITES=true enables the tier-1 live write lifecycle');
+    return;
+  }
+
+  const session = new McpDogfoodSession(false, {
+    enabled: true,
+    customerVisible: CUSTOMER_VISIBLE_WRITES_ENABLED,
+  });
+  const ctx = await session.connect();
+  ctx.inboxId = baseCtx.inboxId;
+  ctx.customerId = baseCtx.customerId;
+  ctx.customerEmail = baseCtx.customerEmail;
+  ctx.organizationId = baseCtx.organizationId;
+
+  process.stderr.write(`Discovered tools: ${[...ctx.toolNames].sort().join(', ')}\n`);
+  process.stderr.write(
+    `Customer-visible writes: ${CUSTOMER_VISIBLE_WRITES_ENABLED ? 'ENABLED (a real email can be sent)' : 'disabled'}\n\n`,
+  );
+
+  try {
+    let write: WriteContext;
+    try {
+      write = await resolveWriteFixture(session, ctx);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      results.push({ name: 'write fixture setup', tool: 'write_help_scout', status: 'FAIL', durationMs: 0, detail });
+      process.stderr.write(`  write fixture setup FAILED: ${detail}\n`);
+      for (const scenario of scenarios) {
+        results.push({
+          name: scenario.name,
+          tool: scenario.operation,
+          status: 'SKIP',
+          durationMs: 0,
+          detail: 'write fixture setup failed',
+        });
+      }
+      return;
+    }
+
+    process.stderr.write(`Fixture conversation: ${write.conversationId} (${write.conversationCreated ? 'created' : 'reused'})\n\n`);
+    for (const scenario of scenarios) {
+      await runWriteScenario(session, ctx, write, scenario);
+    }
+
+    if (!write.userId) writeHints.push('MCP_DOGFOOD_WRITE_USER_ID pins the user assignConversation targets');
+    if (!write.secondInboxId) writeHints.push('MCP_DOGFOOD_WRITE_SECOND_INBOX_ID enables the moveConversation lifecycle');
+    if (!write.customFieldId) writeHints.push('MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID enables the updateConversationFields lifecycle');
+    if (!CUSTOMER_VISIBLE_WRITES_ENABLED) {
+      writeHints.push('MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE=true with HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true runs sendReply against the test customer');
+    }
+    if (!process.env.MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID) {
+      writeHints.push('MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID names a draft-state conversation for publishDraft');
+    }
+  } finally {
+    await session.close();
+  }
+}
+
 function printFixtureHints(ctx: DogfoodContext): void {
   const hints: string[] = [];
 
@@ -2268,6 +3294,9 @@ function printFixtureHints(ctx: DogfoodContext): void {
   if (!ctx.originalSourceConversationId || !ctx.originalSourceThreadId) {
     process.stderr.write('  Missing original-source fixture: send/import a real inbound email thread and rerun dogfood.\n');
   }
+  for (const hint of writeHints) {
+    process.stderr.write(`  ${hint}\n`);
+  }
   if (!process.env.HELPSCOUT_DOCS_API_KEY) {
     process.stderr.write('  Missing Docs fixture: set HELPSCOUT_DOCS_API_KEY and stable Docs records for non-skipping Docs dogfood.\n');
   } else {
@@ -2276,6 +3305,15 @@ function printFixtureHints(ctx: DogfoodContext): void {
     }
     if (!ctx.docsRedirectId || !ctx.docsRedirectUrl) {
       process.stderr.write('  Missing Docs redirect fixture: run npm run dogfood:seed:docs or set MCP_DOGFOOD_DOCS_REDIRECT_ID and MCP_DOGFOOD_DOCS_REDIRECT_URL.\n');
+    }
+  }
+
+  // Anything a write left behind that no API call can remove. It is reported
+  // every run, so an artifact is never discovered only by reading the account.
+  if (writeArtifacts.length > 0) {
+    process.stderr.write('\nWrite artifacts left in Help Scout:\n');
+    for (const artifact of writeArtifacts) {
+      process.stderr.write(`  ${artifact}\n`);
     }
   }
 }
@@ -2298,6 +3336,25 @@ function printSummary(ctx: DogfoodContext): void {
     const toolResults = byTool.get(tool) ?? [];
     const failures = toolResults.filter((result) => result.status === 'FAIL');
     process.stderr.write(`  ${tool}: ${toolResults.length} scenarios, ${failures.length} failed\n`);
+  }
+
+  const writeSurface = [
+    ...TIER_ONE_WRITE_OPERATIONS,
+    ...TIER_TWO_WRITE_OPERATIONS,
+    'write_help_scout',
+    'describe_help_scout',
+    'read_help_scout',
+  ].filter((name) => byTool.has(name));
+  if (writeSurface.length > 0) {
+    process.stderr.write('\n  Write lifecycle:\n');
+    for (const operation of writeSurface) {
+      const operationResults = byTool.get(operation) ?? [];
+      const failures = operationResults.filter((result) => result.status === 'FAIL');
+      const skipped = operationResults.filter((result) => result.status === 'SKIP');
+      process.stderr.write(
+        `    ${operation}: ${operationResults.length} scenarios, ${failures.length} failed, ${skipped.length} skipped\n`,
+      );
+    }
   }
 
   if (byStatus.fail.length > 0) {
@@ -2334,6 +3391,7 @@ async function main(): Promise<void> {
 
   const ctx = await runMainMatrix();
   await runRedactionMatrix(ctx);
+  await runWriteMatrix(ctx);
   printSummary(ctx);
 }
 

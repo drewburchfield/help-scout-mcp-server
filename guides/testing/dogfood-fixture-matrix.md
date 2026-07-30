@@ -6,9 +6,10 @@ intentionally. Empty or missing account data is a fixture gap, not a reason to
 weaken API-surface coverage.
 
 The server advertises three gateway tools (`search_help_scout`,
-`describe_help_scout`, `read_help_scout`) over 55 read-only operations. This
-matrix tracks the 55 operations. Dogfood drives them through the gateway, so a
-run also exercises discovery and dispatch.
+`describe_help_scout`, `read_help_scout`) over 55 read-only operations, plus
+`write_help_scout` when an operator has enabled writes. This matrix tracks the
+55 read operations and the gated write operations. Dogfood drives them through
+the gateway, so a run also exercises discovery and dispatch.
 
 Run shared fixture setup before authenticated dogfood:
 
@@ -122,6 +123,63 @@ Fifty-five operations, grouped by surface.
 | Docs API | `listDocsSites`, `getDocsSite`, `listDocsCollections`, `getDocsCollection`, `listDocsCategories`, `getDocsCategory`, `listDocsArticles`, `searchDocsArticles`, `getDocsArticle`, `listDocsRelatedArticles`, `listDocsArticleRevisions`, `getDocsArticleRevision`, `listDocsRedirects`, `getDocsRedirect`, `findDocsRedirect` | Uses `HELPSCOUT_DOCS_API_KEY` and `tests/seed-docs-data.ts` to create private Docs records from explicit source-note-to-article-HTML fixtures and read configured site restrictions through `getDocsSite` `includeRestrictions`. Optional IDs can be pinned with `MCP_DOGFOOD_DOCS_SITE_ID`, `MCP_DOGFOOD_DOCS_COLLECTION_ID`, `MCP_DOGFOOD_DOCS_CATEGORY_ID`, `MCP_DOGFOOD_DOCS_ARTICLE_ID`, `MCP_DOGFOOD_DOCS_REVISION_ID`, `MCP_DOGFOOD_DOCS_REDIRECT_ID`, and `MCP_DOGFOOD_DOCS_REDIRECT_URL`. | Discovery, retrieval, search, pagination, status/visibility filters, site restriction read with secret redaction, related articles, revision freshness checks, redirect resolution. | Requires a Docs API key with permission to read/create/edit Docs content and at least one existing Docs site. Local Markdown/notes are not assumed to render 1:1; fixtures keep Help Scout article HTML explicit. |
 | Server utility | `getServerTime` | No Help Scout fixture required. | Utility shape. | None known. |
 
+## Write Operation Coverage
+
+Write dogfood is opt-in and tiered, per the
+[write tool contract](../architecture/mcp-tool-contract.md#gating-and-permission-model).
+The harness starts its own server process for the write matrix and sets the
+gates explicitly, so the read matrices keep asserting a three-tool surface even
+when the shell has writes enabled.
+
+| Gate | Effect on dogfood |
+| --- | --- |
+| unset | Every write scenario reports `SKIP`. No Help Scout write is attempted. |
+| `HELPSCOUT_ENABLE_WRITES=true` | Tier-1 lifecycle runs live. CI sets this on the 20.x dogfood step. |
+| `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true` plus `MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE=true` | Adds the tier-2 scenarios. Both are required: the first is the server gate, the second keeps a run that merely inherited a write-enabled environment from emailing anyone. |
+
+All write scenarios operate on one disposable conversation whose subject is
+`MCP-TEST: write lifecycle fixture`, addressed to the dogfood test customer. The
+harness reuses it when it exists and seeds it through the Help Scout API when it
+does not, because the registry exposes no create-conversation operation and the
+contract forbids adding one for a test. Every mutation under test runs through
+`write_help_scout` over stdio and is verified by reading the conversation or its
+threads back.
+
+Each run leaves a note and a draft on the fixture that no endpoint can delete,
+and Help Scout rejects updates once a conversation holds 100 threads. Setup
+fails with instructions once the fixture passes 80 threads: delete it in Help
+Scout and the next run seeds a fresh one.
+
+| Operation | Mutation class | Fixture | Cleanup | Skip conditions |
+| --- | --- | --- | --- | --- |
+| `createNote` | `nonDestructive` | Fixture conversation. | None available. The Mailbox API has no delete-note endpoint, so the note is reported as a write artifact every run. | Writes disabled. |
+| `createDraftReply` | `nonDestructive` | Fixture conversation. | None available. The Mailbox API has no delete-thread endpoint, so the draft is reported as a write artifact. | Writes disabled. |
+| `updateConversationStatus` | `reversible` | Fixture conversation; the pre-run status is captured before any mutation. | Restores the captured status and re-reads to confirm. | Writes disabled. |
+| `assignConversation` | `reversible` | User resolved from `listUsers`, or pinned with `MCP_DOGFOOD_WRITE_USER_ID`. | The paired `unassignConversation` scenario clears it. | Writes disabled, or no user resolved. |
+| `unassignConversation` | `reversible` | The assignee left by the previous scenario. An unassigned Help Scout conversation carries no `assignee` field, which is what the read-back checks. | Restores the pre-run assignee when the fixture had one. | Writes disabled, or nothing is assigned and no user could be resolved. |
+| `addConversationTags` | `reversible` | Fixture conversation plus the `mcp-test-write-lifecycle` tag (`MCP_DOGFOOD_WRITE_TAG` overrides). Asserts the pre-existing tags survived the merge. | The paired `removeConversationTags` scenario removes it. | Writes disabled. |
+| `removeConversationTags` | `reversible` | The test tag added by the previous scenario. | Confirms the test tag is gone and the pre-existing tags survived. | Writes disabled. |
+| `snoozeConversation` | `reversible` | Fixture conversation, snoozed 24 hours out. Verified through `snooze.snoozedUntil` on the conversation read-back. | The paired `unsnoozeConversation` scenario wakes it. | Writes disabled. |
+| `unsnoozeConversation` | `reversible` | The snooze left by the previous scenario. | Confirms the conversation reports no snooze. | Writes disabled. |
+| `updateConversationFields` | `reversible` | A free-text custom field on the fixture inbox, discovered through `getInbox` `include: ["fields"]` or pinned with `MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID`. Dropdown and date fields are not used blind. | Writes the previous value back, or clears the field when it had none. | Writes disabled, or the inbox has no free-text custom field. |
+| `moveConversation` | `reversible` | A second inbox from `listAllInboxes`, or `MCP_DOGFOOD_WRITE_SECOND_INBOX_ID`. | Moves the conversation back to its original inbox and confirms. | Writes disabled, or the account has only one inbox. |
+| `sendReply` | `externallyVisible` | Fixture conversation, whose customer is the dogfood test customer. The scenario first proves the call is refused without the confirmation triple, then repeats it with confirmation. | None possible. A sent reply cannot be recalled, so it is reported as a write artifact. | Either customer-visible gate unset, or no resolvable test customer email. |
+| `publishDraft` | `externallyVisible` | A conversation already in `draft` state, named by `MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID`. The harness does not create one, because publishing sends the pending reply and cannot be undone. | None possible. Reported as a write artifact. | Either customer-visible gate unset, or no draft conversation pinned. |
+| Gateway surface (`write_help_scout`, `describe_help_scout`, `read_help_scout`) | n/a | No Help Scout fixture. Asserts exactly four advertised tools, the write tool's `readOnlyHint: false` and `destructiveHint: true`, mutation class and tier on every enabled write operation, tier-2 operations reported as unknown while their gate is off, and `read_help_scout` refusing a write operation with a redirect. | n/a | Writes disabled. |
+
+A final scenario re-reads the fixture and restores any drift in status, tags,
+snooze, inbox, assignee, and the custom field the field scenario touched. A
+restore step that throws does not abandon the ones after it: every failure is
+collected, and the run fails naming all of them. Cleanup failure is never
+reported as a pass, and anything left behind is listed in the dogfood summary,
+including drift the restore pass could not undo.
+
+Read-backs poll: the first attempt goes through the MCP read tool, and later
+attempts go straight to the Help Scout API, which the contract allows as a
+direct API contract check. The server caches conversation and thread reads for
+five minutes, so a retry through the same tool call would re-read the copy the
+first attempt cached and the polling would prove nothing.
+
 ## Current Skips To Eliminate
 
 | Skip source | Current reason | Preferred fix |
@@ -129,6 +187,9 @@ Fifty-five operations, grouped by surface.
 | `getSatisfactionRating` | No known satisfaction rating fixture ID. | Submit a known rating through the Help Scout satisfaction flow, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_SATISFACTION_RATING_ID`. |
 | `getTeamMembers` | No team may exist in the test account. | Configure a team with at least one member in Help Scout account settings, then use `npm run dogfood:audit` output to set `MCP_DOGFOOD_TEAM_ID` if discovery should be pinned. |
 | Docs API operations | Docs API requires separate `HELPSCOUT_DOCS_API_KEY`; seeding requires a key with Docs create/edit permissions and an existing Docs site. | Run `HELPSCOUT_DOCS_API_KEY=... npm run dogfood:seed:docs`, then use the printed `MCP_DOGFOOD_DOCS_*` values when auto-discovery should be pinned. |
+| `updateConversationFields` | The dogfood inbox may expose no free-text custom field. | Add a single-line text custom field to the Client Support inbox, or set `MCP_DOGFOOD_WRITE_CUSTOM_FIELD_ID` to an existing text field. |
+| `moveConversation` | The account may expose only one inbox. | Add a second inbox the app can access, or set `MCP_DOGFOOD_WRITE_SECOND_INBOX_ID`. |
+| `sendReply`, `publishDraft` | Customer-visible writes are off by default, and `publishDraft` also needs a draft-state conversation. | Run locally with `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE=true`, and set `MCP_DOGFOOD_PUBLISH_DRAFT_CONVERSATION_ID` to a conversation created in draft state. These stay skipped in CI on purpose. |
 
 ## PR Checklist For New API Surfaces
 

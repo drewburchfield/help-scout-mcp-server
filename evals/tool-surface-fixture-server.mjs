@@ -10,17 +10,27 @@ import { createProductionGatewayCandidate } from './production-gateway-candidate
 
 const candidateName = process.env.CANDIDATE;
 const traceFile = process.env.TRACE_FILE;
+// Which write gate the production gateway candidate is built with. The gate is
+// injected rather than read from HELPSCOUT_ENABLE_WRITES so a screen can serve
+// a writes-disabled surface from a shell that has writes enabled.
+const candidateWrites = process.env.CANDIDATE_WRITES || 'off';
 
 if (!candidateName || !traceFile) {
   throw new Error('CANDIDATE and TRACE_FILE are required');
 }
 
 const { candidates } = await createToolSurfacePrototypes({ executeOperation: fixtureExecutor });
-candidates.push(await createProductionGatewayCandidate({ executeOperation: fixtureExecutor }));
+candidates.push(await createProductionGatewayCandidate({
+  executeOperation: fixtureExecutor,
+  writes: candidateWrites,
+}));
 const candidate = candidates.find((item) => item.name === candidateName);
 
 if (!candidate) {
-  throw new Error(`Unknown candidate: ${candidateName}`);
+  throw new Error(
+    `Unknown candidate: ${candidateName} (CANDIDATE_WRITES=${candidateWrites}). ` +
+    `Available: ${candidates.map((item) => item.name).join(', ')}.`,
+  );
 }
 
 const server = new Server(

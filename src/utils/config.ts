@@ -5,6 +5,21 @@ if (process.env.NODE_ENV !== 'test') {
   dotenv.config();
 }
 
+/**
+ * Operator-set gates for the Help Scout write surface. Both default off.
+ *
+ * The Mailbox API has no granular scopes: a token that can read a conversation
+ * can also reply to it. The server is therefore the permission boundary, and
+ * these flags are a deliberate operator choice, never a claim about what the
+ * credential itself restricts.
+ */
+export interface WriteFlags {
+  /** Tier 1: the nonDestructive and reversible operations. */
+  readonly enabled: boolean;
+  /** Tier 2: adds the externallyVisible operations. Inert unless `enabled`. */
+  readonly customerVisibleEnabled: boolean;
+}
+
 export interface Config {
   helpscout: {
     apiKey: string;         // Deprecated: kept for backwards compatibility only
@@ -25,6 +40,7 @@ export interface Config {
   security: {
     redactMessageContent: boolean;
   };
+  readonly writes: WriteFlags;
   connectionPool: {
     maxSockets: number;
     maxFreeSockets: number;
@@ -71,6 +87,23 @@ export const config: Config = {
   security: {
     // Default: show content. Set REDACT_MESSAGE_CONTENT=true to hide message bodies.
     redactMessageContent: process.env.REDACT_MESSAGE_CONTENT === 'true',
+  },
+  // Read live rather than snapshotted at import, unlike every other value here.
+  // The gate decides which tools exist, so an embedding host (or a test) that
+  // sets the flags after this module loads must still get the surface it asked
+  // for instead of whatever the environment happened to hold at import time.
+  //
+  // The boundary: the advertised surface follows these flags provided they are
+  // set before the gateway serves its first call, because the registry is built
+  // once and reused. Customer-visible execution is not bound by that: the
+  // gateway rechecks the flags live at dispatch, so revoking the flag stops the
+  // next externally visible write even though the advertisement is stale until
+  // the process restarts.
+  get writes(): WriteFlags {
+    return {
+      enabled: process.env.HELPSCOUT_ENABLE_WRITES === 'true',
+      customerVisibleEnabled: process.env.HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES === 'true',
+    };
   },
   connectionPool: {
     maxSockets: parseIntegerEnv('HTTP_MAX_SOCKETS', 50, 1),

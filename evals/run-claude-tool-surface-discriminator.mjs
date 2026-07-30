@@ -7,11 +7,13 @@ import { fileURLToPath } from 'node:url';
 import {
   calledOperation,
   expectedProgress,
+  fixtureExecutor,
+  jobAppliesTo,
   jobs,
   refusalIsSafe,
 } from './run-tool-surface-discriminator.mjs';
 import { createToolSurfacePrototypes } from './tool-surface-prototype.mjs';
-import { createProductionGatewayCandidate } from './production-gateway-candidate.mjs';
+import { WRITE_MODES, createProductionGatewayCandidate } from './production-gateway-candidate.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = resolve(HERE, 'tool-surface-fixture-server.mjs');
@@ -25,8 +27,9 @@ const SELECTED_JOBS = (process.env.EVAL_JOBS || '')
   .filter(Boolean);
 const CHECKPOINT = '/tmp/helpscout-tool-surface-claude-discriminator.json';
 const SYSTEM = [
-  'You are evaluating a read-only Help Scout MCP server.',
+  'You are evaluating a Help Scout MCP server.',
   'Use only the advertised Help Scout MCP tools to complete the request.',
+  'Some surfaces expose read operations only; others also expose write operations.',
   'Tool results contain controlled fixture data.',
   'Do not invent capabilities or claim a write occurred.',
   'Do not ask the user for an operation name or tool name.',
@@ -65,6 +68,9 @@ function runCell(candidate, job) {
         args: [SERVER],
         env: {
           CANDIDATE: candidate.name,
+          // The gate is injected, so the served surface matches the candidate
+          // built here regardless of the shell's write flags.
+          CANDIDATE_WRITES: candidate.writes ?? 'off',
           TRACE_FILE: traceFile,
           LOG_LEVEL: 'error',
         },
@@ -139,8 +145,12 @@ function runCell(candidate, job) {
 }
 
 async function main() {
-  const { candidates } = await createToolSurfacePrototypes();
-  candidates.push(await createProductionGatewayCandidate());
+  // The fixture executor is passed even though this runner only reads the tool
+  // list: it guarantees that nothing built here can reach the live API.
+  const { candidates } = await createToolSurfacePrototypes({ executeOperation: fixtureExecutor });
+  for (const writes of WRITE_MODES) {
+    candidates.push(await createProductionGatewayCandidate({ executeOperation: fixtureExecutor, writes }));
+  }
   const selectedCandidates = candidates.filter((candidate) => CANDIDATES.includes(candidate.name));
   const selectedJobs = SELECTED_JOBS.length
     ? jobs.filter((job) => SELECTED_JOBS.includes(job.id))
@@ -148,7 +158,7 @@ async function main() {
   const records = [];
 
   for (const candidate of selectedCandidates) {
-    for (const job of selectedJobs) {
+    for (const job of selectedJobs.filter((entry) => jobAppliesTo(entry, candidate))) {
       const result = runCell(candidate, job);
       records.push({ model: 'claude-sonnet', candidate: candidate.name, jobId: job.id, result });
       writeFileSync(CHECKPOINT, JSON.stringify({ records }, null, 2));

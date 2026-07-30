@@ -9,7 +9,14 @@ on:
   workflow_dispatch:          # Allow manual triggering
 
 permissions:
-  contents: write
+  contents: read
+
+# The live dogfood mutates one shared MCP-TEST fixture conversation in the
+# test account; two runs interleaving writes would corrupt each other's
+# read-back assertions, so runs queue behind each other instead.
+concurrency:
+  group: live-dogfood-${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -68,6 +75,18 @@ jobs:
         HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
         HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
         HELPSCOUT_DEFAULT_INBOX_ID: '359402'
+        # Tier 1 only. The write contract requires live proof of every write
+        # operation, and the tier-1 lifecycle is contained: it mutates one
+        # disposable MCP-TEST fixture conversation and reads the state back to
+        # confirm both the mutation and its restore. Contained is not the same
+        # as reversible. Notes and drafts have no delete endpoint, so every run
+        # leaves two threads behind; the harness stops at 80 threads, short of
+        # the 100-thread cap, and the fixture is deleted by hand when it fills.
+        # The tier-2 flags (HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES and
+        # MCP_DOGFOOD_ALLOW_CUSTOMER_VISIBLE) stay unset on purpose: those
+        # operations email a real customer address, and no CI run should be
+        # able to send mail.
+        HELPSCOUT_ENABLE_WRITES: 'true'
       run: npm run dogfood:full
 
     - name: Run authenticated edge-case test
@@ -103,6 +122,17 @@ jobs:
           exit 1
         fi
         echo "✅ Tag verified on main branch"
+
+    - name: Verify tag matches package version
+      env:
+        REF_NAME: ${{ github.ref_name }}
+      run: |
+        PKG_VERSION=$(node -p "require('./package.json').version")
+        if [ "$REF_NAME" != "v$PKG_VERSION" ]; then
+          echo "::error::Tag $REF_NAME does not match package.json version $PKG_VERSION. A mismatched tag would publish $PKG_VERSION under latest."
+          exit 1
+        fi
+        echo "✅ Tag matches package version $PKG_VERSION"
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
