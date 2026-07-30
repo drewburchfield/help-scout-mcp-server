@@ -16,10 +16,10 @@ MCP_VERSION=$(grep '"version"' mcp.json | head -1 | sed 's/.*"version": *"\([^"]
 SERVER_VERSION=$(grep '"version"' server.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 MANIFEST_VERSION=$(grep '"version"' helpscout-mcp-extension/manifest.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 PLUGIN_PIN=$(grep -o 'help-scout-mcp-server@[0-9.]*' plugins/helpscout-navigator/.mcp.json | head -1 | cut -d@ -f2)
-# README pins the npm version (npx examples) and the Docker tag; every
-# occurrence must agree before we treat it as one value.
-README_PIN_COUNT=$(grep -o 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md | sed 's/.*[@:]//' | sort -u | wc -l | tr -d ' ')
-README_PIN=$(grep -o 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md | sed 's/.*[@:]//' | sort -u | head -1)
+# README and the Cowork guide pin the npm version (npx examples) and the
+# Docker tag; every occurrence must agree before we treat it as one value.
+README_PIN_COUNT=$(grep -oh 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md guides/cowork-setup.md | sed 's/.*[@:]//' | sort -u | wc -l | tr -d ' ')
+README_PIN=$(grep -oh 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md guides/cowork-setup.md | sed 's/.*[@:]//' | sort -u | head -1)
 if [ "$README_PIN_COUNT" != "1" ]; then
   README_PIN=""
 fi
