@@ -1,6 +1,6 @@
 # Help Scout MCP Server - MCPB Extension
 
-This directory contains the MCPB (MCP Bundle) packaging for the Help Scout MCP Server, enabling one-click installation in Claude Desktop.
+This directory contains the MCPB (MCP Bundle) packaging for the Help Scout MCP Server, enabling one-click installation in Claude Desktop. One install serves both Chat and Cowork sessions.
 
 ## What is MCPB?
 

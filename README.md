@@ -22,33 +22,27 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 
 ## Quick Start
 
-### Claude Cowork (Recommended)
+### Claude Desktop & Claude Cowork (Recommended)
 
-Install the **helpscout-navigator** plugin. It auto-starts the MCP server and includes **navigation skills** that help Claude pick the right search tool for your query.
-
-1. Open Cowork and go to **Customize** > **Browse plugins** > **Personal**
-2. Click **+** > **Add marketplace from GitHub** and enter `drewburchfield/help-scout-mcp-server`
-3. Install **helpscout-navigator** from the marketplace
-4. Add your Help Scout credentials ([step-by-step guide](guides/cowork-setup.md))
-
-> The plugin bundles guided skills, session hooks, and tool selection guidance on top of the MCP server. Other install methods give you the tools; this one also teaches the AI how to use them well.
-
-### Claude Desktop
-
-**One-click install** using [Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions):
+**One-click install** using [Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions). One install covers both Chat and Cowork sessions in the Claude desktop app.
 
 1. Download the latest [`.mcpb` file from releases](https://github.com/drewburchfield/help-scout-mcp-server/releases)
 2. Double-click to install (or drag into Claude Desktop)
-3. Enter your Help Scout App ID and App Secret when prompted
+3. Enter your Help Scout App ID and App Secret in the extension settings; the settings also carry toggles for message redaction and the opt-in write surface
+4. Restart Claude Desktop
+
+If the tools don't show up in a Cowork session, update the desktop app to the latest version and start a fresh session. ([Cowork walkthrough](guides/cowork-setup.md))
 
 ### Claude Code
 
-The same **helpscout-navigator** plugin works in Claude Code with the same navigation skills.
+Claude Code gets the **helpscout-navigator** plugin, which auto-starts the MCP server and adds **navigation skills** that teach Claude to pick the right operation for each query.
 
 1. Run `/plugin` in Claude Code to open the marketplace
-2. Search for **helpscout-navigator** and install it
+2. Add the marketplace `drewburchfield/help-scout-mcp-server`, then install **helpscout-navigator**
 3. Set `HELPSCOUT_APP_ID` and `HELPSCOUT_APP_SECRET` as environment variables
 4. Restart Claude Code
+
+> Other install methods give you the tools; the plugin also teaches the AI how to use them well.
 
 ### For Cursor, VS Code, and Other MCP Clients
 
@@ -82,10 +76,9 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
 ## Getting Your API Credentials
 
 1. Go to **Help Scout** > **My Apps** > **Create Private App**
-2. Select at minimum: **Read** access to Mailboxes, Conversations, Customers, and Organizations
-3. Copy your **App ID** and **App Secret**
+2. Copy your **App ID** and **App Secret**
 
-> Help Scout uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported.
+> Help Scout uses OAuth2 Client Credentials flow exclusively. Personal Access Tokens are not supported. The app authenticates as the user who created it, with that user's permissions; there is no separate scope selection, which is why the server's own write gating defaults to off.
 
 | Help Scout UI | Environment Variable |
 |---------------|---------------------|
@@ -195,7 +188,7 @@ Works with any [MCP-compatible](https://modelcontextprotocol.io) client:
 
 | Category | Clients |
 |----------|---------|
-| **AI Assistants** | Claude Desktop, Goose, and other MCP-enabled assistants |
+| **AI Assistants** | Claude Desktop (Chat and Cowork), Goose, and other MCP-enabled assistants |
 | **Code Editors** | Cursor, VS Code, Windsurf, Continue.dev |
 | **Command Line** | Claude Code, Codex, Gemini CLI, OpenCode |
 | **Custom** | Any application implementing the MCP standard |

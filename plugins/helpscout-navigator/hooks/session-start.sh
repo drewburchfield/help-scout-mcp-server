@@ -10,11 +10,13 @@ cat > /dev/null
 
 missing=()
 
-if [[ -z "${HELPSCOUT_APP_ID:-}" ]]; then
+# The server also accepts HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET as
+# aliases, so only warn when neither spelling is present.
+if [[ -z "${HELPSCOUT_APP_ID:-}" && -z "${HELPSCOUT_CLIENT_ID:-}" ]]; then
   missing+=("HELPSCOUT_APP_ID")
 fi
 
-if [[ -z "${HELPSCOUT_APP_SECRET:-}" ]]; then
+if [[ -z "${HELPSCOUT_APP_SECRET:-}" && -z "${HELPSCOUT_CLIENT_SECRET:-}" ]]; then
   missing+=("HELPSCOUT_APP_SECRET")
 fi
 

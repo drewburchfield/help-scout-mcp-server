@@ -4,7 +4,7 @@
     "name": "Drew Burchfield"
   },
   "metadata": {
-    "description": "Help Scout MCP server with navigator plugin for Claude Code and Cowork",
+    "description": "Help Scout MCP server with navigator plugin for Claude Code",
     "version": "1.4.0"
   },
   "plugins": [
