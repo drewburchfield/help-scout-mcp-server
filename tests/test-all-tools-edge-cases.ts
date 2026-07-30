@@ -8,6 +8,9 @@
  */
 
 import 'dotenv/config';
+// Load the axios client so it registers itself as the default behind
+// getClient(); the tool layer no longer imports it transitively.
+import '../src/utils/helpscout-client.js';
 import { ToolHandler } from '../src/tools/index.js';
 import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 
