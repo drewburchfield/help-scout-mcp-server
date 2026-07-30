@@ -1,4 +1,7 @@
 import nock from 'nock';
+// Load the axios client so it registers itself as the default behind
+// getClient(); the handler modules no longer import it themselves.
+import '../utils/helpscout-client.js';
 import { ToolHandler } from '../tools/index.js';
 import {
   GatewayHandler,

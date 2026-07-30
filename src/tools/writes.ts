@@ -6,10 +6,10 @@ import { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
 import {
   HelpScoutWriteError,
-  WriteMethod,
-  WriteResponse,
-  helpScoutClient,
-} from '../utils/helpscout-client.js';
+  getClient,
+  type WriteMethod,
+  type WriteResponse,
+} from '../utils/api.js';
 import { createMcpToolError } from '../utils/mcp-errors.js';
 import { cache } from '../utils/cache.js';
 import { logger } from '../utils/logger.js';
@@ -167,13 +167,13 @@ function conversationPath(conversationId: string): string {
 async function sendPlanned(request: PlannedRequest): Promise<WriteResponse> {
   switch (request.method) {
     case 'POST':
-      return helpScoutClient.post(request.path, request.body);
+      return getClient().post(request.path, request.body);
     case 'PUT':
-      return helpScoutClient.put(request.path, request.body);
+      return getClient().put(request.path, request.body);
     case 'PATCH':
-      return helpScoutClient.patch(request.path, request.body);
+      return getClient().patch(request.path, request.body);
     case 'DELETE':
-      return helpScoutClient.delete(request.path);
+      return getClient().delete(request.path);
   }
 }
 
@@ -203,7 +203,7 @@ function statusOf(error: unknown): number | undefined {
 /** Read the conversation fresh: a merge computed from a cached copy would drop concurrent edits. */
 async function readConversation(conversationId: string): Promise<ConversationReadModel> {
   try {
-    return await helpScoutClient.get<ConversationReadModel>(
+    return await getClient().get<ConversationReadModel>(
       conversationPath(conversationId),
       undefined,
       { ttl: 0 },
@@ -506,7 +506,7 @@ export class WriteHandler {
       },
       perform: async (input) => {
         const customer = await resolveReplyCustomer(input);
-        const response = await helpScoutClient.post(
+        const response = await getClient().post(
           `${conversationPath(input.conversationId)}/reply`,
           buildReplyBody(input, true, customer),
         );
@@ -653,7 +653,7 @@ export class WriteHandler {
         });
         const merged = [...existing, ...added];
 
-        const response = await helpScoutClient.put(
+        const response = await getClient().put(
           `${conversationPath(conversationId)}/tags`,
           { tags: merged },
         );
@@ -697,7 +697,7 @@ export class WriteHandler {
         const remaining = existing.filter((tag) => !removeLower.has(tag.toLowerCase()));
         const removed = existing.filter((tag) => removeLower.has(tag.toLowerCase()));
 
-        const response = await helpScoutClient.put(
+        const response = await getClient().put(
           `${conversationPath(conversationId)}/tags`,
           { tags: remaining },
         );
@@ -763,7 +763,7 @@ export class WriteHandler {
         }
         const fields = Array.from(merged.values());
 
-        const response = await helpScoutClient.put(
+        const response = await getClient().put(
           `${conversationPath(conversationId)}/fields`,
           { fields },
         );
@@ -922,7 +922,7 @@ export class WriteHandler {
       },
       perform: async (input) => {
         const customer = await resolveReplyCustomer(input);
-        const response = await helpScoutClient.post(
+        const response = await getClient().post(
           `${conversationPath(input.conversationId)}/reply`,
           buildReplyBody(input, false, customer),
         );
