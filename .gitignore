@@ -104,4 +104,3 @@ tests/*
 !tests/
 !tests/*.ts
 *.tgz
-helpscout-navigator-skill.zip

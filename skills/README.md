@@ -23,7 +23,7 @@ This is a skill only. It does not start the MCP server; connect the server in yo
 /plugin install helpscout-navigator
 ```
 
-**claude.ai and Claude Desktop** (including Cowork sessions): download the skill ZIP from [releases](https://github.com/drewburchfield/help-scout-mcp-server/releases) and upload it under **Customize** > **Skills**.
+**claude.ai and Claude Desktop** (including Cowork sessions): go to **Customize**, click **+** > **Add marketplace from GitHub**, enter `drewburchfield/help-scout-mcp-server`, and install **helpscout-navigator**.
 
 **Any other harness**: copy `skills/helpscout-navigator/` from the repo into wherever your client loads skills from.
 

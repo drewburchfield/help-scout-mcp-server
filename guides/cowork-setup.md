@@ -38,6 +38,8 @@ If everything is connected, Claude will list your inboxes. You should see three 
 
 The same install works in Chat, so you can sanity-check there too.
 
+**Optional: add the navigator skill.** It teaches Claude which operation fits each support question. In **Customize**, click **+** > **Add marketplace from GitHub**, enter `drewburchfield/help-scout-mcp-server`, and install **helpscout-navigator**.
+
 ## Enabling Writes (Optional)
 
 A fresh install is read-only. If you want Claude to be able to act on conversations (draft replies, internal notes, tags, status changes, assignment, snooze, moving between inboxes), open the extension's settings and turn on **Enable Write Operations**, then restart Claude Desktop. None of those operations email anyone: a reply is saved as an unsent draft for a human to review in Help Scout, and notes are visible to teammates only.

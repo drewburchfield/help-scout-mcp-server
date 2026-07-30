@@ -33,6 +33,8 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 
 If the tools don't show up in a Cowork session, update the desktop app to the latest version and start a fresh session. ([Cowork walkthrough](guides/cowork-setup.md))
 
+Optional: add the **helpscout-navigator** skill so Claude picks the right operation faster. Go to **Customize**, click **+** > **Add marketplace from GitHub**, enter `drewburchfield/help-scout-mcp-server`, and install **helpscout-navigator**.
+
 ### Claude Code
 
 Register the server, then optionally add the **helpscout-navigator** skill, which teaches Claude to pick the right operation for each query.
