@@ -231,7 +231,7 @@ read_help_scout({ name: "getConversationSummary", arguments: { conversationId: "
 
 **Why it fails:** The MCP server was configured with message content redaction enabled.
 
-**Note:** This plugin defaults to `REDACT_MESSAGE_CONTENT=false` (content visible). If you see redacted content, you may be using a different MCP configuration.
+**Note:** This server defaults to `REDACT_MESSAGE_CONTENT=false` (content visible). If you see redacted content, you may be using a different MCP configuration.
 
 To replace message bodies with placeholders, set:
 ```bash

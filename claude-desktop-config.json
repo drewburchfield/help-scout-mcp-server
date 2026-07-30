@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "help-scout-mcp-server@2.0.0"
+        "help-scout-mcp-server@2.1.0"
       ],
       "env": {
         "HELPSCOUT_APP_ID": "your-app-id-here",

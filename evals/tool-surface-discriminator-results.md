@@ -6,7 +6,7 @@ This is a provisional architecture screen, not the final compatibility evaluatio
 
 ## Valid lane
 
-`gpt-5.6-sol` completed all six frozen jobs against all three candidate surfaces.
+The first evaluation model completed all six frozen jobs against all three candidate surfaces.
 
 | Candidate | Passed | Advertised tools | Advertised tokens | Average turns | Average dynamic result tokens |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -18,12 +18,12 @@ The token figures are character-based estimates using four characters per token.
 
 ## Blocked lane
 
-`claude-sonnet-5` was not evaluated. The local OpenAI-compatible proxy rejected all requests before model execution because its Claude OAuth token had expired. Direct Claude CLI access remained healthy. These cells are infrastructure-blocked, not candidate failures.
+The second evaluation model was not run in this cut for infrastructure reasons unrelated to the candidates; those cells were completed in the later production screens recorded below.
 
-The runner accepts `EVAL_MODELS`, so the blocked lane can be resumed without repeating the valid lane:
+The runner accepts `EVAL_MODELS`, so a single lane can be rerun without repeating the others:
 
 ```sh
-EVAL_MODELS=claude-sonnet-5 LOG_LEVEL=error node evals/run-tool-surface-discriminator.mjs
+EVAL_MODELS=<model> LOG_LEVEL=error node evals/run-tool-surface-discriminator.mjs
 ```
 
 ## Historical provisional cut

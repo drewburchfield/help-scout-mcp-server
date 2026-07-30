@@ -114,7 +114,8 @@ src/
 │   ├── logger.ts       # Logging utilities
 │   ├── cache.ts        # Caching layer
 │   └── helpscout-client.ts  # Help Scout API client
-└── index.ts            # Main server entry point
+├── cli.ts              # Process entry point (npm bin and MCPB extension)
+└── index.ts            # Server class and MCP wiring
 ```
 
 ## 🐛 Bug Reports

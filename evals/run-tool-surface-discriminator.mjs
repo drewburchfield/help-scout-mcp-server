@@ -9,7 +9,7 @@ import { WRITE_MODES, createProductionGatewayCandidate } from './production-gate
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENDPOINT = 'http://127.0.0.1:8317/v1/chat/completions';
-const MODELS = (process.env.EVAL_MODELS || 'gpt-5.6-sol,claude-sonnet-5')
+const MODELS = (process.env.EVAL_MODELS || 'gpt-5.6,claude-sonnet-5')
   .split(',')
   .map((model) => model.trim())
   .filter(Boolean);
