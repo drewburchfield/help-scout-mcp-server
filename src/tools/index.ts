@@ -1,5 +1,5 @@
 import { Tool, CallToolRequest, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { PaginatedResponse, helpScoutClient } from '../utils/helpscout-client.js';
+import { getClient, type PaginatedResponse } from '../utils/api.js';
 import { DocsCollectionEnvelope, helpScoutDocsClient } from '../utils/helpscout-docs-client.js';
 import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
@@ -1650,7 +1650,7 @@ export class ToolHandler {
       // The v2 API returns fixed 25-item pages and ignores size=, so `limit`
       // acts as a per-call cap here: slice below 25 and flag it, and callers
       // wanting more than one page follow nextPage.
-      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
+      const response = await getClient().get<PaginatedResponse<Conversation>>('/conversations', {
         ...baseParams,
         status: input.status,
       });
@@ -1772,7 +1772,7 @@ export class ToolHandler {
     // includeSystemActors routes to the v3 conversation endpoint, which
     // preserves the user/team/system_user person types (v2 collapses
     // system_user into user).
-    const conversation = await helpScoutClient.get<Record<string, unknown>>(
+    const conversation = await getClient().get<Record<string, unknown>>(
       input.includeSystemActors
         ? this.buildV3ApiUrl(`/conversations/${input.conversationId}`)
         : `/conversations/${input.conversationId}`,
@@ -1806,7 +1806,7 @@ export class ToolHandler {
     const input = GetConversationSummaryInputSchema.parse(args);
     
     // Get conversation details
-    const conversation = await helpScoutClient.get<Conversation>(`/conversations/${input.conversationId}`);
+    const conversation = await getClient().get<Conversation>(`/conversations/${input.conversationId}`);
     
     // Get ALL threads to find first customer message and latest staff reply.
     // The endpoint is 25/page and ignores `size`, so a single call would only
@@ -1815,7 +1815,7 @@ export class ToolHandler {
     // and an unbounded loop over a huge conversation risks rate limits and
     // client timeouts. The truncated flag tells callers when the summary was
     // computed over a partial thread set.
-    const { items: threads, truncated: threadsTruncated } = await helpScoutClient.getAllPages<Thread>(
+    const { items: threads, truncated: threadsTruncated } = await getClient().getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
       'threads',
       {},
@@ -1878,7 +1878,7 @@ export class ToolHandler {
     // includeSystemActors routes to the v3 threads endpoint, which preserves the
     // user/team/system_user person types (v2 collapses system_user into user).
     if (input.includeSystemActors) {
-      const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Record<string, unknown>>(
+      const { items: threads, totalElements, truncated } = await getClient().getAllPages<Record<string, unknown>>(
         this.buildV3ApiUrl(`/conversations/${input.conversationId}/threads`),
         'threads',
         { page: input.page },
@@ -1907,7 +1907,7 @@ export class ToolHandler {
       };
     }
 
-    const { items: threads, totalElements, truncated } = await helpScoutClient.getAllPages<Thread>(
+    const { items: threads, totalElements, truncated } = await getClient().getAllPages<Thread>(
       `/conversations/${input.conversationId}/threads`,
       'threads',
       { page: input.page },
@@ -1961,7 +1961,7 @@ export class ToolHandler {
     // "List ALL inboxes" must mean all: /mailboxes is 50/page and ignores
     // `size`, so loop pages up to `limit` instead of returning only the first 50
     // and mislabeling it as the total.
-    const { items: allInboxes, totalElements, truncated } = await helpScoutClient.getAllPages<Inbox>(
+    const { items: allInboxes, totalElements, truncated } = await getClient().getAllPages<Inbox>(
       '/mailboxes',
       'mailboxes',
       {},
@@ -2005,7 +2005,7 @@ export class ToolHandler {
 
   private async getInbox(args: unknown): Promise<CallToolResult> {
     const input = GetInboxInputSchema.parse(args);
-    const inbox = await helpScoutClient.get<Inbox>(`/mailboxes/${input.inboxId}`);
+    const inbox = await getClient().get<Inbox>(`/mailboxes/${input.inboxId}`);
 
     const payload: Record<string, unknown> = {
       inbox,
@@ -2055,7 +2055,7 @@ export class ToolHandler {
   ): Promise<Record<string, unknown>> {
     switch (part) {
       case 'fields': {
-        const response = await helpScoutClient.get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${inboxId}/fields`);
+        const response = await getClient().get<PaginatedResponse<InboxCustomField>>(`/mailboxes/${inboxId}/fields`);
         const fields = response._embedded?.fields || [];
         return {
           customFields: {
@@ -2066,7 +2066,7 @@ export class ToolHandler {
         };
       }
       case 'folders': {
-        const response = await helpScoutClient.get<PaginatedResponse<InboxFolder>>(`/mailboxes/${inboxId}/folders`);
+        const response = await getClient().get<PaginatedResponse<InboxFolder>>(`/mailboxes/${inboxId}/folders`);
         const folders = response._embedded?.folders || [];
         return {
           folders: {
@@ -2077,7 +2077,7 @@ export class ToolHandler {
         };
       }
       case 'routing': {
-        const routing = await helpScoutClient.get<InboxRouting>(`/mailboxes/${inboxId}/routing`, undefined, { ttl: 300 });
+        const routing = await getClient().get<InboxRouting>(`/mailboxes/${inboxId}/routing`, undefined, { ttl: 300 });
         return { routing };
       }
     }
@@ -2085,7 +2085,7 @@ export class ToolHandler {
 
   private async listTags(args: unknown): Promise<CallToolResult> {
     const input = ListTagsInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<Tag>>('/tags', {
+    const response = await getClient().get<PaginatedResponse<Tag>>('/tags', {
       page: input.page,
     });
 
@@ -2114,7 +2114,7 @@ export class ToolHandler {
 
   private async listCustomerProperties(args: unknown): Promise<CallToolResult> {
     ListCustomerPropertiesInputSchema.parse(args);
-    const response = await helpScoutClient.get<{
+    const response = await getClient().get<{
       _embedded?: { 'customer-properties'?: PropertyDefinition[] };
     }>('/customer-properties');
     const properties = response._embedded?.['customer-properties'] || [];
@@ -2135,7 +2135,7 @@ export class ToolHandler {
 
   private async listOrganizationProperties(args: unknown): Promise<CallToolResult> {
     ListOrganizationPropertiesInputSchema.parse(args);
-    const response = await helpScoutClient.get<{
+    const response = await getClient().get<{
       _embedded?: { 'organization-properties'?: PropertyDefinition[] };
     }>('/organizations/properties');
     const properties = response._embedded?.['organization-properties'] || [];
@@ -2156,7 +2156,7 @@ export class ToolHandler {
 
   private async getOrganizationProperty(args: unknown): Promise<CallToolResult> {
     const input = GetOrganizationPropertyInputSchema.parse(args);
-    const property = await helpScoutClient.get<PropertyDefinition>(`/organizations/properties/${input.slug}`);
+    const property = await getClient().get<PropertyDefinition>(`/organizations/properties/${input.slug}`);
 
     return {
       content: [{
@@ -2173,7 +2173,7 @@ export class ToolHandler {
 
   private async getTag(args: unknown): Promise<CallToolResult> {
     const input = GetTagInputSchema.parse(args);
-    const tag = await helpScoutClient.get<Tag>(`/tags/${input.tagId}`);
+    const tag = await getClient().get<Tag>(`/tags/${input.tagId}`);
 
     return {
       content: [{
@@ -2194,7 +2194,7 @@ export class ToolHandler {
     // does not expose. It supersedes the standard-user listing and ignores
     // includeStatuses (statuses do not apply to system actors).
     if (input.includeSystemActors) {
-      const response = await helpScoutClient.get<PaginatedResponse<SystemUser>>(
+      const response = await getClient().get<PaginatedResponse<SystemUser>>(
         this.buildV3ApiUrl('/system-users'),
         { page: input.page }
       );
@@ -2224,9 +2224,9 @@ export class ToolHandler {
     // includeStatuses additionally calls /users/status ONCE (it returns all
     // user statuses in a single call). We never fan out per user.
     const [usersResponse, statusesResult] = await Promise.allSettled([
-      helpScoutClient.get<PaginatedResponse<User>>('/users', params),
+      getClient().get<PaginatedResponse<User>>('/users', params),
       input.includeStatuses
-        ? helpScoutClient.get<PaginatedResponse<UserStatus>>('/users/status', { page: 1 })
+        ? getClient().get<PaginatedResponse<UserStatus>>('/users/status', { page: 1 })
         : Promise.resolve(null),
     ]);
 
@@ -2278,7 +2278,7 @@ export class ToolHandler {
     // returns the system actor record (v2 /users collapses these). It takes
     // precedence over includeStatus, which does not apply to system actors.
     if (input.includeSystemActors) {
-      const systemUser = await helpScoutClient.get<SystemUser>(
+      const systemUser = await getClient().get<SystemUser>(
         this.buildV3ApiUrl(`/system-users/${input.userId}`)
       );
 
@@ -2304,9 +2304,9 @@ export class ToolHandler {
     // includeStatus adds the /users/{id}/status sub-fetch. Surface a per-call
     // error rather than failing the whole call if only the status lookup fails.
     const [userResult, statusResult] = await Promise.allSettled([
-      helpScoutClient.get<User>(path),
+      getClient().get<User>(path),
       input.includeStatus
-        ? helpScoutClient.get<UserStatus>(
+        ? getClient().get<UserStatus>(
             input.userId === 'me' ? '/users/me/status' : `/users/${input.userId}/status`
           )
         : Promise.resolve(null),
@@ -2342,7 +2342,7 @@ export class ToolHandler {
 
   private async listTeams(args: unknown): Promise<CallToolResult> {
     const input = ListTeamsInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<Team>>('/teams', {
+    const response = await getClient().get<PaginatedResponse<Team>>('/teams', {
       page: input.page,
     });
     const teams = response._embedded?.teams || [];
@@ -2365,7 +2365,7 @@ export class ToolHandler {
 
   private async getTeamMembers(args: unknown): Promise<CallToolResult> {
     const input = GetTeamMembersInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<User>>(`/teams/${input.teamId}/members`, {
+    const response = await getClient().get<PaginatedResponse<User>>(`/teams/${input.teamId}/members`, {
       page: input.page,
     });
     const members = response._embedded?.users || [];
@@ -2389,7 +2389,7 @@ export class ToolHandler {
 
   private async listSavedReplies(args: unknown): Promise<CallToolResult> {
     const input = ListSavedRepliesInputSchema.parse(args);
-    const response = await helpScoutClient.get<SavedReply[] | PaginatedResponse<SavedReply>>(
+    const response = await getClient().get<SavedReply[] | PaginatedResponse<SavedReply>>(
       `/mailboxes/${input.inboxId}/saved-replies`,
       { includeChatReplies: input.includeChatReplies }
     );
@@ -2417,7 +2417,7 @@ export class ToolHandler {
 
   private async getSavedReply(args: unknown): Promise<CallToolResult> {
     const input = GetSavedReplyInputSchema.parse(args);
-    const savedReply = await helpScoutClient.get<SavedReply>(`/mailboxes/${input.inboxId}/saved-replies/${input.replyId}`);
+    const savedReply = await getClient().get<SavedReply>(`/mailboxes/${input.inboxId}/saved-replies/${input.replyId}`);
 
     return {
       content: [{
@@ -2453,7 +2453,7 @@ export class ToolHandler {
 
     // The Help Scout endpoint selects format via the Accept header.
     if (input.format === 'rfc822') {
-      const response = await helpScoutClient.getRaw<string>(endpoint, undefined, {
+      const response = await getClient().getRaw<string>(endpoint, undefined, {
         responseType: 'text',
         headers: { Accept: 'message/rfc822' },
       });
@@ -2474,7 +2474,7 @@ export class ToolHandler {
       };
     }
 
-    const originalSource = await helpScoutClient.get<Record<string, unknown>>(endpoint);
+    const originalSource = await getClient().get<Record<string, unknown>>(endpoint);
     return {
       content: [{
         type: 'text',
@@ -2491,7 +2491,7 @@ export class ToolHandler {
 
   private async getAttachment(args: unknown): Promise<CallToolResult> {
     const input = GetAttachmentInputSchema.parse(args);
-    const attachment = await helpScoutClient.get<Record<string, unknown>>(
+    const attachment = await getClient().get<Record<string, unknown>>(
       `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`,
       undefined,
       { ttl: 0 }
@@ -2516,7 +2516,7 @@ export class ToolHandler {
 
   private async downloadAttachmentFile(args: unknown): Promise<CallToolResult> {
     const input = DownloadAttachmentFileInputSchema.parse(args);
-    const response = await helpScoutClient.getRaw<Buffer>(
+    const response = await getClient().getRaw<Buffer>(
       `/conversations/${input.conversationId}/attachments/${input.attachmentId}/file`,
       undefined,
       { responseType: 'arraybuffer' }
@@ -2549,7 +2549,7 @@ export class ToolHandler {
 
   private async listWorkflows(args: unknown): Promise<CallToolResult> {
     const input = ListWorkflowsInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<Workflow>>('/workflows', {
+    const response = await getClient().get<PaginatedResponse<Workflow>>('/workflows', {
       page: input.page,
     });
     const workflows = response._embedded?.workflows || [];
@@ -2572,7 +2572,7 @@ export class ToolHandler {
 
   private async listWebhooks(args: unknown): Promise<CallToolResult> {
     const input = ListWebhooksInputSchema.parse(args);
-    const response = await helpScoutClient.get<PaginatedResponse<Webhook>>('/webhooks', {
+    const response = await getClient().get<PaginatedResponse<Webhook>>('/webhooks', {
       page: input.page,
     });
     const webhooks = response._embedded?.webhooks || [];
@@ -2595,7 +2595,7 @@ export class ToolHandler {
 
   private async getWebhook(args: unknown): Promise<CallToolResult> {
     const input = GetWebhookInputSchema.parse(args);
-    const webhook = await helpScoutClient.get<Webhook>(`/webhooks/${input.webhookId}`);
+    const webhook = await getClient().get<Webhook>(`/webhooks/${input.webhookId}`);
 
     return {
       content: [{
@@ -2610,7 +2610,7 @@ export class ToolHandler {
 
   private async getSatisfactionRating(args: unknown): Promise<CallToolResult> {
     const input = GetSatisfactionRatingInputSchema.parse(args);
-    const rating = await helpScoutClient.get<SatisfactionRating>(`/ratings/${input.ratingId}`);
+    const rating = await getClient().get<SatisfactionRating>(`/ratings/${input.ratingId}`);
 
     return {
       content: [{
@@ -2629,18 +2629,18 @@ export class ToolHandler {
     switch (input.report) {
       case 'customers-helped': {
         const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/company/customers-helped', params);
+        const report = await getClient().get<ReportResponse>('/reports/company/customers-helped', params);
         return this.formatReportResult('companyCustomersHelped', params, report);
       }
       case 'drilldown': {
         const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows', 'range', 'rangeId']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/company/drilldown', params);
+        const report = await getClient().get<ReportResponse>('/reports/company/drilldown', params);
         return this.formatReportResult('companyDrilldown', params, report);
       }
       case 'overall':
       default: {
         const params = this.buildReportQueryParams(input);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/company', params);
+        const report = await getClient().get<ReportResponse>('/reports/company', params);
         return this.formatReportResult('company', params, report);
       }
     }
@@ -2651,43 +2651,43 @@ export class ToolHandler {
     switch (input.report) {
       case 'volume-by-channel': {
         const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/volume-by-channel', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/volume-by-channel', params);
         return this.formatReportResult('conversationVolumeByChannel', params, report);
       }
       case 'busy-times': {
         const params = this.buildReportQueryParams(input);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/busy-times', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/busy-times', params);
         return this.formatReportResult('conversationBusyTimes', params, report);
       }
       case 'drilldown': {
         const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/drilldown', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/drilldown', params);
         return this.formatReportResult('conversationDrilldown', params, report);
       }
       case 'fields-drilldown': {
         const params = this.buildReportQueryParamsWithExtras(input, ['field', 'fieldid', 'page', 'rows']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/fields-drilldown', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/fields-drilldown', params);
         return this.formatReportResult('conversationFieldDrilldown', params, report);
       }
       case 'new': {
         const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/new', params);
         return this.formatReportResult('conversationNew', params, report);
       }
       case 'new-drilldown': {
         const params = this.buildReportQueryParamsWithExtras(input, ['page', 'rows']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/new-drilldown', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/new-drilldown', params);
         return this.formatReportResult('conversationNewDrilldown', params, report);
       }
       case 'received-messages': {
         const params = this.buildReportQueryParamsWithExtras(input, ['viewBy']);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations/received-messages', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations/received-messages', params);
         return this.formatReportResult('conversationReceivedMessages', params, report);
       }
       case 'overall':
       default: {
         const params = this.buildReportQueryParams(input);
-        const report = await helpScoutClient.get<ReportResponse>('/reports/conversations', params);
+        const report = await getClient().get<ReportResponse>('/reports/conversations', params);
         return this.formatReportResult('conversations', params, report);
       }
     }
@@ -2705,7 +2705,7 @@ export class ToolHandler {
       'overall': { path: '/reports/productivity', reportType: 'productivity' },
     };
     const { path, reportType } = map[input.report] ?? map.overall;
-    const report = await helpScoutClient.get<ReportResponse>(path, params);
+    const report = await getClient().get<ReportResponse>(path, params);
     return this.formatReportResult(reportType, params, report);
   }
 
@@ -2724,7 +2724,7 @@ export class ToolHandler {
       'overall': { path: '/reports/user', reportType: 'user' },
     };
     const { path, reportType } = map[input.report] ?? map.overall;
-    const report = await helpScoutClient.get<ReportResponse>(path, params);
+    const report = await getClient().get<ReportResponse>(path, params);
     return this.formatReportResult(reportType, params, report);
   }
 
@@ -2738,25 +2738,25 @@ export class ToolHandler {
         sortOrder: input.sortOrder ?? 'DESC',
         ...(input.rating ? { rating: input.rating } : {}),
       };
-      const report = await helpScoutClient.get<HappinessRatingsReport>('/reports/happiness/ratings', params);
+      const report = await getClient().get<HappinessRatingsReport>('/reports/happiness/ratings', params);
       return this.formatReportResult('happinessRatings', params, report);
     }
     const params = this.buildReportQueryParams(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/happiness', params);
+    const report = await getClient().get<ReportResponse>('/reports/happiness', params);
     return this.formatReportResult('happiness', params, report);
   }
 
   private async getChannelReport(args: unknown): Promise<CallToolResult> {
     const input = GetChannelReportInputSchemaUnion.parse(args);
     const params = this.buildReportQueryParamsWithExtras(input, ['officeHours']);
-    const report = await helpScoutClient.get<ReportResponse>(`/reports/${input.channel}`, params);
+    const report = await getClient().get<ReportResponse>(`/reports/${input.channel}`, params);
     return this.formatReportResult(input.channel, params, report);
   }
 
   private async getDocsReport(args: unknown): Promise<CallToolResult> {
     const input = GetDocsReportInputSchema.parse(args);
     const params = this.buildReportQueryParamsWithExtras(input);
-    const report = await helpScoutClient.get<ReportResponse>('/reports/docs', params);
+    const report = await getClient().get<ReportResponse>('/reports/docs', params);
 
     return this.formatReportResult('docs', params, report);
   }
@@ -3133,7 +3133,7 @@ export class ToolHandler {
   }> {
     const results = await Promise.allSettled(
       statuses.map(status =>
-        helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', {
+        getClient().get<PaginatedResponse<Conversation>>('/conversations', {
           ...baseParams,
           status,
         })
@@ -3294,8 +3294,8 @@ export class ToolHandler {
 
     // Fetch customer profile and address in parallel
     const [customerResponse, addressResponse] = await Promise.allSettled([
-      helpScoutClient.get<Customer>(`/customers/${input.customerId}`),
-      helpScoutClient.get<CustomerAddress>(`/customers/${input.customerId}/address`),
+      getClient().get<Customer>(`/customers/${input.customerId}`),
+      getClient().get<CustomerAddress>(`/customers/${input.customerId}/address`),
     ]);
 
     if (customerResponse.status === 'rejected') {
@@ -3394,7 +3394,7 @@ export class ToolHandler {
       modifiedSince: this.normalizeApiDateParam(input.modifiedSince),
     };
 
-    const response = await helpScoutClient.get<PaginatedResponse<Customer>>('/customers', params);
+    const response = await getClient().get<PaginatedResponse<Customer>>('/customers', params);
     const customers = response._embedded?.customers || [];
 
     // Slim view: strip _links and _embedded to keep response concise for browsing.
@@ -3446,7 +3446,7 @@ export class ToolHandler {
     nextCursor?: string;
   }> {
     const v3Url = this.buildV3ApiUrl('/customers');
-    const v3Response = await helpScoutClient.get<{
+    const v3Response = await getClient().get<{
       _embedded: { customers: Customer[] };
       _links?: { self?: { href: string }; first?: { href: string }; next?: { href: string } };
     }>(v3Url, params);
@@ -3511,12 +3511,12 @@ export class ToolHandler {
 
     // Fetch all 6 sub-resources in parallel via dedicated endpoints
     const [emailsRes, phonesRes, chatsRes, socialRes, websitesRes, addressRes] = await Promise.allSettled([
-      helpScoutClient.get<{ _embedded?: { emails?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/emails`),
-      helpScoutClient.get<{ _embedded?: { phones?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/phones`),
-      helpScoutClient.get<{ _embedded?: { chats?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/chats`),
-      helpScoutClient.get<{ _embedded?: Record<string, Array<{ id: number; value: string; type: string }>> }>(`/customers/${cid}/social-profiles`),
-      helpScoutClient.get<{ _embedded?: { websites?: Array<{ id: number; value: string }> } }>(`/customers/${cid}/websites`),
-      helpScoutClient.get<CustomerAddress>(`/customers/${cid}/address`),
+      getClient().get<{ _embedded?: { emails?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/emails`),
+      getClient().get<{ _embedded?: { phones?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/phones`),
+      getClient().get<{ _embedded?: { chats?: Array<{ id: number; value: string; type: string }> } }>(`/customers/${cid}/chats`),
+      getClient().get<{ _embedded?: Record<string, Array<{ id: number; value: string; type: string }>> }>(`/customers/${cid}/social-profiles`),
+      getClient().get<{ _embedded?: { websites?: Array<{ id: number; value: string }> } }>(`/customers/${cid}/websites`),
+      getClient().get<CustomerAddress>(`/customers/${cid}/address`),
     ]);
 
     // Helper: extract data or note the error
@@ -3591,7 +3591,7 @@ export class ToolHandler {
     if (input.includeCounts) params.includeCounts = true;
     if (input.includeProperties) params.includeProperties = true;
 
-    const org = await helpScoutClient.get<Organization>(
+    const org = await getClient().get<Organization>(
       `/organizations/${input.organizationId}`,
       params
     );
@@ -3613,7 +3613,7 @@ export class ToolHandler {
     const input = ListOrganizationsInputSchema.parse(args);
 
     // v2 API: page size is fixed at 50
-    const response = await helpScoutClient.get<PaginatedResponse<Organization>>('/organizations', {
+    const response = await getClient().get<PaginatedResponse<Organization>>('/organizations', {
       page: input.page,
       sort: `${input.sortField},${input.sortOrder}`,
     });
@@ -3639,7 +3639,7 @@ export class ToolHandler {
     const input = GetOrganizationMembersInputSchema.parse(args);
 
     // v2 API: page size is fixed at 50
-    const response = await helpScoutClient.get<PaginatedResponse<Customer>>(
+    const response = await getClient().get<PaginatedResponse<Customer>>(
       `/organizations/${input.organizationId}/customers`,
       { page: input.page }
     );
@@ -3665,7 +3665,7 @@ export class ToolHandler {
     const input = GetOrganizationConversationsInputSchema.parse(args);
 
     // v2 API: page size is fixed at 50
-    const response = await helpScoutClient.get<PaginatedResponse<Conversation>>(
+    const response = await getClient().get<PaginatedResponse<Conversation>>(
       `/organizations/${input.organizationId}/conversations`,
       { page: input.page }
     );

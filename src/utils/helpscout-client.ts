@@ -1,6 +1,15 @@
-import axios, { AxiosInstance, AxiosResponse, AxiosError, ResponseType } from 'axios';
+import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
+import {
+  HelpScoutWriteError,
+  setDefaultHelpScoutApi,
+  type HelpScoutApi,
+  type PaginatedResponse,
+  type RawGetOptions,
+  type WriteMethod,
+  type WriteResponse,
+} from './api.js';
 
 interface RequestMetadata {
   requestId: string;
@@ -12,11 +21,6 @@ interface RetryConfig {
   retryDelay: number;
   maxRetryDelay: number;
   retryCondition?: (error: AxiosError) => boolean;
-}
-
-interface RawGetOptions {
-  responseType?: ResponseType;
-  headers?: Record<string, string>;
 }
 
 declare module 'axios' {
@@ -52,56 +56,14 @@ const DEFAULT_POOL_CONFIG: ConnectionPoolConfig = {
   keepAliveMsecs: 1000,  // Keep-alive probe interval
 };
 
-export type WriteMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+// The transport-neutral write and pagination types now live in api.ts so the
+// tool surface can depend on them without depending on axios. Re-exported here
+// because this module was their home and existing importers still resolve them
+// from it.
+export { HelpScoutWriteError } from './api.js';
+export type { PaginatedResponse, RawGetOptions, WriteMethod, WriteResponse } from './api.js';
 
-/**
- * Outcome of a non-idempotent request. Mailbox v2 answers most mutations with
- * `204 No Content`, so the status and headers carry more than the body does:
- * `Resource-Id` is the only place a newly created thread ID appears.
- */
-export interface WriteResponse<T = unknown> {
-  status: number;
-  data: T;
-  headers: Record<string, string>;
-}
-
-/**
- * Failure of a non-idempotent request, carrying the upstream status so a write
- * handler can map it to model-correctable guidance.
- *
- * Writes deliberately do not reuse `transformError`: that path flattens 403 and
- * 404 into prose without a status code, and its suggestions promise automatic
- * retries that writes never perform.
- */
-export class HelpScoutWriteError extends Error {
-  constructor(
-    message: string,
-    readonly status: number | undefined,
-    readonly body: unknown,
-    readonly method: WriteMethod,
-    readonly path: string,
-    readonly requestId: string,
-  ) {
-    super(message);
-    this.name = 'HelpScoutWriteError';
-  }
-}
-
-export interface PaginatedResponse<T> {
-  _embedded: { [key: string]: T[] };
-  _links?: {
-    next?: { href: string };
-    prev?: { href: string };
-  };
-  page?: {
-    size: number;
-    totalElements: number;
-    totalPages: number;
-    number: number;
-  };
-}
-
-export class HelpScoutClient {
+export class HelpScoutClient implements HelpScoutApi {
   private client: AxiosInstance;
   private accessToken: string | null = null;
   private tokenExpiresAt: number = 0;
@@ -823,3 +785,8 @@ export class HelpScoutClient {
 
 // Create client instance with connection pool config from environment
 export const helpScoutClient = new HelpScoutClient(config.connectionPool);
+
+// The stdio server runs every request as this one app-wide client, so loading
+// this module is what makes getClient() resolve. A per-user deployment never
+// registers a default and scopes its clients with withHelpScoutApi() instead.
+setDefaultHelpScoutApi(helpScoutClient);

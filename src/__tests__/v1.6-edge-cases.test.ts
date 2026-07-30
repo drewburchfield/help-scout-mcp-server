@@ -167,6 +167,9 @@ describe('v1.6.0 Edge Cases', () => {
 
       // Fresh import
       jest.resetModules();
+      // The tool layer no longer loads the axios client; import it so the
+      // fresh module registry registers the default behind getClient().
+      await import('../utils/helpscout-client.js');
       const toolsModule = await import('../tools/index.js');
       toolHandler = toolsModule.toolHandler;
     });
@@ -441,6 +444,9 @@ describe('v1.6.0 Edge Cases', () => {
         });
 
       jest.resetModules();
+      // The tool layer no longer loads the axios client; import it so the
+      // fresh module registry registers the default behind getClient().
+      await import('../utils/helpscout-client.js');
       const toolsModule = await import('../tools/index.js');
       toolHandler = toolsModule.toolHandler;
     });
@@ -537,6 +543,9 @@ describe('v1.6.0 Edge Cases', () => {
         });
 
       jest.resetModules();
+      // The tool layer no longer loads the axios client; import it so the
+      // fresh module registry registers the default behind getClient().
+      await import('../utils/helpscout-client.js');
       const toolsModule = await import('../tools/index.js');
       toolHandler = toolsModule.toolHandler;
     });

@@ -1,5 +1,5 @@
 import { TextResourceContents, Resource } from '@modelcontextprotocol/sdk/types.js';
-import { helpScoutClient, PaginatedResponse } from '../utils/helpscout-client.js';
+import { getClient, type PaginatedResponse } from '../utils/api.js';
 import { Inbox, Conversation, Thread, ServerTime } from '../schema/types.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
@@ -56,7 +56,7 @@ export class ResourceHandler {
 
   private async getInboxesResource(uri: string, params: Record<string, string>): Promise<TextResourceContents> {
     try {
-      const response = await helpScoutClient.get<PaginatedResponse<Inbox>>('/mailboxes', {
+      const response = await getClient().get<PaginatedResponse<Inbox>>('/mailboxes', {
         page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
         size: parseResourceIntegerParam(params, 'size', 50, 1, 50),
       });
@@ -90,7 +90,7 @@ export class ResourceHandler {
       if (params.tag) queryParams.tag = params.tag;
       if (params.modifiedSince) queryParams.modifiedSince = params.modifiedSince;
 
-      const response = await helpScoutClient.get<PaginatedResponse<Conversation>>('/conversations', queryParams);
+      const response = await getClient().get<PaginatedResponse<Conversation>>('/conversations', queryParams);
 
       const conversations = response._embedded?.conversations || [];
 
@@ -119,7 +119,7 @@ export class ResourceHandler {
     }
 
     try {
-      const response = await helpScoutClient.get<PaginatedResponse<Thread>>(`/conversations/${conversationId}/threads`, {
+      const response = await getClient().get<PaginatedResponse<Thread>>(`/conversations/${conversationId}/threads`, {
         page: parseResourceIntegerParam(params, 'page', 1, 1, 10000),
         size: parseResourceIntegerParam(params, 'size', 50, 1, 50),
       });
