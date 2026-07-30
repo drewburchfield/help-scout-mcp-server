@@ -73,4 +73,23 @@ describe('CLI entrypoint', () => {
     expect(isDirectCliInvocation(cliPath)).toBe(true);
     expect(isDirectCliInvocation('/tmp/not-this-command')).toBe(false);
   });
+
+  it('should detect the MCPB extension layout as direct CLI invocation', () => {
+    // The packed extension runs this file from build/server/cli.js; missing
+    // this layout shipped a .mcpb whose server imported, did nothing, and
+    // exited 0, so Claude Desktop reported "Unable to connect".
+    expect(isDirectCliInvocation('/Applications/whatever/extension/build/server/cli.js')).toBe(true);
+  });
+
+  it('should detect direct invocation through a symlinked bin shim', () => {
+    const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'cli-guard-'));
+    const linkPath = path.join(tmpDir, 'some-alias');
+    fs.symlinkSync(path.join(process.cwd(), 'src/cli.ts'), linkPath);
+
+    try {
+      expect(isDirectCliInvocation(linkPath)).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

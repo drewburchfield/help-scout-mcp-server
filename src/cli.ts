@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'fs';
 import path from 'path';
 import { main } from './index.js';
 import { logger } from './utils/logger.js';
@@ -24,7 +25,22 @@ export function isDirectCliInvocation(
     return true;
   }
 
-  return normalizedInvokedPath.endsWith('/dist/cli.js') || normalizedInvokedPath.endsWith('/src/cli.ts');
+  // Follow symlinks (npm bin shims) before matching layouts; nonexistent
+  // paths keep their literal form.
+  let resolvedPath = normalizedInvokedPath;
+  try {
+    resolvedPath = fs.realpathSync(invokedPath).replace(/\\/g, '/');
+  } catch {
+    // keep the unresolved path
+  }
+
+  // The MCPB extension repacks this file to build/server/cli.js; missing that
+  // layout here made the packed extension import, do nothing, and exit 0.
+  return (
+    resolvedPath.endsWith('/dist/cli.js') ||
+    resolvedPath.endsWith('/src/cli.ts') ||
+    resolvedPath.endsWith('/build/server/cli.js')
+  );
 }
 
 if (isDirectCliInvocation()) {
