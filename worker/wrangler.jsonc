@@ -1,0 +1,45 @@
+{
+  // Template for self-hosters. Copy this, fill in the KV id and your Help Scout
+  // app details, set the three secrets (see README), then `wrangler deploy`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "helpscout-mcp-oauth",
+  "main": "src/index.ts",
+
+  // process.env is populated from `vars` (and secrets) under nodejs_compat from
+  // this compatibility date on, which the shared config module relies on. Do not
+  // lower it below 2025-04-01 or that population stops.
+  "compatibility_date": "2025-05-01",
+
+  // Required: the shared modules use node:async_hooks (AsyncLocalStorage) for the
+  // request-scoped Help Scout client, and dotenv is bundled (guarded off at
+  // runtime under workerd). Outbound calls use the global fetch, not node http.
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The McpAgent is a Durable Object. `McpAgent.serve("/mcp")` looks up this
+  // binding by the default name MCP_OBJECT.
+  "durable_objects": {
+    "bindings": [{ "class_name": "HelpScoutMCP", "name": "MCP_OBJECT" }]
+  },
+
+  // McpAgent stores per-session state in SQLite, so the class ships as a
+  // new_sqlite_classes migration.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HelpScoutMCP"] }],
+
+  // workers-oauth-provider stores hashed client secrets and AES-GCM-encrypted
+  // grant props (which hold the per-user Help Scout tokens) here. Create the
+  // namespace with `wrangler kv namespace create OAUTH_KV` and paste the id.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "<REPLACE_WITH_KV_ID>" }],
+
+  // Non-secret configuration. Secrets (HELPSCOUT_CLIENT_ID, HELPSCOUT_CLIENT_SECRET,
+  // COOKIE_ENCRYPTION_KEY) are set with `wrangler secret put` and never live here.
+  "vars": {
+    "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",
+    "HELPSCOUT_TOKEN_URL": "https://api.helpscout.net/v2/oauth2/token",
+    "HELPSCOUT_AUTHORIZE_URL": "https://secure.helpscout.net/authentication/authorizeClientApplication",
+    // Opt-in write surface. Both default off; flip to "true" to enable.
+    "HELPSCOUT_ENABLE_WRITES": "false",
+    "HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES": "false"
+  },
+
+  "observability": { "enabled": true }
+}

@@ -16,6 +16,7 @@ TEST_VERSION=$(grep 'version:' src/__tests__/index.test.ts | sed "s/.*version: *
 MCP_VERSION=$(grep '"version"' mcp.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 SERVER_VERSION=$(grep '"version"' server.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 MANIFEST_VERSION=$(grep '"version"' helpscout-mcp-extension/manifest.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+WORKER_VERSION=$(grep 'SERVER_VERSION' worker/src/mcp-agent.ts | head -1 | sed "s/.*SERVER_VERSION = '\([^']*\)'.*/\1/")
 # README and the Cowork guide pin the npm version (npx examples) and the
 # Docker tag; every occurrence must agree before we treat it as one value.
 README_PIN_COUNT=$(grep -oh 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md guides/cowork-setup.md claude-desktop-config.json | sed 's/.*[@:]//' | sort -u | wc -l | tr -d ' ')
@@ -41,6 +42,7 @@ echo "🧪 Test file:        $TEST_VERSION"
 echo "🔌 mcp.json:         $MCP_VERSION"
 echo "🗂  server.json:      $SERVER_VERSION"
 echo "📦 MCPB manifest:    $MANIFEST_VERSION"
+echo "☁️  Worker agent:     $WORKER_VERSION"
 echo "📖 README pins:      ${README_PIN:-INCONSISTENT}"
 
 PARSE_OK=true
@@ -51,6 +53,7 @@ require_version "src/__tests__/index.test.ts" "$TEST_VERSION" || PARSE_OK=false
 require_version "mcp.json" "$MCP_VERSION" || PARSE_OK=false
 require_version "server.json" "$SERVER_VERSION" || PARSE_OK=false
 require_version "helpscout-mcp-extension/manifest.json" "$MANIFEST_VERSION" || PARSE_OK=false
+require_version "worker/src/mcp-agent.ts" "$WORKER_VERSION" || PARSE_OK=false
 require_version "README/config pins (all occurrences must match)" "$README_PIN" || PARSE_OK=false
 
 if [ "$PARSE_OK" = false ]; then
@@ -68,6 +71,7 @@ SOURCES=(
   "mcp.json|$MCP_VERSION"
   "server.json|$SERVER_VERSION"
   "helpscout-mcp-extension/manifest.json|$MANIFEST_VERSION"
+  "worker/src/mcp-agent.ts|$WORKER_VERSION"
   "README.md + guides/cowork-setup.md + claude-desktop-config.json install pins|$README_PIN"
 )
 CONSISTENT=true

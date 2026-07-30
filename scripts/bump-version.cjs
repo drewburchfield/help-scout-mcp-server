@@ -65,6 +65,16 @@ function updateSourceCode(newVersion) {
   
   fs.writeFileSync(indexPath, indexContent);
   log(`Updated src/index.ts version: ${newVersion}`);
+
+  // The worker advertises the same server identity from its own module
+  const agentPath = path.join(__dirname, '..', 'worker', 'src', 'mcp-agent.ts');
+  let agentContent = fs.readFileSync(agentPath, 'utf8');
+  agentContent = agentContent.replace(
+    /const SERVER_VERSION = '[^']*'/,
+    `const SERVER_VERSION = '${newVersion}'`
+  );
+  fs.writeFileSync(agentPath, agentContent);
+  log(`Updated worker/src/mcp-agent.ts version: ${newVersion}`);
 }
 
 function updateMcpJson(newVersion) {
@@ -110,7 +120,7 @@ function updateMcpbManifest(newVersion) {
 function createCommit(oldVersion, newVersion, bumpType) {
   try {
     // Stage the changes
-    execSync('git add package.json Dockerfile src/index.ts mcp.json server.json helpscout-mcp-extension/manifest.json');
+    execSync('git add package.json Dockerfile src/index.ts worker/src/mcp-agent.ts mcp.json server.json helpscout-mcp-extension/manifest.json');
     
     // Create commit
     const commitMessage = `chore: bump version ${oldVersion} → ${newVersion} (${bumpType})
