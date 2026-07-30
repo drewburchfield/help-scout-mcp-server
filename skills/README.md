@@ -25,7 +25,7 @@ This is a skill only. It does not start the MCP server; connect the server in yo
 
 **claude.ai and Claude Desktop** (including Cowork sessions): download the skill ZIP from [releases](https://github.com/drewburchfield/help-scout-mcp-server/releases) and upload it under **Customize** > **Skills**.
 
-**Any other harness**: copy `skills/helpscout-navigator/` from this directory into wherever your client loads skills from.
+**Any other harness**: copy `skills/helpscout-navigator/` from the repo into wherever your client loads skills from.
 
 ## Requirements
 
