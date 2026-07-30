@@ -17,6 +17,7 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 - **Search and retrieve Docs articles** from the separate Help Scout Docs API
 - **Pull Help Scout reports and metadata** for company, conversations, Docs, channels, productivity, happiness, users, teams, system users, statuses, routing, and webhooks
 - **Monitor inbox activity** across multiple inboxes with a single query
+- **Take action with opt-in writes**: draft replies, internal notes, tags, status, assignment, snooze, and more, all off by default
 - **Reduce message payloads** with optional message content redaction and scoped inbox access
 
 ## Quick Start
@@ -58,7 +59,7 @@ Add to your MCP client's config file (e.g., `claude_desktop_config.json`, `.curs
   "mcpServers": {
     "helpscout": {
       "command": "npx",
-      "args": ["help-scout-mcp-server@2.0.0"],
+      "args": ["help-scout-mcp-server@2.1.0"],
       "env": {
         "HELPSCOUT_APP_ID": "your-app-id",
         "HELPSCOUT_APP_SECRET": "your-app-secret",
@@ -75,7 +76,7 @@ Add to your MCP client's config file (e.g., `claude_desktop_config.json`, `.curs
 docker run -e HELPSCOUT_APP_ID="your-app-id" \
   -e HELPSCOUT_APP_SECRET="your-app-secret" \
   -e HELPSCOUT_DOCS_API_KEY="optional-docs-api-key" \
-  drewburchfield/help-scout-mcp-server:2.0.0
+  drewburchfield/help-scout-mcp-server:2.1.0
 ```
 
 ## Getting Your API Credentials
@@ -225,7 +226,7 @@ curl -X POST https://api.helpscout.net/v2/oauth2/token \
 **Need more detail?** Enable debug logging:
 
 ```bash
-LOG_LEVEL=debug npx help-scout-mcp-server@2.0.0
+LOG_LEVEL=debug npx help-scout-mcp-server@2.1.0
 ```
 
 ## Development

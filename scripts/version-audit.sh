@@ -16,6 +16,13 @@ MCP_VERSION=$(grep '"version"' mcp.json | head -1 | sed 's/.*"version": *"\([^"]
 SERVER_VERSION=$(grep '"version"' server.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 MANIFEST_VERSION=$(grep '"version"' helpscout-mcp-extension/manifest.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 PLUGIN_PIN=$(grep -o 'help-scout-mcp-server@[0-9.]*' plugins/helpscout-navigator/.mcp.json | head -1 | cut -d@ -f2)
+# README pins the npm version (npx examples) and the Docker tag; every
+# occurrence must agree before we treat it as one value.
+README_PIN_COUNT=$(grep -o 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md | sed 's/.*[@:]//' | sort -u | wc -l | tr -d ' ')
+README_PIN=$(grep -o 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md | sed 's/.*[@:]//' | sort -u | head -1)
+if [ "$README_PIN_COUNT" != "1" ]; then
+  README_PIN=""
+fi
 
 require_version() {
   local source="$1"
@@ -35,6 +42,7 @@ echo "🔌 mcp.json:         $MCP_VERSION"
 echo "🗂  server.json:      $SERVER_VERSION"
 echo "📦 MCPB manifest:    $MANIFEST_VERSION"
 echo "🧩 Plugin npx pin:   $PLUGIN_PIN"
+echo "📖 README pins:      ${README_PIN:-INCONSISTENT}"
 
 PARSE_OK=true
 require_version "package.json" "$PKG_VERSION" || PARSE_OK=false
@@ -45,6 +53,7 @@ require_version "mcp.json" "$MCP_VERSION" || PARSE_OK=false
 require_version "server.json" "$SERVER_VERSION" || PARSE_OK=false
 require_version "helpscout-mcp-extension/manifest.json" "$MANIFEST_VERSION" || PARSE_OK=false
 require_version "plugins/helpscout-navigator/.mcp.json pin" "$PLUGIN_PIN" || PARSE_OK=false
+require_version "README.md pins (all occurrences must match)" "$README_PIN" || PARSE_OK=false
 
 if [ "$PARSE_OK" = false ]; then
   echo ""
@@ -53,7 +62,7 @@ if [ "$PARSE_OK" = false ]; then
 fi
 
 # Check for consistency
-ALL_VERSIONS=("$PKG_VERSION" "$SRC_VERSION" "$DOCKER_VERSION" "$TEST_VERSION" "$MCP_VERSION" "$SERVER_VERSION" "$MANIFEST_VERSION" "$PLUGIN_PIN")
+ALL_VERSIONS=("$PKG_VERSION" "$SRC_VERSION" "$DOCKER_VERSION" "$TEST_VERSION" "$MCP_VERSION" "$SERVER_VERSION" "$MANIFEST_VERSION" "$PLUGIN_PIN" "$README_PIN")
 FIRST_VERSION=${ALL_VERSIONS[0]}
 CONSISTENT=true
 
@@ -85,6 +94,10 @@ else
   
   if [ "$TEST_VERSION" != "$PKG_VERSION" ]; then
     echo "  - src/__tests__/index.test.ts (currently: $TEST_VERSION, should be: $PKG_VERSION)"
+  fi
+
+  if [ "$README_PIN" != "$PKG_VERSION" ]; then
+    echo "  - README.md install pins (currently: ${README_PIN:-inconsistent}, should be: $PKG_VERSION)"
   fi
   
   echo ""
