@@ -7,81 +7,23 @@ description: Use when searching HelpScout tickets, customers, or organizations. 
 
 Guide for correctly using the Help Scout MCP gateway. Prevents common mistakes and ensures complete search results.
 
-## First Step: Diagnose Setup
+## First Step: Check the Tools Are There
 
-Follow these steps IN ORDER. Do not skip ahead.
+Look for these three tools among your available tools (clients usually prefix them with the server name, e.g. `mcp__helpscout__search_help_scout`):
 
----
+- `search_help_scout`
+- `describe_help_scout`
+- `read_help_scout`
 
-### Step 1: Check if MCP Tools are Available
+**If they are available:** ✅ Skip to "Critical Rules". You're ready to go.
 
-Look for these three tools in your available tools:
-- `mcp__helpscout__search_help_scout`
-- `mcp__helpscout__describe_help_scout`
-- `mcp__helpscout__read_help_scout`
+**If they are NOT available**, the Help Scout MCP server is not connected in this client. Tell the user, and point them at the setup for their client (see the [server README](https://github.com/drewburchfield/help-scout-mcp-server#quick-start)):
 
-**If tools ARE available:** ✅ Skip to "Critical Rules" section. You're ready to go.
+- **Claude Desktop / claude.ai (including Cowork):** install the Desktop Extension (`.mcpb` from releases), enter the App ID and App Secret in its settings, restart the app.
+- **Claude Code and other CLI clients:** register the server (for example `claude mcp add helpscout --env HELPSCOUT_APP_ID=... --env HELPSCOUT_APP_SECRET=... -- npx -y help-scout-mcp-server`). Credentials come from the client's process environment, so after setting them, fully restart the client from a fresh shell; a client started before the variables existed never sees them.
+- **Credentials** come from Help Scout: profile icon > **My Apps** > **Create Private App**, then copy the App ID and App Secret.
 
-**If tools are NOT available:** Continue to Step 2.
-
----
-
-### Step 2: Check if Credentials are Set
-
-Run this command:
-```bash
-echo "HELPSCOUT_APP_ID: ${HELPSCOUT_APP_ID:+[SET]}" && echo "HELPSCOUT_APP_SECRET: ${HELPSCOUT_APP_SECRET:+[SET]}"
-```
-
-**If both show `[SET]`:** Credentials exist but MCP didn't start. Go to Step 4.
-
-**If either is blank:** Credentials are missing. Go to Step 3.
-
----
-
-### Step 3: Set Up Credentials
-
-Tell the user:
-
-> **HelpScout credentials are not configured.**
->
-> **Get your credentials:**
-> 1. Go to HelpScout → Your Profile → My Apps
-> 2. Create a new app (or use existing)
-> 3. Copy the **App ID** and **App Secret**
->
-> **Add to your shell profile** (`~/.zshrc` or `~/.bashrc`):
-> ```bash
-> export HELPSCOUT_APP_ID="your-app-id-here"
-> export HELPSCOUT_APP_SECRET="your-app-secret-here"
-> ```
->
-> **Then go to Step 4.**
-
----
-
-### Step 4: Restart Correctly (IMPORTANT)
-
-⚠️ **This is where most people get stuck.**
-
-The MCP server inherits environment variables from Claude Code's process. If Claude Code was started before the credentials were set, it won't have them.
-
-Tell the user:
-
-> **You must restart BOTH your terminal AND Claude Code:**
->
-> 1. **Quit Claude Code completely** (not just close the window)
-> 2. **Close your terminal completely** (not just the tab)
-> 3. **Open a new terminal** (this loads your updated `.zshrc`)
-> 4. **Start Claude Code from this new terminal**
->
-> ```bash
-> claude
-> ```
->
-> The Help Scout MCP server will now start with the correct credentials.
-
-**Do not proceed with HelpScout operations until the MCP tools are available.**
+**Do not proceed with HelpScout operations until the tools are available.** If the tools are present but every call fails with an authentication error, the credentials are wrong; re-check them in the client's server config.
 
 ---
 

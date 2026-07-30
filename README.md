@@ -35,14 +35,21 @@ If the tools don't show up in a Cowork session, update the desktop app to the la
 
 ### Claude Code
 
-Claude Code gets the **helpscout-navigator** plugin, which auto-starts the MCP server and adds **navigation skills** that teach Claude to pick the right operation for each query.
+Register the server, then optionally add the **helpscout-navigator** skill, which teaches Claude to pick the right operation for each query.
 
-1. Run `/plugin` in Claude Code to open the marketplace
-2. Add the marketplace `drewburchfield/help-scout-mcp-server`, then install **helpscout-navigator**
-3. Set `HELPSCOUT_APP_ID` and `HELPSCOUT_APP_SECRET` as environment variables
-4. Restart Claude Code
+```bash
+claude mcp add helpscout \
+  --env HELPSCOUT_APP_ID=your-app-id \
+  --env HELPSCOUT_APP_SECRET=your-app-secret \
+  -- npx -y help-scout-mcp-server
+```
 
-> Other install methods give you the tools; the plugin also teaches the AI how to use them well.
+Then, for the navigation skill:
+
+1. Run `/plugin marketplace add drewburchfield/help-scout-mcp-server`
+2. Run `/plugin install helpscout-navigator`
+
+> The server alone gives you the tools; the skill also teaches the AI how to use them well.
 
 ### For Cursor, VS Code, and Other MCP Clients
 

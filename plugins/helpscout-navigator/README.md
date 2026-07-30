@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://ghrb.waren.build/banner?header=helpscout-navigator%20![helpscout]&subheader=HelpScout%20ticket%20search%20with%20bundled%20MCP%20server&bg=0a1628&secondaryBg=1e3a5f&color=e8f0fe&subheaderColor=7eb8da&headerFont=Inter&subheaderFont=Inter&support=false" alt="helpscout-navigator" width="100%">
+<img src="https://ghrb.waren.build/banner?header=helpscout-navigator%20![helpscout]&subheader=Navigation%20skill%20for%20the%20Help%20Scout%20MCP%20server&bg=0a1628&secondaryBg=1e3a5f&color=e8f0fe&subheaderColor=7eb8da&headerFont=Inter&subheaderFont=Inter&support=false" alt="helpscout-navigator" width="100%">
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin, installable from the [help-scout-mcp-server](https://github.com/drewburchfield/help-scout-mcp-server) marketplace. Using the Claude desktop app (Chat or Cowork)? Install the [Desktop Extension](https://github.com/drewburchfield/help-scout-mcp-server/releases) instead.
+An [Agent Skill](https://code.claude.com/docs/en/skills) for the [Help Scout MCP server](https://github.com/drewburchfield/help-scout-mcp-server). Works in any harness that supports skills and connects to the server.
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -10,29 +10,29 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin, installa
 
 ## What it does
 
-Guides you to the right Help Scout MCP tool for each support investigation task. Includes a decision tree for tool selection, correct sequencing when inbox names need IDs, prevention of the active-only search trap, and references for the 55 read operations behind the three-tool gateway. The MCP server auto-starts when the plugin is enabled, read-only unless you enable writes.
+Guides the model to the right Help Scout MCP operation for each support investigation task: a decision tree for tool selection, correct sequencing when inbox names need IDs, prevention of the active-only search trap, and references for the read and write surface behind the gateway tools.
 
-## Features
-
-- Decision tree for choosing the right search tool
-- Correct sequencing when inbox names need IDs
-- Prevents the "active-only" search trap
-- Parameter references for the Help Scout read and write tool surface
-- Draft-first guidance for the opt-in write surface, off unless `HELPSCOUT_ENABLE_WRITES=true`
-- Bundled MCP server pinned to `help-scout-mcp-server@2.1.0`
-
-## Requirements
-
-- `HELPSCOUT_APP_ID` environment variable
-- `HELPSCOUT_APP_SECRET` environment variable
-- Optional: `HELPSCOUT_DOCS_API_KEY` for Help Scout Docs tools
-- Optional: `HELPSCOUT_ENABLE_WRITES=true` to add the conversation write surface, and `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true` to allow replies that email the customer
+This is a skill only. It does not start the MCP server; connect the server in your client first.
 
 ## Install
 
+**Claude Code** (via the plugin marketplace):
+
 ```
-claude plugins install helpscout-navigator@not-my-job
+/plugin marketplace add drewburchfield/help-scout-mcp-server
+/plugin install helpscout-navigator
 ```
+
+**claude.ai and Claude Desktop** (including Cowork sessions): download the skill ZIP from [releases](https://github.com/drewburchfield/help-scout-mcp-server/releases) and upload it under **Customize** > **Skills**.
+
+**Any other harness**: copy `skills/helpscout-navigator/` from this directory into wherever your client loads skills from.
+
+## Requirements
+
+- The [Help Scout MCP server](https://github.com/drewburchfield/help-scout-mcp-server) connected in your client (Desktop Extension, `npx`, Docker, or any MCP config)
+- `HELPSCOUT_APP_ID` and `HELPSCOUT_APP_SECRET` on that server
+- Optional: `HELPSCOUT_DOCS_API_KEY` for Help Scout Docs operations
+- Optional: `HELPSCOUT_ENABLE_WRITES=true` for the conversation write surface, and `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES=true` to allow replies that email the customer
 
 ## License
 

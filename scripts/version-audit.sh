@@ -7,7 +7,8 @@ echo "🔍 Version Consistency Audit"
 echo "=========================="
 
 # Extract versions from every file the bump script writes, plus the
-# hand-maintained plugin pins that must move at publish time.
+# hand-maintained doc pins that must move at publish time. The navigator
+# skill is versioned independently and bundles no server, so it has no pin.
 PKG_VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 SRC_VERSION=$(grep 'version:' src/index.ts | sed "s/.*version: *['\"]\\([^'\"]*\\)['\"].*/\\1/")
 DOCKER_VERSION=$(grep 'version=' Dockerfile | sed 's/.*version="\([^"]*\)".*/\1/')
@@ -15,7 +16,6 @@ TEST_VERSION=$(grep 'version:' src/__tests__/index.test.ts | sed "s/.*version: *
 MCP_VERSION=$(grep '"version"' mcp.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 SERVER_VERSION=$(grep '"version"' server.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
 MANIFEST_VERSION=$(grep '"version"' helpscout-mcp-extension/manifest.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
-PLUGIN_PIN=$(grep -o 'help-scout-mcp-server@[0-9.]*' plugins/helpscout-navigator/.mcp.json | head -1 | cut -d@ -f2)
 # README and the Cowork guide pin the npm version (npx examples) and the
 # Docker tag; every occurrence must agree before we treat it as one value.
 README_PIN_COUNT=$(grep -oh 'help-scout-mcp-server[@:][0-9][0-9.]*' README.md guides/cowork-setup.md | sed 's/.*[@:]//' | sort -u | wc -l | tr -d ' ')
@@ -41,7 +41,6 @@ echo "🧪 Test file:        $TEST_VERSION"
 echo "🔌 mcp.json:         $MCP_VERSION"
 echo "🗂  server.json:      $SERVER_VERSION"
 echo "📦 MCPB manifest:    $MANIFEST_VERSION"
-echo "🧩 Plugin npx pin:   $PLUGIN_PIN"
 echo "📖 README pins:      ${README_PIN:-INCONSISTENT}"
 
 PARSE_OK=true
@@ -52,7 +51,6 @@ require_version "src/__tests__/index.test.ts" "$TEST_VERSION" || PARSE_OK=false
 require_version "mcp.json" "$MCP_VERSION" || PARSE_OK=false
 require_version "server.json" "$SERVER_VERSION" || PARSE_OK=false
 require_version "helpscout-mcp-extension/manifest.json" "$MANIFEST_VERSION" || PARSE_OK=false
-require_version "plugins/helpscout-navigator/.mcp.json pin" "$PLUGIN_PIN" || PARSE_OK=false
 require_version "README.md pins (all occurrences must match)" "$README_PIN" || PARSE_OK=false
 
 if [ "$PARSE_OK" = false ]; then
@@ -62,7 +60,7 @@ if [ "$PARSE_OK" = false ]; then
 fi
 
 # Check for consistency
-ALL_VERSIONS=("$PKG_VERSION" "$SRC_VERSION" "$DOCKER_VERSION" "$TEST_VERSION" "$MCP_VERSION" "$SERVER_VERSION" "$MANIFEST_VERSION" "$PLUGIN_PIN" "$README_PIN")
+ALL_VERSIONS=("$PKG_VERSION" "$SRC_VERSION" "$DOCKER_VERSION" "$TEST_VERSION" "$MCP_VERSION" "$SERVER_VERSION" "$MANIFEST_VERSION" "$README_PIN")
 FIRST_VERSION=${ALL_VERSIONS[0]}
 CONSISTENT=true
 
