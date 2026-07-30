@@ -900,6 +900,32 @@ describe('GatewayHandler', () => {
       expect(wouldSend).not.toHaveProperty('body');
       expect(wouldSend.bodyBeforeMerge).toEqual({ tags: ['urgent'] });
     });
+
+    it('never presents a reply body without its recipient', async () => {
+      const withoutCustomer = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'createDraftReply',
+        arguments: { conversationId: '4242', text: 'looking into it' },
+        dryRun: true,
+      });
+      const planned = parsePayload(withoutCustomer).wouldSend as Record<string, unknown>;
+
+      // The recipient is decided by a read, so the preview must not offer a
+      // customer-less body as the exact request that will be sent.
+      expect(planned).not.toHaveProperty('body');
+      expect(planned.precededBy).toEqual({ method: 'GET', path: '/conversations/4242' });
+      expect(String(planned.bodyNote)).toContain('primary customer');
+      expect(planned.bodyBeforeMerge).toMatchObject({ text: 'looking into it' });
+
+      const withCustomer = await callGateway(writeGateway, WRITE_TOOL_NAME, {
+        name: 'createDraftReply',
+        arguments: { conversationId: '4242', text: 'looking into it', customerId: '77' },
+        dryRun: true,
+      });
+      const exact = parsePayload(withCustomer).wouldSend as Record<string, unknown>;
+
+      expect(exact.body).toMatchObject({ customer: { id: 77 } });
+      expect(exact).not.toHaveProperty('precededBy');
+    });
   });
 
   describe(`${WRITE_TOOL_NAME} envelope`, () => {

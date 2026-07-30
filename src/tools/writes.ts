@@ -233,6 +233,11 @@ function currentTags(conversation: ConversationReadModel): string[] {
 function currentFields(conversation: ConversationReadModel): Array<{ id: number; value: unknown }> {
   return (conversation.customFields ?? [])
     .filter((field): field is { id: number; value?: unknown } => typeof field.id === 'number')
+    // An entry Help Scout returns without a value key has nothing to preserve:
+    // echoing it back value-less would send `{ id }` in a full-replace PUT with
+    // undefined semantics, and omitting it leaves an unset field unset. A null
+    // value is a real value and is kept verbatim.
+    .filter((field) => field.value !== undefined)
     .map((field) => ({ id: field.id, value: field.value }));
 }
 
@@ -482,15 +487,23 @@ export class WriteHandler {
       description: 'Compose a customer reply and save it as an unsent draft on a Help Scout conversation. The draft flag is pinned on: this operation cannot send. Use sendReply or publishDraft, both of which require the customer-visible write flag and per-call confirmation, to actually email the customer.',
       schema,
       mutationClass: 'nonDestructive',
-      plan: (input) => ({
-        method: 'POST',
-        path: `${conversationPath(input.conversationId)}/reply`,
-        body: buildReplyBody(input, true, explicitReplyCustomer(input)),
-        ...(explicitReplyCustomer(input) ? {} : {
+      plan: (input) => {
+        const customer = explicitReplyCustomer(input);
+        const path = `${conversationPath(input.conversationId)}/reply`;
+        if (customer) {
+          return { method: 'POST', path, body: buildReplyBody(input, true, customer) };
+        }
+        // Without an explicit customer the recipient is decided by a read, so
+        // presenting a customer-less body as "the exact body" would let a
+        // preview be approved without showing who the reply addresses.
+        return {
+          method: 'POST',
+          path,
+          bodyBeforeMerge: buildReplyBody(input, true, undefined),
           precededBy: { method: 'GET', path: conversationPath(input.conversationId) },
-          bodyNote: 'The reply endpoint requires a customer; the conversation primary customer is resolved by that read and added to the sent body.',
-        }),
-      }),
+          bodyNote: 'The reply endpoint requires a customer. The recipient will be the conversation primary customer, resolved by that read and added to the sent body.',
+        };
+      },
       perform: async (input) => {
         const customer = await resolveReplyCustomer(input);
         const response = await helpScoutClient.post(
@@ -891,15 +904,22 @@ export class WriteHandler {
       description: 'Send a reply to the customer on a Help Scout conversation. This emails the customer immediately and cannot be recalled. Requires HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES and per-call confirmation. Use createDraftReply to compose without sending.',
       schema,
       mutationClass: 'externallyVisible',
-      plan: (input) => ({
-        method: 'POST',
-        path: `${conversationPath(input.conversationId)}/reply`,
-        body: buildReplyBody(input, false, explicitReplyCustomer(input)),
-        ...(explicitReplyCustomer(input) ? {} : {
+      plan: (input) => {
+        const customer = explicitReplyCustomer(input);
+        const path = `${conversationPath(input.conversationId)}/reply`;
+        if (customer) {
+          return { method: 'POST', path, body: buildReplyBody(input, false, customer) };
+        }
+        // Same recipient rule as createDraftReply, and it matters more here:
+        // this operation emails the customer, so the preview must say who.
+        return {
+          method: 'POST',
+          path,
+          bodyBeforeMerge: buildReplyBody(input, false, undefined),
           precededBy: { method: 'GET', path: conversationPath(input.conversationId) },
-          bodyNote: 'The reply endpoint requires a customer; the conversation primary customer is resolved by that read and added to the sent body.',
-        }),
-      }),
+          bodyNote: 'The reply endpoint requires a customer. The recipient will be the conversation primary customer, resolved by that read and added to the sent body.',
+        };
+      },
       perform: async (input) => {
         const customer = await resolveReplyCustomer(input);
         const response = await helpScoutClient.post(

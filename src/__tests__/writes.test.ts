@@ -320,6 +320,34 @@ describe('WriteHandler', () => {
       expect(scope.isDone()).toBe(true);
     });
 
+    it('omits untouched custom fields that Help Scout returned without a value', async () => {
+      nock(baseURL)
+        .get(`/conversations/${CONVERSATION_ID}`)
+        .reply(200, {
+          id: 4242,
+          customFields: [
+            { id: 8, name: 'Account Type', value: '8518' },
+            { id: 9, name: 'Region' },
+          ],
+        });
+      // Field 9 has no value key: echoing `{ id: 9 }` into the full-replace
+      // PUT has undefined semantics, and omitting an unset field leaves it
+      // unset, so it must not appear in the body at all.
+      const scope = nock(baseURL)
+        .put(`/conversations/${CONVERSATION_ID}/fields`, {
+          fields: [{ id: 8, value: '8518' }, { id: 12, value: 'new' }],
+        })
+        .reply(204);
+
+      const result = await run('updateConversationFields', {
+        conversationId: CONVERSATION_ID,
+        fields: [{ id: '12', value: 'new' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(scope.isDone()).toBe(true);
+    });
+
     it('echoes untouched custom field values back exactly as Help Scout returned them', async () => {
       nock(baseURL)
         .get(`/conversations/${CONVERSATION_ID}`)
