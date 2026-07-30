@@ -74,6 +74,7 @@ jobs:
         HELPSCOUT_APP_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
         HELPSCOUT_CLIENT_ID: ${{ secrets.HELPSCOUT_APP_ID }}
         HELPSCOUT_CLIENT_SECRET: ${{ secrets.HELPSCOUT_APP_SECRET }}
+        HELPSCOUT_DOCS_API_KEY: ${{ secrets.HELPSCOUT_DOCS_API_KEY }}
         HELPSCOUT_DEFAULT_INBOX_ID: '359402'
         # Tier 1 only. The write contract requires live proof of every write
         # operation, and the tier-1 lifecycle is contained: it mutates one
