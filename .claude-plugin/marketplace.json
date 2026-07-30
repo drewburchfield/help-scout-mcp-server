@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "helpscout-navigator",
-      "source": ".",
+      "source": "./skills",
       "description": "Navigation skill for the Help Scout MCP server: tool selection, correct sequencing, and the opt-in write surface. Skill only; set up the MCP server separately in your client.",
       "version": "2.0.0",
       "author": {
