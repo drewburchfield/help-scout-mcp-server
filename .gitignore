@@ -9,6 +9,11 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Worker (Cloudflare) local state and secrets
+.wrangler/
+.dev.vars
+worker/.dev.vars
+
 # Build output
 dist/
 build/

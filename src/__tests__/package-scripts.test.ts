@@ -83,6 +83,7 @@ describe('package scripts', () => {
     await fs.promises.mkdir(path.join(tempRoot, 'src', '__tests__'), { recursive: true });
     await fs.promises.mkdir(path.join(tempRoot, 'helpscout-mcp-extension'), { recursive: true });
     await fs.promises.mkdir(path.join(tempRoot, 'guides'), { recursive: true });
+    await fs.promises.mkdir(path.join(tempRoot, 'worker', 'src'), { recursive: true });
 
     await fs.promises.writeFile(path.join(tempRoot, 'package.json'), '{ "version": "1.0.0" }');
     await fs.promises.writeFile(path.join(tempRoot, 'src', 'index.ts'), "const metadata = { version: '1.0.0' };\n");
@@ -91,6 +92,7 @@ describe('package scripts', () => {
     await fs.promises.writeFile(path.join(tempRoot, 'mcp.json'), '{ "version": "1.0.0" }');
     await fs.promises.writeFile(path.join(tempRoot, 'server.json'), '{ "version": "9.9.9" }');
     await fs.promises.writeFile(path.join(tempRoot, 'helpscout-mcp-extension', 'manifest.json'), '{ "version": "1.0.0" }');
+    await fs.promises.writeFile(path.join(tempRoot, 'worker', 'src', 'mcp-agent.ts'), "const SERVER_VERSION = '1.0.0';\n");
     await fs.promises.writeFile(path.join(tempRoot, 'README.md'), 'Run npx help-scout-mcp-server@1.0.0\n');
     await fs.promises.writeFile(path.join(tempRoot, 'guides', 'cowork-setup.md'), 'Run npx help-scout-mcp-server@1.0.0\n');
 
