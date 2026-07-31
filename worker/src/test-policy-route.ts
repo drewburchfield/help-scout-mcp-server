@@ -24,6 +24,7 @@ import {
   putUserPolicy,
   revokeUser,
 } from './policy-store.js';
+import { exportAccessList, exportAuditLog, listAuditEntries } from './audit-store.js';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -40,6 +41,12 @@ interface TestCommand {
   input?: UserPolicyInput;
   expectedVersion?: number;
   updatedBy?: string;
+  // Audit read/export parameters (NAS-1502).
+  cursor?: string;
+  limit?: number;
+  from?: string;
+  to?: string;
+  format?: 'json' | 'csv';
 }
 
 export async function handleTestPolicyRoute(request: Request, env: Env): Promise<Response> {
@@ -86,6 +93,19 @@ export async function handleTestPolicyRoute(request: Request, env: Env): Promise
       }
       case 'revokeUser':
         return json({ result: await revokeUser(env, String(command.hsUserId), { updatedBy }) });
+      case 'auditList':
+        return json({
+          page: await listAuditEntries(env, {
+            cursor: command.cursor,
+            limit: command.limit,
+            from: command.from,
+            to: command.to,
+          }),
+        });
+      case 'auditExport':
+        return json({ export: await exportAuditLog(env, { from: command.from, to: command.to, format: command.format ?? 'json' }) });
+      case 'accessListExport':
+        return json({ export: await exportAccessList(env, { format: command.format ?? 'json' }) });
       default:
         return json({ error: `Unknown op: ${command.op}` }, 400);
     }

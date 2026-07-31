@@ -48,7 +48,7 @@ interface PolicyCoordinatorStub {
   getUserPolicyDoc(hsUserId: string): Promise<UserPolicyDocResult>;
   putUserPolicyDoc(hsUserId: string, input: UserPolicyInput, meta: MutationMeta): Promise<UserPolicyWriteResult>;
   deleteUserPolicyDoc(hsUserId: string): Promise<void>;
-  pinRevokedUser(hsUserId: string, updatedBy: string): Promise<UserPolicyWriteResult>;
+  pinRevokedUser(hsUserId: string, updatedBy: string, actorEmail?: string): Promise<UserPolicyWriteResult>;
 }
 
 /** The subset of the worker env the read/write policy functions need. */
@@ -100,6 +100,7 @@ export async function putConfig(env: PolicyStoreEnv, patch: ConfigPatch, opts: M
   const result = await coordinator(env).putConfigDoc(patch, {
     expectedVersion: opts.expectedVersion,
     updatedBy: opts.updatedBy,
+    actorEmail: opts.actorEmail,
   });
   if (!result.ok) throwPolicyError(result.error);
   await opts.audit?.({ type: 'config.updated', version: result.value.version, updatedBy: opts.updatedBy, config: result.value });
@@ -133,6 +134,7 @@ export async function putUserPolicy(
   const result = await coordinator(env).putUserPolicyDoc(id, input, {
     expectedVersion: opts.expectedVersion,
     updatedBy: opts.updatedBy,
+    actorEmail: opts.actorEmail,
   });
   if (!result.ok) throwPolicyError(result.error);
   await opts.audit?.({ type: 'user.policy.updated', hsUserId: id, version: result.value.version, updatedBy: opts.updatedBy, policy: result.value });
@@ -164,11 +166,11 @@ export async function deleteUserPolicy(env: PolicyStoreEnv, hsUserId: string | n
 export async function revokeUser(
   env: PolicyRevokeEnv,
   hsUserId: string | number,
-  opts: { updatedBy: string; audit?: PolicyAuditHook },
+  opts: { updatedBy: string; actorEmail?: string; audit?: PolicyAuditHook },
 ): Promise<RevokeUserResult> {
   const id = String(hsUserId);
 
-  const result = await coordinator(env).pinRevokedUser(id, opts.updatedBy);
+  const result = await coordinator(env).pinRevokedUser(id, opts.updatedBy, opts.actorEmail);
   if (!result.ok) throwPolicyError(result.error);
   const policy = result.value;
 

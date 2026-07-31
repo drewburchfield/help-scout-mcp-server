@@ -27,8 +27,9 @@ import {
   verifyConsentCookie,
   type ConsentTransaction,
 } from './oauth-cookie.js';
-import { evaluateAccess } from './policy.js';
+import { evaluateAccess, type AccessDecision } from './policy.js';
 import { getConfig, getUserPolicy } from './policy-store.js';
+import { recordAdmissionDenied, recordGrantCreated } from './audit-store.js';
 import { handleTestPolicyRoute } from './test-policy-route.js';
 
 /** HTML-escape untrusted values before echoing them into a page. */
@@ -405,13 +406,13 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   // strongly consistent, so a user blocked moments earlier is denied here with no
   // stale-colo admit. A coordinator failure fails closed: no grant is completed.
   // The consent cookie is cleared like every terminal path.
-  let accessAllowed: boolean;
+  let decision: AccessDecision;
   try {
     const [config, userPolicy] = await Promise.all([
       getConfig(env),
       getUserPolicy(env, userId),
     ]);
-    accessAllowed = evaluateAccess(config, userPolicy).allowed;
+    decision = evaluateAccess(config, userPolicy);
   } catch {
     return htmlResponse(
       page(
@@ -423,7 +424,9 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
       { 'Set-Cookie': buildConsentClearCookie() },
     );
   }
-  if (!accessAllowed) {
+  if (!decision.allowed) {
+    // Observational audit row; best-effort, never fails the user-facing deny.
+    await recordAdmissionDenied(env, { hsUserId: userId, email, reason: decision.reason });
     return htmlResponse(
       page(
         'Help Scout access not enabled',
@@ -442,6 +445,9 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     scope: txn.oauthReq.scope,
     props: { accessToken, refreshToken, expiresAt, userId, name, email },
   });
+
+  // Observational audit row after the grant is minted; best-effort, off the path.
+  await recordGrantCreated(env, { hsUserId: userId, email, clientId: txn.oauthReq.clientId });
 
   return new Response(null, {
     status: 302,

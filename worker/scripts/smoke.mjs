@@ -756,6 +756,78 @@ async function runPolicyMode({ mock }) {
   check('revoke pins the policy to allowed:false', rev8.body.result?.policy?.allowed === false, JSON.stringify(rev8.body.result?.policy));
   const postRevoke8 = await runFullFlow({ clientId, resource, mock });
   check('a fresh callback immediately after revoke is denied (403, no stale admit)', postRevoke8.stopped === 'callback' && postRevoke8.status === 403, `status ${postRevoke8.status}`);
+
+  // [P9] audit trail + evidence exports (NAS-1502). Drive a known, deterministic
+  // subsequence on a per-run-unique user so its audit rows are unambiguous even
+  // though the ledger is append-only and persists across wrangler-dev sessions;
+  // seed a second user for the access-list evidence, then read the ledger and the
+  // exports back through the secret-gated test route.
+  console.log('[P9] audit trail and evidence exports');
+  const auditUser = 2_000_000 + Math.floor(Math.random() * 1_000_000);
+  const auditUser2 = auditUser + 1;
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: auditUser });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: auditUser2 });
+
+  // config.updated -> user.policy.updated -> grant.created (for auditUser)
+  await policyRoute({ op: 'putConfig', patch: { allowlistMode: false, policyCacheTtlSeconds: 15 }, expectedVersion: 0 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: auditUser, input: { allowed: true, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  mock.state.userId = auditUser;
+  const grantFlow = await runFullFlow({ clientId, resource, mock });
+  check('P9 seeded user connects (grant minted)', typeof grantFlow.accessToken === 'string' && grantFlow.accessToken.length > 0);
+  // user.revoked -> admission.denied (explicit-block) for auditUser
+  await policyRoute({ op: 'revokeUser', hsUserId: auditUser });
+  const deniedFlow = await runFullFlow({ clientId, resource, mock });
+  check('P9 revoked user is denied at callback (feeds admission.denied)', deniedFlow.stopped === 'callback' && deniedFlow.status === 403, `status ${deniedFlow.status}`);
+  // A second user with a full grant, to prove ceiling narrowing in the access list.
+  await policyRoute({ op: 'putUserPolicy', hsUserId: auditUser2, input: { allowed: true, writes: true, customerVisibleWrites: true }, expectedVersion: 0 });
+
+  // Full ledger (bounded by retention), ascending chronological.
+  const exp = await policyRoute({ op: 'auditExport', format: 'json' });
+  check('auditExport json returns generatedAt/deploymentId/entries', exp.status === 200 && typeof exp.body.export?.generatedAt === 'string' && typeof exp.body.export?.deploymentId === 'string' && exp.body.export.deploymentId.length > 0 && Array.isArray(exp.body.export?.entries), JSON.stringify({ status: exp.status, keys: Object.keys(exp.body.export || {}) }));
+  const entries = exp.body.export?.entries || [];
+
+  // The per-run-unique user's subsequence is unambiguous (no other test touches it).
+  const subseq = entries.filter((e) => e.targetId === String(auditUser));
+  const subActions = subseq.map((e) => e.action);
+  check('audit records the seeded user subsequence in order', JSON.stringify(subActions) === JSON.stringify(['user.policy.updated', 'grant.created', 'user.revoked', 'admission.denied']), JSON.stringify(subActions));
+  check('audit sequence numbers are strictly increasing in chronological order', subseq.every((e, i) => i === 0 || e.seq > subseq[i - 1].seq));
+
+  const grantRow = subseq.find((e) => e.action === 'grant.created');
+  check('grant.created actor is the user themselves', grantRow?.actorId === String(auditUser) && (grantRow?.actorEmail || '').includes(MOCK_USER.email), JSON.stringify(grantRow));
+  check('grant.created after carries the clientId', grantRow?.after?.clientId === clientId, JSON.stringify(grantRow?.after));
+  const denyRow = subseq.find((e) => e.action === 'admission.denied');
+  check('admission.denied carries the explicit-block reason and denied outcome', denyRow?.after?.reason === 'explicit-block' && denyRow?.outcome === 'denied', JSON.stringify(denyRow));
+  const updRow = subseq.find((e) => e.action === 'user.policy.updated');
+  check('user.policy.updated actor is the admin identity', updRow?.actorId === 'smoke-harness', JSON.stringify(updRow));
+
+  // A conflict row is durable evidence even though it wrote no document (P6/P7).
+  check('a config.update.conflict row exists from the P6/P7 conflict', entries.some((e) => e.action === 'config.update.conflict' && e.outcome === 'denied'));
+
+  // Pagination shape: a newest-first page plus a cursor.
+  const pageRes = await policyRoute({ op: 'auditList', limit: 3 });
+  const page = pageRes.body.page;
+  check('auditList returns a newest-first page', pageRes.status === 200 && Array.isArray(page?.entries) && page.entries.length === 3 && page.entries[0].seq > page.entries[1].seq, JSON.stringify({ status: pageRes.status, n: page?.entries?.length }));
+  check('auditList returns a next cursor when more remain', typeof page?.nextCursor === 'string' && page.nextCursor.length > 0, JSON.stringify(page?.nextCursor));
+  const page2 = (await policyRoute({ op: 'auditList', limit: 3, cursor: page.nextCursor })).body.page;
+  check('auditList cursor advances strictly below the previous page', Array.isArray(page2?.entries) && page2.entries.length > 0 && page2.entries[0].seq < page.entries[2].seq, JSON.stringify(page2?.entries?.map((e) => e.seq)));
+
+  // CSV export: parseable header + at least one quoted row.
+  const csvRes = await policyRoute({ op: 'auditExport', format: 'csv' });
+  const csv = csvRes.body.export?.csv || '';
+  const csvLines = csv.split('\r\n');
+  check('auditExport csv has the documented header row', csvLines[0] === 'seq,ts,actorId,actorEmail,action,targetId,before,after,outcome', csvLines[0]);
+  check('auditExport csv has quoted data rows', csvLines.length > 1 && csv.includes('""'), `lines ${csvLines.length}`);
+
+  // Access-list evidence: current effective entitlements under the ceiling.
+  const alRes = await policyRoute({ op: 'accessListExport', format: 'json' });
+  const al = alRes.body.export;
+  check('accessListExport json is stamped with generatedAt/deploymentId/config', alRes.status === 200 && typeof al?.generatedAt === 'string' && typeof al?.deploymentId === 'string' && al?.config?.ceiling?.enabled === true, JSON.stringify({ status: alRes.status, config: al?.config }));
+  const fullRow = (al?.rows || []).find((r) => r.hsUserId === String(auditUser2));
+  check('access list shows the full-grant user with its stored grants', fullRow?.allowed === true && fullRow?.writes === true && fullRow?.customerVisibleWrites === true, JSON.stringify(fullRow));
+  check('access list narrows customer-visible writes to the ceiling (off)', fullRow?.effectiveWrites === true && fullRow?.effectiveCustomerVisibleWrites === false, JSON.stringify(fullRow));
+  const revokedRow = (al?.rows || []).find((r) => r.hsUserId === String(auditUser));
+  check('access list shows the revoked user as not allowed', revokedRow?.allowed === false && revokedRow?.effectiveAllowed === false, JSON.stringify(revokedRow));
 }
 
 async function main() {
