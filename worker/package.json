@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "setup": "node scripts/setup.mjs",
     "deploy": "wrangler deploy --config wrangler.deploy.jsonc",
     "tail": "wrangler tail --config wrangler.deploy.jsonc",
     "type-check": "tsc --noEmit",
