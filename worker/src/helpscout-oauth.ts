@@ -100,12 +100,18 @@ async function refreshHelpScoutTokens(props: HelpScoutProps): Promise<HelpScoutP
   if (typeof accessToken !== 'string' || accessToken === '' || typeof refreshToken !== 'string' || refreshToken === '') {
     throw new OAuthError('temporarily_unavailable', { description: 'Help Scout returned a malformed token refresh response.' });
   }
+  // A missing lifetime is tolerated (0 = unknown); a present-but-nonsensical
+  // one would persist an already-expired or never-expiring pair, so treat it as
+  // a malformed response instead.
+  if (expiresIn !== undefined && (typeof expiresIn !== 'number' || !Number.isFinite(expiresIn) || expiresIn <= 0)) {
+    throw new OAuthError('temporarily_unavailable', { description: 'Help Scout returned a malformed token refresh response.' });
+  }
 
   return {
     ...props,
     accessToken,
     refreshToken,
-    expiresAt: typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? Date.now() + expiresIn * 1000 : 0,
+    expiresAt: typeof expiresIn === 'number' ? Date.now() + expiresIn * 1000 : 0,
   };
 }
 

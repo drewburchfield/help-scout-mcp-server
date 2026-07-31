@@ -364,11 +364,12 @@ export class HelpScoutFetchClient implements HelpScoutApi {
     const expiresIn = data?.expires_in;
 
     // A 2xx with a malformed body must not overwrite usable grant state with
-    // undefined tokens and a NaN expiry.
+    // undefined tokens or a nonsensical expiry (zero or negative would persist
+    // an already-expired pair and rotate again on every request).
     if (
       typeof accessToken !== 'string' || accessToken === '' ||
       typeof refreshToken !== 'string' || refreshToken === '' ||
-      typeof expiresIn !== 'number' || !Number.isFinite(expiresIn)
+      typeof expiresIn !== 'number' || !Number.isFinite(expiresIn) || expiresIn <= 0
     ) {
       logger.error('Token refresh returned a malformed response', { requestId });
       throw {

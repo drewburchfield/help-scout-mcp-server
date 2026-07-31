@@ -17,7 +17,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const NODE_BIN = '/opt/homebrew/bin/node';
+const NODE_BIN = process.env.SMOKE_NODE_BIN || process.execPath;
 const WORKER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WORKER_PORT = Number(process.env.WORKER_PORT || 8787);
 const BASE = `http://127.0.0.1:${WORKER_PORT}`;

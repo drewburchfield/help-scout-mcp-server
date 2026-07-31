@@ -61,6 +61,25 @@ function joinUrl(base: string, path: string): string {
 }
 
 /**
+ * Codes, client secrets, and fresh bearer tokens flow to these URLs, so they
+ * must be https — the same invariant the fetch client enforces — with a
+ * loopback exception so the smoke harness can stand in a mock upstream.
+ */
+function isSecureUpstreamUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  return (
+    url.protocol === 'http:' &&
+    (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname === '::1')
+  );
+}
+
+/**
  * Both binding checks the NAS-1492 review makes mandatory: the clientId must
  * still resolve to a registered client AND the redirect URI must be one that
  * client registered. Run at approve AND callback so a crafted request cannot
@@ -80,7 +99,14 @@ async function validateClientBinding(
 function htmlResponse(body: string, status: number, extraHeaders: Record<string, string> = {}): Response {
   return new Response(body, {
     status,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', ...extraHeaders },
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // The consent surface carries an approval control; refuse all framing so
+      // it cannot be overlaid in a clickjacking frame.
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': "frame-ancestors 'none'",
+      ...extraHeaders,
+    },
   });
 }
 
@@ -228,6 +254,16 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  // Refuse to send the code, client secret, or a fresh bearer token anywhere
+  // that is not https (loopback excepted for the mock-upstream harness).
+  if (!isSecureUpstreamUrl(env.HELPSCOUT_TOKEN_URL) || !isSecureUpstreamUrl(env.HELPSCOUT_BASE_URL)) {
+    return htmlResponse(
+      page('Authorize Help Scout', 'Deployment misconfigured', '<p>This server is configured with a non-https Help Scout URL. Ask whoever operates it to fix HELPSCOUT_TOKEN_URL / HELPSCOUT_BASE_URL.</p>'),
+      500,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
+
   // --- Exchange the code for a per-user Help Scout token pair, server-side. ---
   let tokenData: HelpScoutTokenResponse;
   try {
@@ -267,8 +303,17 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
       { 'Set-Cookie': buildConsentClearCookie() },
     );
   }
+  // A missing lifetime is tolerated (0 = unknown = refresh before first use); a
+  // present-but-nonsensical one is a malformed response we refuse to persist.
   const expiresIn = tokenData.expires_in;
-  const expiresAt = typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? Date.now() + expiresIn * 1000 : 0;
+  if (expiresIn !== undefined && (typeof expiresIn !== 'number' || !Number.isFinite(expiresIn) || expiresIn <= 0)) {
+    return htmlResponse(
+      page('Authorize Help Scout', 'Help Scout sign-in failed', '<p>Help Scout returned an unexpected response. Reconnect the connector and try again.</p>'),
+      502,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
+  const expiresAt = typeof expiresIn === 'number' ? Date.now() + expiresIn * 1000 : 0;
 
   // --- Identity. A 403 here means a Light User (no Mailbox API access). ---
   let user: HelpScoutUser;
@@ -305,7 +350,16 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const userId = typeof user.id === 'number' ? user.id : Number(user.id) || 0;
+  // The grant is keyed by this identity, so a malformed users/me response must
+  // reject the authorization rather than collapse onto a shared user id.
+  const userId = typeof user.id === 'number' ? user.id : Number(user.id);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return htmlResponse(
+      page('Authorize Help Scout', 'Could not read your Help Scout profile', '<p>Help Scout returned a profile without a usable identity. Try again in a moment.</p>'),
+      502,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
   const email = typeof user.email === 'string' ? user.email : '';
   const name =
     [user.firstName, user.lastName]
