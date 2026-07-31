@@ -238,12 +238,14 @@ role cannot write to a mailbox gets a structured permission error. The full rule
 
 ## Rotating the app secret and revoking access
 
-**Rotating the Help Scout App Secret invalidates the stored refresh tokens.** Every
-connected user is forced to re-consent on their next token refresh. This is safe and
-expected, not a failure: the refresh fails with a standard `invalid_grant`, the
-client re-runs authorization, and the user signs in again. There is no data loss and
-nothing to clean up. Plan to rotate the secret at a low-traffic time so people
-re-connect on their own schedule rather than mid-task.
+**Treat rotating the Help Scout App Secret as forcing re-consent for every
+connected user.** Once the worker holds the new secret, stored refresh tokens tied
+to the old one stop working on their next refresh. Whatever Help Scout's exact
+invalidation timing is, the failure path is the same and it is safe: the refresh
+fails with a standard `invalid_grant`, the client re-runs authorization, and the
+user signs in again. There is no data loss and nothing to clean up. Plan to rotate
+the secret at a low-traffic time so people re-connect on their own schedule rather
+than mid-task.
 
 **To revoke a single user**, have them revoke the app from their Help Scout profile
 (the same **My Apps** area), or wipe that user's grant from the `OAUTH_KV`

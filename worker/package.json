@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail",
+    "deploy": "wrangler deploy --config wrangler.deploy.jsonc",
+    "tail": "wrangler tail --config wrangler.deploy.jsonc",
     "type-check": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs"
   },
