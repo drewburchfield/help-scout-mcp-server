@@ -69,7 +69,12 @@ async function refreshHelpScoutTokens(props: HelpScoutProps): Promise<HelpScoutP
   if (!clientId || !clientSecret || !tokenUrl) {
     // No credentials to refresh with: leave the grant untouched rather than
     // spend the refresh token. The tool-path fallback + re-consent still cover
-    // an expired Help Scout token.
+    // an expired Help Scout token. Loud on purpose: without this line, a
+    // deployment whose env stopped populating (e.g. a compat-date change)
+    // would look healthy while silently never rotating, then break days later.
+    console.error(
+      'Help Scout token rotation skipped: HELPSCOUT_CLIENT_ID / HELPSCOUT_CLIENT_SECRET / HELPSCOUT_TOKEN_URL are not visible to the token-exchange callback. Check the deployment secrets and compatibility date.',
+    );
     return props;
   }
 
@@ -138,14 +143,19 @@ export async function helpScoutTokenExchangeCallback(
 
   if (options.grantType === 'refresh_token') {
     const rotated = await refreshHelpScoutTokens(props);
-    // Only claim a props change when the pair actually rotated (refresh may be a
-    // no-op when credentials are absent), so the provider skips a needless write.
-    // A no-op also keeps the provider's default TTL: aligning to the stale
-    // expiry of a pair we could not rotate would hand out ever-shorter tokens.
-    const rotatedPair = rotated.accessToken !== props.accessToken || rotated.refreshToken !== props.refreshToken;
-    const accessTokenTTL = rotatedPair ? alignedAccessTokenTtl(rotated.expiresAt) : undefined;
+    // Only claim a props change when something actually changed (refresh is a
+    // no-op when credentials are absent), so the provider skips a needless
+    // write and keeps its default TTL — aligning to the stale expiry of a pair
+    // we could not rotate would hand out ever-shorter tokens. The expiry is
+    // part of the comparison: an upstream that returns the same token strings
+    // with a fresh lifetime must still have that lifetime persisted.
+    const changed =
+      rotated.accessToken !== props.accessToken ||
+      rotated.refreshToken !== props.refreshToken ||
+      rotated.expiresAt !== props.expiresAt;
+    const accessTokenTTL = changed ? alignedAccessTokenTtl(rotated.expiresAt) : undefined;
     return {
-      ...(rotatedPair ? { newProps: rotated } : {}),
+      ...(changed ? { newProps: rotated } : {}),
       ...(accessTokenTTL ? { accessTokenTTL } : {}),
     };
   }

@@ -3,7 +3,7 @@
  * the real Help Scout Authorization Code client (Leg B, upstream).
  *
  * Flow: GET /authorize renders a signed-cookie consent gate; POST /approve
- * redirects the browser to Help Scout's authorize URL bound to a single-use
+ * redirects the browser to Help Scout's authorize URL bound to a cookie-signed
  * `state`; GET /callback validates that state, exchanges the code for a per-user
  * Help Scout token pair, reads the user's identity, and completes the MCP
  * authorization with those real tokens in the encrypted grant props.
@@ -28,11 +28,6 @@ import {
   type ConsentTransaction,
 } from './oauth-cookie.js';
 
-/** KV key prefix for the single-use consent-state marker (namespaced away from library keys). */
-const STATE_MARKER_PREFIX = 'hsmcp_txn:';
-/** Marker TTL matches the cookie TTL. KV enforces a 60s floor; 600 is safe. */
-const STATE_MARKER_TTL_S = Math.floor(CONSENT_TTL_MS / 1000);
-
 /** HTML-escape untrusted values before echoing them into a page. */
 function esc(value: unknown): string {
   return String(value ?? '').replace(
@@ -46,7 +41,7 @@ function firstResource(resource: AuthRequest['resource']): string {
   return resource ?? '';
 }
 
-/** A random, URL-safe nonce used as the Help Scout `state` and single-use key. */
+/** A random, URL-safe nonce used as the Help Scout `state`. */
 function newState(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -149,11 +144,11 @@ async function renderConsent(request: Request, env: Env): Promise<Response> {
 }
 
 /**
- * POST /approve — mint the single-use state, then redirect to Help Scout.
+ * POST /approve — mint the state nonce, then redirect to Help Scout.
  *
  * Rebuilds the AuthRequest from the signed cookie (a missing or tampered cookie
- * is a 400), re-validates the client binding, records the state as single-use in
- * KV, and re-signs the cookie with the state bound in. The browser is sent to
+ * is a 400), re-validates the client binding, and re-signs the cookie with the
+ * freshly minted state bound in. The browser is sent to
  * Help Scout's authorize URL carrying only our client id and that state.
  */
 async function handleApprove(request: Request, env: Env): Promise<Response> {
@@ -202,11 +197,9 @@ async function handleApprove(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  // The state binds the Help Scout redirect to this browser's signed cookie;
+  // single-use enforcement rides on the authorization code (see /callback).
   const state = newState();
-  // Mark the state single-use before sending the browser upstream. Consumed
-  // (get-then-delete) at /callback so a replayed callback finds nothing.
-  await env.OAUTH_KV.put(`${STATE_MARKER_PREFIX}${state}`, '1', { expirationTtl: STATE_MARKER_TTL_S });
-
   const boundTxn: ConsentTransaction<AuthRequest> = { oauthReq: txn.oauthReq, state, exp: Date.now() + CONSENT_TTL_MS };
   const cookie = await signConsentCookie(boundTxn, env.COOKIE_ENCRYPTION_KEY ?? '');
 
@@ -236,8 +229,7 @@ interface HelpScoutUser {
 /**
  * GET /callback — the Help Scout redirect target.
  *
- * Validates the state against both the signed cookie and the single-use KV
- * marker, exchanges the code for a per-user token pair, reads the user's
+ * Validates the state against the signed cookie, exchanges the code for a per-user token pair, reads the user's
  * identity (403 => a Light User without Mailbox access, shown a seat-required
  * page and NO grant), then completes the MCP authorization with the real tokens.
  */
@@ -260,19 +252,14 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  // Consume the single-use marker. A replayed callback (state already spent, or
-  // expired) finds nothing and is rejected before any code is exchanged.
-  const markerKey = `${STATE_MARKER_PREFIX}${state}`;
-  const marker = await env.OAUTH_KV.get(markerKey);
-  if (marker === null) {
-    return htmlResponse(
-      page('Authorize Help Scout', 'This sign-in link was already used', '<p>This Help Scout sign-in link has expired or was already used. Reconnect the connector to start again.</p>'),
-      400,
-      { 'Set-Cookie': buildConsentClearCookie() },
-    );
-  }
-  await env.OAUTH_KV.delete(markerKey);
-
+  // Replay protection deliberately does NOT use a KV marker here. KV only
+  // guarantees read-after-write from the writing location, so a marker written
+  // at /approve can be invisible to a legitimate /callback that lands in a
+  // different colo (mobile handoff, egress rotation mid-login) — a valid
+  // sign-in would be rejected. The authorization code itself is single-use at
+  // Help Scout, so a replayed callback fails the exchange below; that is the
+  // authoritative defense, and the signed cookie's state binding above is the
+  // CSRF boundary.
   const client = await validateClientBinding(env, txn.oauthReq);
   if (!client) {
     return htmlResponse(

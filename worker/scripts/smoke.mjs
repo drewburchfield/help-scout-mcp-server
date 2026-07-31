@@ -46,7 +46,7 @@ const b64url = (buf) =>
 // State is mutated directly from the smoke process (same runtime) to exercise
 // the light-user path and to observe refresh-token rotation.
 function startMockHelpScout() {
-  const state = { lightUser: false, refreshCount: 0, currentRefreshToken: null, accessCounter: 0 };
+  const state = { lightUser: false, refreshCount: 0, currentRefreshToken: null, accessCounter: 0, issuedCodes: new Set() };
 
   const readBody = (req) =>
     new Promise((resolve) => {
@@ -63,6 +63,7 @@ function startMockHelpScout() {
     if (url.pathname === '/hs/authorize' && req.method === 'GET') {
       const clientState = url.searchParams.get('state') || '';
       const code = `hs-code-${crypto.randomBytes(6).toString('hex')}`;
+      state.issuedCodes.add(code);
       const loc = `${REDIRECT_URI}?code=${encodeURIComponent(code)}&state=${encodeURIComponent(clientState)}`;
       res.writeHead(302, { Location: loc });
       res.end();
@@ -83,6 +84,14 @@ function startMockHelpScout() {
         };
       };
       if (body.grant_type === 'authorization_code') {
+        // Codes are single-use, like the real Help Scout: a replayed callback
+        // must fail here, which is the worker's authoritative replay defense.
+        if (!state.issuedCodes.has(body.code)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid_grant' }));
+          return;
+        }
+        state.issuedCodes.delete(body.code);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(issue()));
         return;
@@ -480,10 +489,11 @@ async function runMode({ mock, enableWrites }) {
     const tampered = await fetch(tamperUrl, { redirect: 'manual', headers: { Cookie: `${CONSENT_COOKIE}=${captured.cookie}` } });
     check('tampered state at /callback is rejected', tampered.status === 400, `status ${tampered.status}`);
 
-    // Replay: the captured callback's state was already consumed by the happy
-    // path above, so replaying it must be rejected by the single-use marker.
+    // Replay: the captured callback's code was already spent by the happy path
+    // above, so replaying it must fail the (single-use) code exchange upstream
+    // and surface as a sign-in failure, never a completed grant.
     const replayed = await fetch(captured.callbackUrl, { redirect: 'manual', headers: { Cookie: `${CONSENT_COOKIE}=${captured.cookie}` } });
-    check('replayed state at /callback is rejected', replayed.status === 400, `status ${replayed.status}`);
+    check('replayed callback is rejected via the single-use code', replayed.status === 502, `status ${replayed.status}`);
   }
 
   // [8] light-user 403 -> seat-required page, no grant
