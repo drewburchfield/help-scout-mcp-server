@@ -27,7 +27,8 @@ import {
   verifyConsentCookie,
   type ConsentTransaction,
 } from './oauth-cookie.js';
-import { evaluateAccess, getConfig, getUserPolicy } from './policy.js';
+import { evaluateAccess } from './policy.js';
+import { getConfig, getUserPolicy } from './policy-store.js';
 import { handleTestPolicyRoute } from './test-policy-route.js';
 
 /** HTML-escape untrusted values before echoing them into a page. */
@@ -387,8 +388,10 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
 
   // --- Access policy gate (NAS-1501). Runs after identity, before the grant. ---
   // An explicit allowed:false blocks even in open mode; allowlist mode blocks any
-  // user without an explicit allowed:true entry. A KV failure fails closed: no
-  // grant is completed. The consent cookie is cleared like every terminal path.
+  // user without an explicit allowed:true entry. The coordinator's reads are
+  // strongly consistent, so a user blocked moments earlier is denied here with no
+  // stale-colo admit. A coordinator failure fails closed: no grant is completed.
+  // The consent cookie is cleared like every terminal path.
   let accessAllowed: boolean;
   try {
     const [config, userPolicy] = await Promise.all([

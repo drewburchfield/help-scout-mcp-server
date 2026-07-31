@@ -37,12 +37,11 @@ import {
 import {
   effectiveWriteFlags,
   evaluateAccess,
-  getConfig,
-  getUserPolicy,
   type AdminConfig,
   type UserPolicy,
   type WriteFlagSet,
 } from './policy.js';
+import { getConfig, getUserPolicy } from './policy-store.js';
 
 /** Kept in step with the stdio server identity in `src/index.ts`. */
 const SERVER_NAME = 'helpscout-search';
@@ -73,6 +72,12 @@ export interface HelpScoutProps extends Record<string, unknown> {
 export interface Env {
   OAUTH_KV: KVNamespace;
   MCP_OBJECT: DurableObjectNamespace;
+  /**
+   * The per-deployment access-policy coordinator DO (NAS-1501). Bound by name
+   * POLICY_OBJECT in wrangler.jsonc; every policy read/write RPCs the single
+   * instance so reads are strongly consistent and version writes are atomic CAS.
+   */
+  POLICY_OBJECT: DurableObjectNamespace;
   OAUTH_PROVIDER: OAuthHelpers;
   HELPSCOUT_BASE_URL: string;
   HELPSCOUT_TOKEN_URL: string;
@@ -125,7 +130,7 @@ function writePermissionDeniedResult(): CallToolResult {
   });
 }
 
-/** A write could not verify policy against KV: fail closed without attempting the write. */
+/** A write could not verify policy against the coordinator: fail closed without attempting the write. */
 function policyUnavailableWriteResult(): CallToolResult {
   return policyErrorResult({
     error: 'Your access could not be verified right now, so this write was not attempted.',
@@ -134,7 +139,7 @@ function policyUnavailableWriteResult(): CallToolResult {
   });
 }
 
-/** A read could not verify policy against KV and no unexpired snapshot was available. */
+/** A read could not verify policy against the coordinator and no unexpired snapshot was available. */
 function policyUnavailableReadResult(): CallToolResult {
   return policyErrorResult({
     error: 'Your access could not be verified right now.',
@@ -167,13 +172,15 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
    * Instance-scoped snapshot of the access policy for this session's user.
    *
    * Reads are served from this snapshot while it is unexpired, so a read call
-   * costs no KV round trip inside the window — and that window IS the revocation
-   * SLA: after allowed flips to false, reads keep working only until the
-   * snapshot lapses, then the next read re-reads KV and is denied. The TTL comes
-   * from the config document (clamped 15-300s). Writes never read this snapshot;
-   * they always re-read policy fresh (see dispatchWrite).
+   * costs no coordinator round trip inside the window — and that window IS the
+   * revocation SLA: after allowed flips to false, reads keep working only until
+   * the snapshot lapses, then the next read re-reads the coordinator and is
+   * denied. Because the coordinator's reads are strongly consistent, that
+   * re-read sees the deny with no eventual-consistency lag on top of the TTL. The
+   * TTL comes from the config document (clamped 15-300s). Writes never read this
+   * snapshot; they always re-read policy fresh (see dispatchWrite).
    */
-  private policySnapshot?: { config: AdminConfig; userPolicy: UserPolicy | null; expiresAtMs: number };
+  private policySnapshot?: { userId: string; config: AdminConfig; userPolicy: UserPolicy | null; expiresAtMs: number };
 
   async init(): Promise<void> {
     // Build the server with instructions that name the connected user, read
@@ -235,11 +242,11 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
 
   /**
    * Resolve the access decision for this call. Reads may serve from an unexpired
-   * policy snapshot without touching KV; writes force a fresh read. On a KV
-   * failure the gate fails closed: a write returns an upstream-error result and
-   * a read returns a temporary-error result (an unexpired snapshot would already
-   * have been served above, so reaching the KV read means there was nothing safe
-   * to serve).
+   * policy snapshot without touching the coordinator; writes force a fresh read.
+   * On a coordinator failure the gate fails closed: a write returns an
+   * upstream-error result and a read returns a temporary-error result (an
+   * unexpired snapshot would already have been served above, so reaching the
+   * coordinator read means there was nothing safe to serve).
    */
   private async checkAccess(
     forceFresh: boolean,
@@ -250,7 +257,16 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
     const userId = String(this.requireProps().userId);
     const now = Date.now();
 
-    if (!forceFresh && this.policySnapshot && now < this.policySnapshot.expiresAtMs) {
+    // The snapshot is only valid for the user it was read for. Sessions are
+    // per-grant today, but if any routing change ever let a different grant's
+    // props reach this instance, an identity mismatch must force a fresh read
+    // rather than inherit another user's cached access decision.
+    if (
+      !forceFresh &&
+      this.policySnapshot &&
+      this.policySnapshot.userId === userId &&
+      now < this.policySnapshot.expiresAtMs
+    ) {
       return this.decideAccess(this.policySnapshot.config, this.policySnapshot.userPolicy);
     }
 
@@ -271,6 +287,7 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
     }
 
     this.policySnapshot = {
+      userId,
       config,
       userPolicy,
       expiresAtMs: now + config.policyCacheTtlSeconds * 1000,
@@ -337,7 +354,12 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
     const base = 'Help Scout MCP gateway. Search, describe, and read (and, when enabled, write) Help Scout data.';
     const props = this.props;
     if (!props || !props.email) return base;
-    return `${base} Connected to Help Scout as ${props.name} <${props.email}>.`;
+    // The name and email come from the Help Scout profile, which other account
+    // admins can edit: flatten and cap them so profile text cannot smuggle
+    // multi-line content into the server instructions the model reads.
+    const name = String(props.name).replace(/[\r\n\t]+/g, ' ').slice(0, 80);
+    const email = String(props.email).replace(/[\s]+/g, '').slice(0, 120);
+    return `${base} Connected to Help Scout as ${name} <${email}>.`;
   }
 
   /** The grant props must be present on an authorized request; guard for TS and clarity. */

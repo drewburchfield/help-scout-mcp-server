@@ -695,6 +695,42 @@ async function runPolicyMode({ mock }) {
   await policyRoute({ op: 'putConfig', patch: { allowlistMode: false }, expectedVersion: 0 });
   const stale = await policyRoute({ op: 'putConfig', patch: { allowlistMode: true }, expectedVersion: 0 });
   check('stale putConfig returns a 409 conflict', stale.status === 409 && stale.body.code === 'POLICY_CONFLICT', JSON.stringify(stale.body));
+
+  // [P7] atomic CAS through the coordinator DO: two writes presenting the SAME
+  // expectedVersion, fired concurrently (both requests in flight before either
+  // resolves), resolve to exactly one 200 and one 409 — no lost update. This is
+  // the defect the KV get-then-put had; the DO serializes the check-and-increment.
+  console.log('[P7] concurrent same-version writes resolve to one winner + one conflict');
+  await policyRoute({ op: 'del', target: 'config' });
+  const seed7 = await policyRoute({ op: 'putConfig', patch: { allowlistMode: false }, expectedVersion: 0 });
+  check('CAS seed config written (version 1)', seed7.status === 200 && seed7.body.config?.version === 1, JSON.stringify(seed7.body));
+  const [w1, w2] = await Promise.all([
+    policyRoute({ op: 'putConfig', patch: { allowlistMode: true }, expectedVersion: 1 }),
+    policyRoute({ op: 'putConfig', patch: { policyCacheTtlSeconds: 120 }, expectedVersion: 1 }),
+  ]);
+  const statuses = [w1.status, w2.status].sort((a, b) => a - b);
+  check('concurrent same-version writes: exactly one 200 and one 409', statuses[0] === 200 && statuses[1] === 409, JSON.stringify(statuses));
+  const conflict7 = [w1, w2].find((r) => r.status === 409);
+  check('the losing concurrent write is a POLICY_CONFLICT', conflict7?.body?.code === 'POLICY_CONFLICT', JSON.stringify(conflict7?.body));
+  const after7 = await policyRoute({ op: 'getConfig' });
+  check('exactly one concurrent write landed (config advanced to version 2)', after7.body.config?.version === 2, JSON.stringify(after7.body.config));
+
+  // [P8] strong-consistency admission gate: a fresh /callback immediately after a
+  // revoke reads the deny with no stale admit. Under the old KV store a callback
+  // landing in a lagging colo could still read the pre-revoke policy and mint a
+  // grant; the coordinator's reads are strongly consistent, so the very next
+  // sign-in is refused.
+  console.log('[P8] revoke then immediate fresh callback is denied');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1008 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1008, input: { allowed: true, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  mock.state.userId = 1008;
+  const preRevoke8 = await runFullFlow({ clientId, resource, mock });
+  check('user connects before revoke', typeof preRevoke8.accessToken === 'string' && preRevoke8.accessToken.length > 0);
+  const rev8 = await policyRoute({ op: 'revokeUser', hsUserId: 1008 });
+  check('revoke pins the policy to allowed:false', rev8.body.result?.policy?.allowed === false, JSON.stringify(rev8.body.result?.policy));
+  const postRevoke8 = await runFullFlow({ clientId, resource, mock });
+  check('a fresh callback immediately after revoke is denied (403, no stale admit)', postRevoke8.stopped === 'callback' && postRevoke8.status === 403, `status ${postRevoke8.status}`);
 }
 
 async function main() {

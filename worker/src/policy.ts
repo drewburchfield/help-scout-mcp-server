@@ -7,27 +7,34 @@
  *   2. For an already-connected session, is the user still allowed, and which
  *      write operations may they execute (the McpAgent dispatch gate)?
  *
- * It is pure over two dependencies: the existing OAUTH_KV namespace (namespaced
- * away from the workers-oauth-provider library keys) and the provider's
- * OAuthHelpers surface (for grant revocation). The mutation functions
- * (putConfig, putUserPolicy, revokeUser) are the seams a future admin API
- * (NAS-1503) calls, and each accepts an optional audit hook so an audit trail
- * (NAS-1502) can be attached without touching call sites.
+ * It is pure and storage-agnostic. The documents themselves live in ONE
+ * per-deployment coordinator Durable Object (policy-coordinator.ts); this module
+ * owns the DECISION logic (evaluateAccess / effectiveWriteFlags), the document
+ * schema and its fail-closed normalization, and the storage-injectable CAS core
+ * (readConfigDoc / writeConfigDoc / readUserPolicyDoc / writeUserPolicyDoc /
+ * pinUserPolicyRevoked). The core runs over a minimal transactional-storage
+ * interface (PolicyStorage), so the coordinator wires it to its own
+ * ctx.storage and the unit suite wires it to an in-memory transactional fake.
  *
- * KV layout (both documents live in OAUTH_KV):
+ * The env-facing entry points callers actually invoke (getConfig, putConfig,
+ * getUserPolicy, putUserPolicy, deleteConfig, deleteUserPolicy, revokeUser) live
+ * in policy-store.ts, which RPCs the coordinator; keeping them there keeps THIS
+ * module free of any ambient Workers runtime types so the root unit suite can
+ * type-check and exercise the core directly.
+ *
+ * Document layout (both live in the coordinator DO's transactional storage):
  *   admin:config:v1        one deployment-wide config document
  *   policy:user:{hsUserId}  one document per Help Scout user id
  *
  * A missing admin:config document means all defaults (open mode): behavior is
  * byte-identical to a deployment with no policy layer configured. A missing
- * policy:user document means the user has no explicit entry (getUserPolicy
- * returns null), which is allowed in open mode and denied under allowlist mode.
+ * policy:user document means the user has no explicit entry (read as null),
+ * which is allowed in open mode and denied under allowlist mode.
  *
  * `userId` consistency: completeAuthorization stores the grant userId as
  * String(hsUserId) (help-scout-handler.ts), so this module keys policy documents
  * and lists/revokes grants by the same String(hsUserId).
  */
-import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 
 /** Current schema version of the admin config document. */
 export const POLICY_CONFIG_SCHEMA_VERSION = 1 as const;
@@ -35,10 +42,18 @@ export const POLICY_CONFIG_SCHEMA_VERSION = 1 as const;
 /** Current schema version of a per-user policy document. */
 export const POLICY_USER_SCHEMA_VERSION = 1 as const;
 
-/** The single admin config KV key. Exported so an admin API / harness can target it. */
+/** The single admin config storage key. Exported so an admin API / harness can target it. */
 export const ADMIN_CONFIG_KEY = 'admin:config:v1';
 
-/** The KV key for one user's policy document. */
+/**
+ * The fixed name every worker request resolves the coordinator DO by
+ * (idFromName), so all reads and writes across the deployment hit the ONE
+ * instance whose single-threaded storage gives strongly-consistent reads and
+ * atomic compare-and-swap writes.
+ */
+export const POLICY_COORDINATOR_NAME = 'policy-coordinator';
+
+/** The storage key for one user's policy document. */
 export function userPolicyKey(hsUserId: string | number): string {
   return `policy:user:${String(hsUserId)}`;
 }
@@ -93,14 +108,23 @@ export interface UserPolicy {
   version: number;
 }
 
-/** The subset of the worker env the read/write policy functions need. */
-export interface PolicyKvEnv {
-  OAUTH_KV: KVNamespace;
-}
-
-/** revokeUser additionally needs the provider helpers to list and revoke grants. */
-export interface PolicyRevokeEnv extends PolicyKvEnv {
-  OAUTH_PROVIDER: OAuthHelpers;
+/**
+ * The minimal transactional key-value storage the CAS core runs over.
+ *
+ * `transaction` runs its closure as an atomic, isolated unit: concurrent
+ * transactions on the same storage are serialized, so a read-modify-write inside
+ * one sees a consistent snapshot and its write cannot be lost to a racing
+ * transaction. The coordinator DO satisfies this with its own ctx.storage (a
+ * single-threaded, input-gated Durable Object); the unit suite satisfies it with
+ * an in-memory transactional fake. The core is written so the read and the write
+ * of each mutation sit inside one such closure, which is what makes the
+ * version check-and-increment an atomic compare-and-swap.
+ */
+export interface PolicyStorage {
+  get<T = unknown>(key: string): Promise<T | undefined>;
+  put(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<void>;
+  transaction<T>(closure: () => Promise<T>): Promise<T>;
 }
 
 /**
@@ -121,9 +145,27 @@ export class PolicyConflictError extends Error {
 }
 
 /**
- * Audit seam for NAS-1502. Mutation functions call this after a successful
- * write; a no-op by default. Kept synchronous-or-async so an audit sink can
- * await a KV/queue write.
+ * A stored config document this build cannot interpret. This is an
+ * authorization boundary, so an unsupported or malformed document must fail
+ * closed (callers surface it as policy-unavailable) rather than silently
+ * normalize into open mode: a future-schema document that meant allowlist
+ * must never admit everyone.
+ */
+export class PolicyInvalidError extends Error {
+  readonly code = 'POLICY_INVALID' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'PolicyInvalidError';
+  }
+}
+
+/**
+ * Audit seam for NAS-1502. The env-facing mutation functions (policy-store.ts)
+ * call this after a successful write; a no-op by default. Kept synchronous-or-
+ * async so an audit sink can await a KV/queue write. It stays worker-side (not
+ * inside the coordinator) because a real sink is worker infrastructure and an
+ * audit hook is a function, which cannot cross the DO RPC boundary.
  */
 export type PolicyAuditEvent =
   | { type: 'config.updated'; version: number; updatedBy: string; config: AdminConfig }
@@ -132,13 +174,63 @@ export type PolicyAuditEvent =
 
 export type PolicyAuditHook = (event: PolicyAuditEvent) => void | Promise<void>;
 
-interface MutationOptions {
+/** The version guard + identity a mutation carries across the DO boundary (audit-free). */
+export interface MutationMeta {
   /** Optimistic-concurrency guard: the version the caller believes is current. */
   expectedVersion: number;
   /** Identity of the admin performing the change; stored for display/audit. */
   updatedBy: string;
-  /** Optional audit sink (NAS-1502). */
+}
+
+/** What the env-facing mutation functions accept: a MutationMeta plus the audit sink. */
+export interface MutationOptions extends MutationMeta {
+  /** Optional audit sink (NAS-1502). Fired worker-side after the DO confirms the write. */
   audit?: PolicyAuditHook;
+}
+
+// --- Cross-boundary result envelopes --------------------------------------
+//
+// The coordinator DO cannot throw a typed PolicyConflictError/PolicyInvalidError
+// across the RPC boundary and have `instanceof` survive, so its methods return a
+// discriminated envelope and policy-store.ts reconstructs the real error class.
+// Callers therefore keep seeing the exact same thrown types they did under KV.
+
+/** A policy error flattened for transport across the DO boundary. */
+export type PolicyErrorEnvelope =
+  | { kind: 'conflict'; message: string; expectedVersion: number; currentVersion: number }
+  | { kind: 'invalid'; message: string };
+
+/** Coordinator read/write result for the config document. */
+export type ConfigDocResult = { ok: true; value: AdminConfig } | { ok: false; error: PolicyErrorEnvelope };
+
+/** Coordinator read result for a user document (value is null when there is no entry). */
+export type UserPolicyDocResult = { ok: true; value: UserPolicy | null } | { ok: false; error: PolicyErrorEnvelope };
+
+/** Coordinator write result for a user document (a write always yields a document). */
+export type UserPolicyWriteResult = { ok: true; value: UserPolicy } | { ok: false; error: PolicyErrorEnvelope };
+
+/** Flatten a known policy error for transport, or null for an unexpected (e.g. storage) error. */
+export function toPolicyErrorEnvelope(error: unknown): PolicyErrorEnvelope | null {
+  if (error instanceof PolicyConflictError) {
+    return {
+      kind: 'conflict',
+      message: error.message,
+      expectedVersion: error.expectedVersion,
+      currentVersion: error.currentVersion,
+    };
+  }
+  if (error instanceof PolicyInvalidError) {
+    return { kind: 'invalid', message: error.message };
+  }
+  return null;
+}
+
+/** Rebuild and throw the real error class from a transported envelope. */
+export function throwPolicyError(envelope: PolicyErrorEnvelope): never {
+  if (envelope.kind === 'conflict') {
+    throw new PolicyConflictError(envelope.message, envelope.expectedVersion, envelope.currentVersion);
+  }
+  throw new PolicyInvalidError(envelope.message);
 }
 
 // --- Config ---------------------------------------------------------------
@@ -153,9 +245,22 @@ const DEFAULT_CONFIG: AdminConfig = {
   updatedBy: '',
 };
 
-/** Coerce an untrusted stored config document into a well-formed AdminConfig. */
+/**
+ * Coerce an untrusted stored config document into a well-formed AdminConfig.
+ * Only a genuinely MISSING document means defaults (open mode). A present
+ * document must carry the supported schema version and a boolean
+ * allowlistMode; anything else throws PolicyInvalidError.
+ */
 function normalizeConfig(raw: Partial<AdminConfig> | null | undefined): AdminConfig {
   if (!raw) return { ...DEFAULT_CONFIG };
+  if (raw.schemaVersion !== POLICY_CONFIG_SCHEMA_VERSION) {
+    throw new PolicyInvalidError(
+      `Unsupported admin config schemaVersion ${String(raw.schemaVersion)}; this build supports ${POLICY_CONFIG_SCHEMA_VERSION}.`,
+    );
+  }
+  if (typeof raw.allowlistMode !== 'boolean') {
+    throw new PolicyInvalidError('Malformed admin config: allowlistMode must be a boolean.');
+  }
   return {
     schemaVersion: POLICY_CONFIG_SCHEMA_VERSION,
     allowlistMode: raw.allowlistMode === true,
@@ -169,16 +274,6 @@ function normalizeConfig(raw: Partial<AdminConfig> | null | undefined): AdminCon
   };
 }
 
-/**
- * Read the deployment config. A missing document is all defaults (open mode).
- * The TTL is clamped defensively here, so a hand-edited out-of-range value never
- * reaches the cache logic.
- */
-export async function getConfig(env: PolicyKvEnv): Promise<AdminConfig> {
-  const raw = (await env.OAUTH_KV.get(ADMIN_CONFIG_KEY, 'json')) as Partial<AdminConfig> | null;
-  return normalizeConfig(raw);
-}
-
 /** The fields putConfig accepts. Omitted fields keep their current value. */
 export interface ConfigPatch {
   allowlistMode?: boolean;
@@ -187,30 +282,53 @@ export interface ConfigPatch {
 }
 
 /**
- * Write the deployment config with a version check-and-increment. A stale
- * expectedVersion throws PolicyConflictError and writes nothing.
+ * Read the deployment config from strongly-consistent storage. A missing
+ * document is all defaults (open mode). The TTL is clamped defensively here, so
+ * a hand-edited out-of-range value never reaches the cache logic.
  */
-export async function putConfig(env: PolicyKvEnv, patch: ConfigPatch, opts: MutationOptions): Promise<AdminConfig> {
-  const current = await getConfig(env);
-  if (current.version !== opts.expectedVersion) {
-    throw new PolicyConflictError(
-      `Config version conflict: expected ${opts.expectedVersion}, found ${current.version}. Re-read and retry.`,
-      opts.expectedVersion,
-      current.version,
-    );
-  }
-  const next: AdminConfig = {
-    schemaVersion: POLICY_CONFIG_SCHEMA_VERSION,
-    allowlistMode: patch.allowlistMode ?? current.allowlistMode,
-    adminRole: patch.adminRole ?? current.adminRole,
-    policyCacheTtlSeconds: clampTtl(patch.policyCacheTtlSeconds ?? current.policyCacheTtlSeconds),
-    version: current.version + 1,
-    updatedAt: new Date().toISOString(),
-    updatedBy: opts.updatedBy,
-  };
-  await env.OAUTH_KV.put(ADMIN_CONFIG_KEY, JSON.stringify(next));
-  await opts.audit?.({ type: 'config.updated', version: next.version, updatedBy: opts.updatedBy, config: next });
-  return next;
+export async function readConfigDoc(storage: PolicyStorage): Promise<AdminConfig> {
+  const raw = await storage.get<Partial<AdminConfig>>(ADMIN_CONFIG_KEY);
+  return normalizeConfig(raw ?? null);
+}
+
+/**
+ * Write the deployment config with an atomic version check-and-increment. The
+ * whole read-compare-write runs inside one storage transaction, so two
+ * concurrent writers presenting the same expectedVersion cannot both win: the
+ * one that commits second reads the first's incremented version and throws
+ * PolicyConflictError. A stale expectedVersion writes nothing.
+ */
+export async function writeConfigDoc(
+  storage: PolicyStorage,
+  patch: ConfigPatch,
+  meta: MutationMeta,
+): Promise<AdminConfig> {
+  return storage.transaction(async () => {
+    const current = normalizeConfig((await storage.get<Partial<AdminConfig>>(ADMIN_CONFIG_KEY)) ?? null);
+    if (current.version !== meta.expectedVersion) {
+      throw new PolicyConflictError(
+        `Config version conflict: expected ${meta.expectedVersion}, found ${current.version}. Re-read and retry.`,
+        meta.expectedVersion,
+        current.version,
+      );
+    }
+    const next: AdminConfig = {
+      schemaVersion: POLICY_CONFIG_SCHEMA_VERSION,
+      allowlistMode: patch.allowlistMode ?? current.allowlistMode,
+      adminRole: patch.adminRole ?? current.adminRole,
+      policyCacheTtlSeconds: clampTtl(patch.policyCacheTtlSeconds ?? current.policyCacheTtlSeconds),
+      version: current.version + 1,
+      updatedAt: new Date().toISOString(),
+      updatedBy: meta.updatedBy,
+    };
+    await storage.put(ADMIN_CONFIG_KEY, next);
+    return next;
+  });
+}
+
+/** Delete the config document (harness/admin seam). Absence reads as open-mode defaults. */
+export async function clearConfigDoc(storage: PolicyStorage): Promise<void> {
+  await storage.delete(ADMIN_CONFIG_KEY);
 }
 
 // --- User policy ----------------------------------------------------------
@@ -236,11 +354,10 @@ function normalizeUserPolicy(raw: Partial<UserPolicy>): UserPolicy {
   };
 }
 
-/** Read one user's policy, or null when the user has no explicit entry. */
-export async function getUserPolicy(env: PolicyKvEnv, hsUserId: string | number): Promise<UserPolicy | null> {
-  const raw = (await env.OAUTH_KV.get(userPolicyKey(hsUserId), 'json')) as Partial<UserPolicy> | null;
-  if (!raw) return null;
-  return normalizeUserPolicy(raw);
+/** Read one user's policy from strongly-consistent storage, or null with no entry. */
+export async function readUserPolicyDoc(storage: PolicyStorage, hsUserId: string | number): Promise<UserPolicy | null> {
+  const raw = await storage.get<Partial<UserPolicy>>(userPolicyKey(hsUserId));
+  return raw ? normalizeUserPolicy(raw) : null;
 }
 
 /** The fields putUserPolicy accepts. */
@@ -253,41 +370,82 @@ export interface UserPolicyInput {
 }
 
 /**
- * Write one user's policy with a version check-and-increment, enforcing the
- * customerVisibleWrites => writes invariant (a customer-visible grant raises
- * writes to true). A stale expectedVersion throws PolicyConflictError.
+ * Write one user's policy with an atomic version check-and-increment, enforcing
+ * the customerVisibleWrites => writes invariant (a customer-visible grant raises
+ * writes to true). The read-compare-write runs inside one storage transaction,
+ * so a racing same-version write cannot silently overwrite this one; the loser
+ * throws PolicyConflictError.
  */
-export async function putUserPolicy(
-  env: PolicyKvEnv,
+export async function writeUserPolicyDoc(
+  storage: PolicyStorage,
   hsUserId: string | number,
   input: UserPolicyInput,
-  opts: MutationOptions,
+  meta: MutationMeta,
 ): Promise<UserPolicy> {
   const id = String(hsUserId);
-  const current = await getUserPolicy(env, id);
-  const currentVersion = current?.version ?? 0;
-  if (currentVersion !== opts.expectedVersion) {
-    throw new PolicyConflictError(
-      `User policy version conflict for ${id}: expected ${opts.expectedVersion}, found ${currentVersion}. Re-read and retry.`,
-      opts.expectedVersion,
-      currentVersion,
-    );
-  }
-  const customerVisibleWrites = input.customerVisibleWrites === true;
-  const writes = customerVisibleWrites || input.writes === true;
-  const next: UserPolicy = {
-    v: POLICY_USER_SCHEMA_VERSION,
-    allowed: input.allowed === true,
-    writes,
-    customerVisibleWrites,
-    email: input.email ?? current?.email ?? '',
-    updatedAt: new Date().toISOString(),
-    updatedBy: opts.updatedBy,
-    version: currentVersion + 1,
-  };
-  await env.OAUTH_KV.put(userPolicyKey(id), JSON.stringify(next));
-  await opts.audit?.({ type: 'user.policy.updated', hsUserId: id, version: next.version, updatedBy: opts.updatedBy, policy: next });
-  return next;
+  return storage.transaction(async () => {
+    const raw = await storage.get<Partial<UserPolicy>>(userPolicyKey(id));
+    const current = raw ? normalizeUserPolicy(raw) : null;
+    const currentVersion = current?.version ?? 0;
+    if (currentVersion !== meta.expectedVersion) {
+      throw new PolicyConflictError(
+        `User policy version conflict for ${id}: expected ${meta.expectedVersion}, found ${currentVersion}. Re-read and retry.`,
+        meta.expectedVersion,
+        currentVersion,
+      );
+    }
+    const customerVisibleWrites = input.customerVisibleWrites === true;
+    const writes = customerVisibleWrites || input.writes === true;
+    const next: UserPolicy = {
+      v: POLICY_USER_SCHEMA_VERSION,
+      allowed: input.allowed === true,
+      writes,
+      customerVisibleWrites,
+      email: input.email ?? current?.email ?? '',
+      updatedAt: new Date().toISOString(),
+      updatedBy: meta.updatedBy,
+      version: currentVersion + 1,
+    };
+    await storage.put(userPolicyKey(id), next);
+    return next;
+  });
+}
+
+/** Delete one user's policy document (harness/admin seam). */
+export async function clearUserPolicyDoc(storage: PolicyStorage, hsUserId: string | number): Promise<void> {
+  await storage.delete(userPolicyKey(String(hsUserId)));
+}
+
+/**
+ * Pin a user to allowed:false inside one atomic transaction. This is the final,
+ * authoritative step of a hard revoke: unlike writeUserPolicyDoc it takes NO
+ * expectedVersion and cannot conflict, because a revoke must win over any
+ * concurrent edit. Running the read-modify-write in one transaction means the
+ * bumped version reflects whatever it displaced, and no racing allow can slip in
+ * between the read and the write to re-open the account.
+ */
+export async function pinUserPolicyRevoked(
+  storage: PolicyStorage,
+  hsUserId: string | number,
+  updatedBy: string,
+): Promise<UserPolicy> {
+  const id = String(hsUserId);
+  return storage.transaction(async () => {
+    const raw = await storage.get<Partial<UserPolicy>>(userPolicyKey(id));
+    const current = raw ? normalizeUserPolicy(raw) : null;
+    const next: UserPolicy = {
+      v: POLICY_USER_SCHEMA_VERSION,
+      allowed: false,
+      writes: false,
+      customerVisibleWrites: false,
+      email: current?.email ?? '',
+      updatedAt: new Date().toISOString(),
+      updatedBy,
+      version: (current?.version ?? 0) + 1,
+    };
+    await storage.put(userPolicyKey(id), next);
+    return next;
+  });
 }
 
 /** Result of a revokeUser call. */
@@ -295,59 +453,6 @@ export interface RevokeUserResult {
   hsUserId: string;
   grantsRevoked: number;
   policy: UserPolicy;
-}
-
-/**
- * Hard-revoke a user: revoke every OAuth grant the provider holds for them, then
- * pin their policy to allowed:false (writes off). Listing is paged in case a
- * user holds many grants. The policy write retries on a version conflict because
- * a revoke is authoritative and must win over a concurrent edit.
- *
- * The two effects are complementary: revoking grants invalidates every live
- * access token immediately (the next /mcp request fails auth at the library
- * layer), and allowed:false denies any re-connection attempt and any session
- * that is serving reads from an unexpired policy cache once that cache lapses.
- */
-export async function revokeUser(
-  env: PolicyRevokeEnv,
-  hsUserId: string | number,
-  opts: { updatedBy: string; audit?: PolicyAuditHook },
-): Promise<RevokeUserResult> {
-  const id = String(hsUserId);
-
-  let grantsRevoked = 0;
-  let cursor: string | undefined;
-  do {
-    const page = await env.OAUTH_PROVIDER.listUserGrants(id, cursor ? { cursor } : undefined);
-    for (const grant of page.items) {
-      await env.OAUTH_PROVIDER.revokeGrant(grant.id, id);
-      grantsRevoked += 1;
-    }
-    cursor = page.cursor;
-  } while (cursor);
-
-  // Pin allowed:false. Retry the version-checked write on conflict so the revoke
-  // is not lost to a racing admin edit; the audit hook fires only for the write
-  // that actually lands.
-  let policy: UserPolicy | undefined;
-  for (let attempt = 0; attempt < 3 && !policy; attempt += 1) {
-    const current = await getUserPolicy(env, id);
-    try {
-      policy = await putUserPolicy(
-        env,
-        id,
-        { allowed: false, writes: false, customerVisibleWrites: false, email: current?.email },
-        { expectedVersion: current?.version ?? 0, updatedBy: opts.updatedBy },
-      );
-    } catch (error) {
-      if (error instanceof PolicyConflictError && attempt < 2) continue;
-      throw error;
-    }
-  }
-
-  const settled = policy as UserPolicy;
-  await opts.audit?.({ type: 'user.revoked', hsUserId: id, grantsRevoked, updatedBy: opts.updatedBy, policy: settled });
-  return { hsUserId: id, grantsRevoked, policy: settled };
 }
 
 // --- Pure decision helpers ------------------------------------------------

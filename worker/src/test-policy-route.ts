@@ -2,30 +2,28 @@
  * Test-harness-only HTTP route for seeding and inspecting the policy engine.
  *
  * The worker has no admin API yet (NAS-1503), and `wrangler dev` exposes no way
- * to write KV mid-run, so the smoke suite needs an in-process seam to seed the
- * config/policy documents and to drive revokeUser. This route provides exactly
- * that and NOTHING else: it is mounted only when HELPSCOUT_TEST_POLICY_ROUTES
- * === "true", which the deployment template never sets and the smoke asserts is
- * absent by default (the route 404s without it).
+ * to reach into the coordinator DO's storage mid-run, so the smoke suite needs an
+ * in-process seam to seed the config/policy documents and to drive revokeUser.
+ * This route provides exactly that and NOTHING else: it is mounted only when
+ * HELPSCOUT_TEST_POLICY_ROUTES === "true", which the deployment template never
+ * sets and the smoke asserts is absent by default (the route 404s without it).
  *
  * It is a thin dispatch over the same exported policy functions the real admin
- * API will call, so it exercises the production seams rather than a parallel
- * path. It is intentionally not a general KV console: only the two policy key
- * shapes can be deleted, via typed ops.
+ * API will call, so it exercises the production seams (which now RPC the
+ * coordinator) rather than a parallel path. It is intentionally not a general
+ * storage console: only the two policy documents can be deleted, via typed ops.
  */
 import type { Env } from './mcp-agent.js';
+import { PolicyConflictError, type ConfigPatch, type UserPolicyInput } from './policy.js';
 import {
-  ADMIN_CONFIG_KEY,
-  PolicyConflictError,
+  deleteConfig,
+  deleteUserPolicy,
   getConfig,
   getUserPolicy,
   putConfig,
   putUserPolicy,
   revokeUser,
-  userPolicyKey,
-  type ConfigPatch,
-  type UserPolicyInput,
-} from './policy.js';
+} from './policy-store.js';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -58,9 +56,9 @@ export async function handleTestPolicyRoute(request: Request, env: Env): Promise
     switch (command.op) {
       case 'del': {
         if (command.target === 'config') {
-          await env.OAUTH_KV.delete(ADMIN_CONFIG_KEY);
+          await deleteConfig(env);
         } else if (command.target === 'user') {
-          await env.OAUTH_KV.delete(userPolicyKey(String(command.hsUserId)));
+          await deleteUserPolicy(env, String(command.hsUserId));
         } else {
           return json({ error: 'del requires target "config" or "user".' }, 400);
         }
