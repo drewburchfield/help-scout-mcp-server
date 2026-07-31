@@ -82,6 +82,16 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
   drewburchfield/help-scout-mcp-server:2.1.0
 ```
 
+### Remote server (self-hosted)
+
+For a team, you can host one instance instead of giving everyone the same App ID and Secret. Deploy the Cloudflare Worker in [`worker/`](worker/) and each person connects one URL and signs in with their own Help Scout login, acting with their own permissions. No shared credentials, nothing to install per machine.
+
+1. `cd worker && npm install`
+2. Create a KV namespace, register a Help Scout app with an `https` callback, set three secrets, and `wrangler deploy`
+3. Add `https://<your-worker>/mcp` as a custom connector in claude.ai or Claude Desktop
+
+This needs a Cloudflare account (the free tier works) and a full Help Scout User seat; Light User seats cannot use it. Writes are opt-in per deployment, off by default. Full runbook, including the token behavior and the redirect-URL trap to avoid: [Self-hosting the remote server](guides/remote-self-host.md).
+
 ## Getting Your API Credentials
 
 1. Go to **Help Scout** > **My Apps** > **Create Private App**

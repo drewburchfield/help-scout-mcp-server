@@ -109,3 +109,4 @@ tests/*
 !tests/
 !tests/*.ts
 *.tgz
+worker/wrangler.deploy.jsonc

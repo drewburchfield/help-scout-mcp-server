@@ -116,6 +116,10 @@ src/
 │   └── helpscout-client.ts  # Help Scout API client
 ├── cli.ts              # Process entry point (npm bin and MCPB extension)
 └── index.ts            # Server class and MCP wiring
+
+worker/                 # Cloudflare Worker: the same tool surface served
+                        # remotely behind per-user OAuth. Imports the shared
+                        # core from src/. See guides/remote-self-host.md.
 ```
 
 ## 🐛 Bug Reports
