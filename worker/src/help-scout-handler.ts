@@ -157,12 +157,40 @@ async function renderConsent(request: Request, env: Env): Promise<Response> {
  * Help Scout's authorize URL carrying only our client id and that state.
  */
 async function handleApprove(request: Request, env: Env): Promise<Response> {
+  // Defense in depth on top of the SameSite=Lax cookie: a cross-origin POST
+  // must not be able to advance the consent flow even if a cookie somehow rides
+  // along, and the submit must carry the explicit approval field the consent
+  // form posts.
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== new URL(request.url).origin) {
+    return htmlResponse(
+      page('Authorize Help Scout', 'Could not verify this request', '<p>This approval did not come from the consent page. Reconnect the connector to try again.</p>'),
+      403,
+    );
+  }
+  const form = await request.formData().catch(() => null);
+  if (form?.get('approve') !== 'true') {
+    return htmlResponse(
+      page('Authorize Help Scout', 'Could not verify this request', '<p>This approval did not come from the consent page. Reconnect the connector to try again.</p>'),
+      400,
+    );
+  }
+
   const cookieValue = readCookie(request, CONSENT_COOKIE_NAME);
   const txn = await verifyConsentCookie<AuthRequest>(cookieValue, env.COOKIE_ENCRYPTION_KEY ?? '');
   if (!txn) {
     return htmlResponse(
       page('Authorize Help Scout', 'Session expired', '<p>This authorization session is missing or expired. Reconnect the connector to try again.</p>'),
       400,
+    );
+  }
+
+  // The browser is about to be sent to this URL; hold it to the same https
+  // bar as the other upstream endpoints (loopback excepted for the mock).
+  if (!isSecureUpstreamUrl(env.HELPSCOUT_AUTHORIZE_URL)) {
+    return htmlResponse(
+      page('Authorize Help Scout', 'Deployment misconfigured', '<p>This server is configured with a non-https Help Scout URL. Ask whoever operates it to fix HELPSCOUT_AUTHORIZE_URL.</p>'),
+      500,
     );
   }
 
