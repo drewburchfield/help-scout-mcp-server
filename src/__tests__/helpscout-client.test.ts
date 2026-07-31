@@ -184,6 +184,9 @@ describe('HelpScoutClient', () => {
       const client = new HelpScoutClient();
       (client as any).accessToken = 'stale-token';
       (client as any).tokenExpiresAt = Date.now() + 60_000;
+      // The stale token belongs to the current credentials; without the
+      // matching fingerprint the identity guard would discard it up front.
+      (client as any).accessTokenFingerprint = (client as any).cacheIdentityPrefix();
       jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
 
       await expect((client as any).executeWithRetry(() =>
@@ -558,12 +561,115 @@ describe('HelpScoutClient', () => {
 
     it('should add request IDs and timing', async () => {
       const client = new HelpScoutClient();
-      
+
       // Test that the axios instance has interceptors configured
       const axiosClient = (client as any).client;
-      
+
       expect(axiosClient.interceptors.request.handlers).toHaveLength(1);
       expect(axiosClient.interceptors.response.handlers).toHaveLength(1);
+    });
+  });
+
+  // NAS-1497: an absolute or protocol-relative endpoint can replace axios's
+  // baseURL, carrying the bearer token to another host. Every public request
+  // method must reject an off-origin destination before any request is made.
+  describe('endpoint origin validation (NAS-1497)', () => {
+    const crossOrigin = 'https://attacker.example/collect';
+    const protocolRelative = '//attacker.example/collect';
+
+    beforeEach(() => {
+      process.env.HELPSCOUT_APP_ID = 'app-id';
+      process.env.HELPSCOUT_APP_SECRET = 'app-secret';
+      process.env.HELPSCOUT_BASE_URL = `${baseURL}/`;
+      // Any request that escapes validation would surface as a disallowed net
+      // connect, so a validation-message rejection proves nothing left the box.
+      nock.disableNetConnect();
+    });
+
+    afterEach(() => {
+      nock.enableNetConnect();
+    });
+
+    const expectOffOriginRejection = async (invoke: (client: HelpScoutClient) => Promise<unknown>) => {
+      const client = new HelpScoutClient();
+      try {
+        await expect(invoke(client)).rejects.toThrow('non-Help-Scout origin');
+        expect(nock.pendingMocks()).toHaveLength(0);
+      } finally {
+        await client.closePool();
+      }
+    };
+
+    it('rejects a cross-origin absolute URL on get', async () => {
+      await expectOffOriginRejection((client) => client.get(crossOrigin));
+    });
+
+    it('rejects a protocol-relative URL on get', async () => {
+      await expectOffOriginRejection((client) => client.get(protocolRelative));
+    });
+
+    it('rejects a cross-origin absolute URL on getRaw', async () => {
+      await expectOffOriginRejection((client) => client.getRaw(crossOrigin));
+    });
+
+    it('rejects a protocol-relative URL on getRaw', async () => {
+      await expectOffOriginRejection((client) => client.getRaw(protocolRelative));
+    });
+
+    it('rejects a cross-origin absolute URL on getAllPages', async () => {
+      await expectOffOriginRejection((client) => client.getAllPages(crossOrigin, 'items'));
+    });
+
+    it('rejects a cross-origin absolute URL on post', async () => {
+      await expectOffOriginRejection((client) => client.post(crossOrigin, { foo: 'bar' }));
+    });
+
+    it('rejects a protocol-relative URL on post', async () => {
+      await expectOffOriginRejection((client) => client.post(protocolRelative, { foo: 'bar' }));
+    });
+
+    it('rejects a cross-origin absolute URL on put', async () => {
+      await expectOffOriginRejection((client) => client.put(crossOrigin, { foo: 'bar' }));
+    });
+
+    it('rejects a cross-origin absolute URL on patch', async () => {
+      await expectOffOriginRejection((client) => client.patch(crossOrigin, { foo: 'bar' }));
+    });
+
+    it('rejects a cross-origin absolute URL on delete', async () => {
+      await expectOffOriginRejection((client) => client.delete(crossOrigin));
+    });
+
+    it('rejects an endpoint with embedded credentials', async () => {
+      const client = new HelpScoutClient();
+      try {
+        await expect(client.get('https://user:pass@api.helpscout.net/v2/mailboxes')).rejects.toThrow(
+          'embedded credentials',
+        );
+        expect(nock.pendingMocks()).toHaveLength(0);
+      } finally {
+        await client.closePool();
+      }
+    });
+
+    it('allows a same-origin absolute HAL next link', async () => {
+      const nextLink = 'https://api.helpscout.net/v2/conversations?page=2';
+
+      const authScope = nock('https://api.helpscout.net')
+        .post('/v2/oauth2/token')
+        .reply(200, { access_token: 'same-origin-token', expires_in: 7200 });
+
+      const apiScope = nock('https://api.helpscout.net')
+        .get('/v2/conversations')
+        .query({ page: '2' })
+        .matchHeader('authorization', 'Bearer same-origin-token')
+        .reply(200, { _embedded: { conversations: [] } });
+
+      const client = new HelpScoutClient();
+      await expect(client.get(nextLink)).resolves.toEqual({ _embedded: { conversations: [] } });
+      expect(authScope.isDone()).toBe(true);
+      expect(apiScope.isDone()).toBe(true);
+      await client.closePool();
     });
   });
 });
