@@ -1,0 +1,23 @@
+{
+  "name": "help-scout-mcp-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that serves the Help Scout MCP gateway over Streamable HTTP behind per-user OAuth. Imports the shared tool surface from ../../src; not published to npm.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "type-check": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "0.8.3",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "agents": "0.20.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260730.1",
+    "@types/node": "^20.10.4",
+    "typescript": "^5.3.3",
+    "wrangler": "^4.0.0"
+  }
+}

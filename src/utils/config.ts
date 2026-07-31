@@ -1,7 +1,19 @@
 import dotenv from 'dotenv';
 
-// Only load .env in non-test environments
-if (process.env.NODE_ENV !== 'test') {
+// The Workers runtime has no filesystem and supplies configuration through env
+// bindings, so dotenv's `.env` file read must never run there: under workerd it
+// would throw while this module is being evaluated and take the whole Worker
+// down at import time. Detect the Workers runtime by its navigator user agent
+// (read defensively so the reference type-checks under the Node lib and is
+// undefined on older Node, where dotenv should still run).
+// eslint-disable-next-line no-undef -- globalThis is an ES2020 global; the shared lint env (es6) predates it
+const workerRuntime = globalThis as { navigator?: { userAgent?: string } };
+const isWorkerRuntime = workerRuntime.navigator?.userAgent === 'Cloudflare-Workers';
+
+// Only load .env in a Node process, and never under test (jest sets NODE_ENV).
+// The worker check runs first so this line never dereferences `process` in a
+// runtime that does not define it.
+if (!isWorkerRuntime && process.env.NODE_ENV !== 'test') {
   dotenv.config();
 }
 
