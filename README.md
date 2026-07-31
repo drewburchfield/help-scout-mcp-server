@@ -22,6 +22,20 @@ Built by a Help Scout customer who wanted to give his support team superpowers. 
 
 ## Quick Start
 
+### Which install should I use?
+
+| Install | Best for | Works in | Auth model | Writes act as | Setup effort |
+|---------|----------|----------|------------|---------------|--------------|
+| **Desktop Extension (`.mcpb`)** | One person on the Claude desktop app | Claude Desktop (Chat and Cowork) | One shared App ID and Secret you enter once | The app owner (shared credential) | One-click |
+| **`npx` / config file** | Developers, CLI and editor clients | Claude Code, Cursor, VS Code, Goose, any local MCP client | One shared App ID and Secret in env | The app owner (shared credential) | One command or a small config block |
+| **Docker** | Containerized or server-side runs | Any host that runs the container | One shared App ID and Secret in env | The app owner (shared credential) | One `docker run` |
+| **Remote worker (self-hosted)** | A whole team, and anyone on claude.ai web or mobile | claude.ai (web and mobile apps), Claude Desktop, any remote-MCP client | Each person signs in with their own Help Scout login | Each signed-in user, with their own Help Scout permissions | One-time Cloudflare deploy, then one URL per person |
+
+Two things the table cannot say loudly enough:
+
+- **claude.ai on the web and the mobile apps can only use the remote worker.** The other three installs run a local stdio process on one machine, which the web and mobile clients cannot reach. If you want Help Scout in claude.ai or on your phone, the remote worker is the only path.
+- **Only the remote worker gives per-user identity.** With the local installs (extension, npx, Docker) everyone shares one App ID and Secret, and every read and write acts as the app's owner. With the remote worker each person signs in as themselves and acts with their own Help Scout permissions, so reads and writes are attributed to the actual user and revoke with their account.
+
 ### Claude Desktop & Claude Cowork (Recommended)
 
 **One-click install** using [Desktop Extensions](https://www.anthropic.com/engineering/desktop-extensions). One install covers both Chat and Cowork sessions in the Claude desktop app.
@@ -86,8 +100,10 @@ docker run -e HELPSCOUT_APP_ID="your-app-id" \
 
 For a team, you can host one instance instead of giving everyone the same App ID and Secret. Deploy the Cloudflare Worker in [`worker/`](worker/) and each person connects one URL and signs in with their own Help Scout login, acting with their own permissions. No shared credentials, nothing to install per machine.
 
+This is the recommended path for teams that would rather not hand out shared API credentials, and for organizations with role-based access control or compliance-style requirements (for example teams operating under SOC 2 or ISO 27001 controls). The worker gives you per-user attribution, access that revokes with each person's Help Scout account, and a deployment that runs on your own infrastructure. That does not make the software certified or compliant on its own, but it supports the control requirements those organizations have to meet.
+
 1. `cd worker && npm install`
-2. Create a KV namespace, register a Help Scout app with an `https` callback, set three secrets, and `wrangler deploy`
+2. Run `npm run setup` (creates the KV namespace and writes your deploy config), deploy once to learn your worker URL, then register a Help Scout app with the `https://<your-worker>/callback` redirect, set three secrets, and deploy again
 3. Add `https://<your-worker>/mcp` as a custom connector in claude.ai or Claude Desktop
 
 This needs a Cloudflare account (the free tier works) and a full Help Scout User seat; Light User seats cannot use it. Writes are opt-in per deployment, off by default. Full runbook, including the token behavior and the redirect-URL trap to avoid: [Self-hosting the remote server](guides/remote-self-host.md).

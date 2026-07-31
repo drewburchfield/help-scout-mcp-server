@@ -10,6 +10,14 @@ This is different from the [Desktop Extension](cowork-setup.md) and the npx/Dock
 installs, where each person runs their own copy with a single shared App ID and
 Secret. The remote worker is one deployment your whole team connects to.
 
+It is also the recommended path for teams that would rather not hand out shared API
+credentials, and for organizations with role-based access control or compliance-style
+requirements (for example teams operating under SOC 2 or ISO 27001 controls).
+Per-user attribution, access that revokes with each person's Help Scout account, and
+running on your own infrastructure are the point here. This does not make the software
+certified or compliant on its own; it is built to support the control requirements
+those organizations have to meet.
+
 It is a v1 remote deployment. Read the [seat requirement](#who-can-use-it) and the
 [token behavior](#how-tokens-and-sessions-behave) before rolling it out to a team.
 
@@ -60,6 +68,25 @@ This opens a browser and authorizes `wrangler` against your Cloudflare account.
 The OAuth provider stores hashed client secrets and the AES-GCM-encrypted per-user
 grants (which hold each user's Help Scout tokens) in a Workers KV namespace.
 
+The quickest path is the setup wizard, which does this step and the next one for
+you. From the `worker/` directory:
+
+```bash
+npm run setup
+```
+
+It checks that `wrangler` is logged in (and tells you to run `npx wrangler login`
+if not), creates the `OAUTH_KV` namespace, and writes `wrangler.deploy.jsonc` with
+the namespace id filled in. It prompts for an optional Cloudflare `account_id` and
+an optional custom worker name, then prints the remaining steps. It refuses to
+overwrite an existing `wrangler.deploy.jsonc` unless you pass `--force`, so it will
+not clobber a live deployment's config. If you already created a namespace, pass its
+id with `--kv-id <id>` to skip creation. When the wizard finishes, skip to step 5.
+
+To do it by hand instead, run the two steps below.
+
+**Manual alternative.** Create the namespace:
+
 ```bash
 npx wrangler kv namespace create OAUTH_KV
 ```
@@ -67,6 +94,9 @@ npx wrangler kv namespace create OAUTH_KV
 Copy the `id` it prints. You will paste it into your config in the next step.
 
 ### 4. Make a deploy config
+
+The wizard in step 3 writes this file for you. Do this step by hand only if you
+skipped the wizard.
 
 `wrangler.jsonc` is a tracked template with placeholders. Rather than edit the
 template in place, copy it to `wrangler.deploy.jsonc` (already gitignored) and fill
@@ -266,6 +296,21 @@ reconnect; other users are unaffected.
 
 ## Operating notes
 
+- **Upgrading a deployment.** Pull the new code and re-deploy with your existing
+  config:
+
+  ```bash
+  git pull
+  npm install   # only if package-lock.json changed
+  npx wrangler deploy --config wrangler.deploy.jsonc
+  ```
+
+  Your secrets and the `OAUTH_KV` namespace survive a re-deploy, so connected users
+  stay connected and no one has to sign in again. `wrangler.deploy.jsonc` is not
+  touched by `git pull` (it is gitignored), so your KV id and account id carry over.
+  If you want a check before shipping an update, run the smoke suite first (`npm run
+  smoke`); it drives the whole OAuth flow against a local mock without touching Help
+  Scout or your live deployment.
 - Live logs: `npm run tail` (wraps `wrangler tail`) streams request logs from the
   deployed worker.
 - The three advertised tools are a gateway over the read operations; Claude finds
