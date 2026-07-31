@@ -68,6 +68,12 @@ export class HelpScoutClient implements HelpScoutApi {
   private client: AxiosInstance;
   private accessToken: string | null = null;
   private tokenExpiresAt: number = 0;
+  // Fingerprint of the credentials that produced accessToken. Credentials are
+  // resolved from mutable process.env, so a rotation while a token is still
+  // valid must force re-authentication: otherwise the old identity's token
+  // would be sent while cache keys are computed for the new identity, filing
+  // one account's responses under the other's cache namespace.
+  private accessTokenFingerprint: string | null = null;
   private authenticationPromise: Promise<void> | null = null;
   private httpAgent: HttpAgent;
   private httpsAgent: HttpsAgent;
@@ -322,6 +328,7 @@ export class HelpScoutClient implements HelpScoutApi {
   private invalidateAccessToken(): void {
     this.accessToken = null;
     this.tokenExpiresAt = 0;
+    this.accessTokenFingerprint = null;
     this.authenticationPromise = null;
   }
 
@@ -394,8 +401,13 @@ export class HelpScoutClient implements HelpScoutApi {
   }
 
   private async ensureAuthenticated(): Promise<void> {
-    // Check if token is still valid
-    if (this.accessToken && Date.now() < this.tokenExpiresAt) {
+    // A token is only reusable while it is unexpired AND still belongs to the
+    // currently resolved credentials; a mid-process rotation invalidates it.
+    if (
+      this.accessToken &&
+      Date.now() < this.tokenExpiresAt &&
+      this.accessTokenFingerprint === this.cacheIdentityPrefix()
+    ) {
       return;
     }
 
@@ -449,6 +461,7 @@ export class HelpScoutClient implements HelpScoutApi {
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer
+      this.accessTokenFingerprint = this.cacheIdentityPrefix();
 
       logger.info('Authenticated with Help Scout API using OAuth2 Client Credentials');
     } catch (error) {

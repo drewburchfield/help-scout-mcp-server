@@ -184,6 +184,9 @@ describe('HelpScoutClient', () => {
       const client = new HelpScoutClient();
       (client as any).accessToken = 'stale-token';
       (client as any).tokenExpiresAt = Date.now() + 60_000;
+      // The stale token belongs to the current credentials; without the
+      // matching fingerprint the identity guard would discard it up front.
+      (client as any).accessTokenFingerprint = (client as any).cacheIdentityPrefix();
       jest.spyOn(client as any, 'sleep').mockResolvedValue(undefined);
 
       await expect((client as any).executeWithRetry(() =>
