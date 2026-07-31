@@ -10,13 +10,16 @@
  *
  * Two handlers do the work:
  *   - apiHandler: the McpAgent (Durable Object) serving the gateway at /mcp.
- *   - defaultHandler: our consent surface at /authorize + /approve (T4 stub;
- *     T5 turns it into the real Help Scout Authorization Code client).
+ *   - defaultHandler: our consent surface at /authorize + /approve + /callback,
+ *     the real Help Scout Authorization Code client (help-scout-handler.ts).
+ *   - tokenExchangeCallback: durable Help Scout refresh-token rotation on the
+ *     client's refresh of OUR token (helpscout-oauth.ts).
  */
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 
 import { HelpScoutMCP } from './mcp-agent.js';
 import { helpScoutHandler } from './help-scout-handler.js';
+import { helpScoutTokenExchangeCallback } from './helpscout-oauth.js';
 import type { Env } from './mcp-agent.js';
 
 // The Durable Object class must be exported for the wrangler migration binding.
@@ -38,8 +41,16 @@ export default new OAuthProvider<Env>({
   tokenEndpoint: '/token',
   clientRegistrationEndpoint: '/register',
 
-  // TTL of the token WE issue to the MCP client (independent of the Help Scout
-  // token). 30 days with library-managed refresh rotation, matching the
-  // production reference server's contract.
+  // Fallback TTL of the token WE issue to the MCP client, used only when the
+  // Help Scout token expiry is unknown. Normally the tokenExchangeCallback below
+  // overrides this per grant, aligning OUR token to expire ~5 minutes before the
+  // Help Scout access token so the client's refresh of OUR token is the primary,
+  // durable Help Scout rotation trigger.
   accessTokenTTL: 2592000,
+
+  // The sanctioned durable-rotation hook. On the client's refresh of OUR token,
+  // this refreshes the Help Scout pair upstream and returns newProps, which the
+  // provider persists into the encrypted grant record in KV (survives Durable
+  // Object eviction and reaches every session). See helpscout-oauth.ts.
+  tokenExchangeCallback: helpScoutTokenExchangeCallback,
 });

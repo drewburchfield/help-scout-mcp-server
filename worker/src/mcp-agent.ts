@@ -40,9 +40,8 @@ const SERVER_VERSION = '2.1.0';
  * The per-user grant, decrypted by workers-oauth-provider and re-injected as
  * `this.props` on every authorized `/mcp` request. The first three fields are
  * the Help Scout token pair the fetch client reads; the rest identify the user.
- *
- * For T4 the OAuth leg is stubbed (see help-scout-handler.ts), so these arrive
- * as stub values; T5 fills them with a real Help Scout Authorization Code login.
+ * These are filled by the real Help Scout Authorization Code login in
+ * help-scout-handler.ts and rotated durably via helpscout-oauth.ts.
  */
 export interface HelpScoutProps extends Record<string, unknown> {
   accessToken: string;
@@ -100,6 +99,15 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
   private gateway!: GatewayHandler;
 
   async init(): Promise<void> {
+    // Rebuild the server with instructions that name the connected user, read
+    // from the grant props. This is the confirmation that the grant carried a
+    // real per-user identity through the Help Scout leg, surfaced to the client
+    // in the initialize response without any Help Scout call.
+    this.server = new Server(
+      { name: SERVER_NAME, version: SERVER_VERSION },
+      { capabilities: { tools: {} }, instructions: this.buildInstructions() },
+    );
+
     // Same registry the stdio server builds, gated by the deployment's write
     // env vars. Passed explicitly rather than read from process.env so the
     // advertised surface is deterministic under workerd (where process.env
@@ -124,6 +132,18 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
       const client = this.buildClient();
       return withHelpScoutApi(client, () => this.gateway.callTool(request));
     });
+  }
+
+  /**
+   * A one-line description of the connected Help Scout user, surfaced as the MCP
+   * server instructions so the client can show who the session acts as. Reads
+   * only the grant props; falls back cleanly if a session somehow lacks them.
+   */
+  private buildInstructions(): string {
+    const base = 'Help Scout MCP gateway. Search, describe, and read (and, when enabled, write) Help Scout data.';
+    const props = this.props;
+    if (!props || !props.email) return base;
+    return `${base} Connected to Help Scout as ${props.name} <${props.email}>.`;
   }
 
   /** The grant props must be present on an authorized request; guard for TS and clarity. */
@@ -152,21 +172,21 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
         };
       },
       persistTokens: async (tokens: UserTokenContext): Promise<void> => {
-        // T5 SEAM — in-memory only. Update the live props so the next
-        // getTokens() and every later request on THIS instance reads the
-        // rotated pair. It does NOT re-encrypt the OAuth grant props that
-        // workers-oauth-provider re-injects on the next cold request, so a
-        // rotation does not yet survive instance eviction or a second session.
-        // Making rotation durable across instances is T5's job (open question
-        // on NAS-1491: whether mutating props persists). `this.updateProps(...)`
-        // would additionally write to DO storage and is the hook to build on.
+        // In-session safety net for a Help Scout token that expires mid-session.
+        // updateProps writes both this.props and DO storage, so the rest of this
+        // instance's requests read the rotated pair. This is NOT the durable
+        // path: on a cold wake, onStart re-injects the access token's props
+        // snapshot over DO storage, so a rotation here does not reach the grant
+        // or other instances. Durable, cross-instance rotation is the OAuth
+        // shell's tokenExchangeCallback (see helpscout-oauth.ts); OUR token TTL
+        // is aligned so that path fires ahead of this one in normal operation.
         const current = this.requireProps();
-        this.props = {
+        await this.updateProps({
           ...current,
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           expiresAt: tokens.expiresAt,
-        };
+        });
       },
       refreshMutex: this.refreshMutex,
     });
