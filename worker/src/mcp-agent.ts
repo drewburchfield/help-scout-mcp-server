@@ -19,18 +19,30 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  type CallToolRequest,
+  type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { OAuthHelpers } from '@cloudflare/workers-oauth-provider';
 
-import { GatewayHandler } from '../../src/tools/gateway.js';
+import { GatewayHandler, WRITE_TOOL_NAME } from '../../src/tools/gateway.js';
 import { toolHandler } from '../../src/tools/index.js';
 import { writeHandler } from '../../src/tools/writes.js';
 import { withHelpScoutApi } from '../../src/utils/api.js';
+import { logger } from '../../src/utils/logger.js';
 import {
   HelpScoutFetchClient,
   RefreshMutex,
   type UserTokenContext,
 } from '../../src/worker/helpscout-fetch-client.js';
+import {
+  effectiveWriteFlags,
+  evaluateAccess,
+  getConfig,
+  getUserPolicy,
+  type AdminConfig,
+  type UserPolicy,
+  type WriteFlagSet,
+} from './policy.js';
 
 /** Kept in step with the stdio server identity in `src/index.ts`. */
 const SERVER_NAME = 'helpscout-search';
@@ -71,6 +83,12 @@ export interface Env {
   HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES?: string;
   COOKIE_ENCRYPTION_KEY?: string;
   /**
+   * Test-harness only. When "true", the consent handler mounts an internal
+   * policy-seeding route used by the smoke suite. Never set in the deployment
+   * template; the smoke asserts the route 404s without it.
+   */
+  HELPSCOUT_TEST_POLICY_ROUTES?: string;
+  /**
    * Optional. Docs API operations are part of the shared registry and stay
    * advertised; without this secret they fail at call time with a
    * credentials-missing error. The Docs client reads it from process.env
@@ -78,6 +96,51 @@ export interface Env {
    * is for documentation and wrangler type generation.
    */
   HELPSCOUT_DOCS_API_KEY?: string;
+}
+
+/** A structured tool error result, matching the gateway's error envelope shape. */
+function policyErrorResult(payload: Record<string, unknown>): CallToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }],
+    structuredContent: payload,
+    isError: true,
+  };
+}
+
+/** Access is denied (revoked, or not enabled under allowlist mode). */
+function accessRevokedResult(): CallToolResult {
+  return policyErrorResult({
+    error: 'Your access to this Help Scout deployment is not enabled or was revoked.',
+    code: 'ACCESS_REVOKED',
+    hint: 'Disconnect the Help Scout connector. If you believe this is a mistake, contact the administrator of this deployment.',
+  });
+}
+
+/** The deployment allows writes, but this user's policy withholds them. */
+function writePermissionDeniedResult(): CallToolResult {
+  return policyErrorResult({
+    error: 'Your Help Scout access here does not include write operations. Nothing was sent to Help Scout.',
+    code: 'PERMISSION_DENIED',
+    hint: 'Write access is granted per user by the administrator of this deployment. Contact them to enable it for your account.',
+  });
+}
+
+/** A write could not verify policy against KV: fail closed without attempting the write. */
+function policyUnavailableWriteResult(): CallToolResult {
+  return policyErrorResult({
+    error: 'Your access could not be verified right now, so this write was not attempted.',
+    code: 'UPSTREAM_ERROR',
+    hint: 'This is a temporary problem reaching the deployment policy store. Try again in a moment.',
+  });
+}
+
+/** A read could not verify policy against KV and no unexpired snapshot was available. */
+function policyUnavailableReadResult(): CallToolResult {
+  return policyErrorResult({
+    error: 'Your access could not be verified right now.',
+    code: 'TEMPORARY_ERROR',
+    hint: 'This is a temporary problem reaching the deployment policy store. Try again in a moment.',
+  });
 }
 
 export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
@@ -99,6 +162,18 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
   private readonly refreshMutex = new RefreshMutex();
 
   private gateway!: GatewayHandler;
+
+  /**
+   * Instance-scoped snapshot of the access policy for this session's user.
+   *
+   * Reads are served from this snapshot while it is unexpired, so a read call
+   * costs no KV round trip inside the window — and that window IS the revocation
+   * SLA: after allowed flips to false, reads keep working only until the
+   * snapshot lapses, then the next read re-reads KV and is denied. The TTL comes
+   * from the config document (clamped 15-300s). Writes never read this snapshot;
+   * they always re-read policy fresh (see dispatchWrite).
+   */
+  private policySnapshot?: { config: AdminConfig; userPolicy: UserPolicy | null; expiresAtMs: number };
 
   async init(): Promise<void> {
     // Build the server with instructions that name the connected user, read
@@ -127,13 +202,130 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
       tools: await this.gateway.listTools(),
     }));
 
-    // Every dispatch constructs this user's client and runs the whole async
-    // call tree under it via AsyncLocalStorage, so the 40+ getClient() call
-    // sites resolve to the per-user, fetch-backed client with no shared state.
+    // Every dispatch runs through the policy gate, then constructs this user's
+    // client and runs the whole async call tree under it via AsyncLocalStorage,
+    // so the 40+ getClient() call sites resolve to the per-user, fetch-backed
+    // client with no shared state.
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      return this.dispatchToolCall(request);
+    });
+  }
+
+  /**
+   * The policy-enforced dispatch path for every tools/call.
+   *
+   * Access is checked on every call. A write additionally re-reads the policy
+   * fresh (bypassing the read cache) and dispatches through a gateway configured
+   * with the user's effective write flags, so a per-user write grant is enforced
+   * at execution even though advertisement (tools/list) stays ceiling-only.
+   */
+  private async dispatchToolCall(request: CallToolRequest): Promise<CallToolResult> {
+    const isWrite = request.params.name === WRITE_TOOL_NAME;
+
+    const gate = await this.checkAccess(isWrite);
+    if (!gate.ok) return gate.result;
+
+    if (isWrite) {
+      return this.dispatchWrite(request, gate.userPolicy);
+    }
+
+    const client = this.buildClient();
+    return withHelpScoutApi(client, () => this.gateway.callTool(request));
+  }
+
+  /**
+   * Resolve the access decision for this call. Reads may serve from an unexpired
+   * policy snapshot without touching KV; writes force a fresh read. On a KV
+   * failure the gate fails closed: a write returns an upstream-error result and
+   * a read returns a temporary-error result (an unexpired snapshot would already
+   * have been served above, so reaching the KV read means there was nothing safe
+   * to serve).
+   */
+  private async checkAccess(
+    forceFresh: boolean,
+  ): Promise<
+    | { ok: true; config: AdminConfig; userPolicy: UserPolicy | null }
+    | { ok: false; result: CallToolResult }
+  > {
+    const userId = String(this.requireProps().userId);
+    const now = Date.now();
+
+    if (!forceFresh && this.policySnapshot && now < this.policySnapshot.expiresAtMs) {
+      return this.decideAccess(this.policySnapshot.config, this.policySnapshot.userPolicy);
+    }
+
+    let config: AdminConfig;
+    let userPolicy: UserPolicy | null;
+    try {
+      config = await getConfig(this.env);
+      userPolicy = await getUserPolicy(this.env, userId);
+    } catch (error) {
+      logger.error('Policy read failed at dispatch', {
+        error: error instanceof Error ? error.message : String(error),
+        forceFresh,
+      });
+      return {
+        ok: false,
+        result: forceFresh ? policyUnavailableWriteResult() : policyUnavailableReadResult(),
+      };
+    }
+
+    this.policySnapshot = {
+      config,
+      userPolicy,
+      expiresAtMs: now + config.policyCacheTtlSeconds * 1000,
+    };
+    return this.decideAccess(config, userPolicy);
+  }
+
+  private decideAccess(
+    config: AdminConfig,
+    userPolicy: UserPolicy | null,
+  ):
+    | { ok: true; config: AdminConfig; userPolicy: UserPolicy | null }
+    | { ok: false; result: CallToolResult } {
+    const decision = evaluateAccess(config, userPolicy);
+    if (!decision.allowed) {
+      return { ok: false, result: accessRevokedResult() };
+    }
+    return { ok: true, config, userPolicy };
+  }
+
+  /**
+   * Execute a write under the caller's effective write flags. `userPolicy` is
+   * the freshly-read policy from checkAccess (writes never use the cache).
+   *
+   * When the deployment ceiling has writes off, behavior is identical to before
+   * the policy layer: write_help_scout is not advertised, and a direct call
+   * falls through to the gateway's unknown-tool path. When the deployment allows
+   * writes but this user's policy withholds them, a structured permission error
+   * is returned before any Help Scout request. Otherwise the write runs through a
+   * gateway configured with the effective flags, which enforces the
+   * customer-visible narrowing and the existing confirmation envelope.
+   */
+  private async dispatchWrite(request: CallToolRequest, userPolicy: UserPolicy | null): Promise<CallToolResult> {
+    const ceiling: WriteFlagSet = {
+      enabled: this.env.HELPSCOUT_ENABLE_WRITES === 'true',
+      customerVisibleEnabled: this.env.HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES === 'true',
+    };
+    const effective = effectiveWriteFlags(ceiling, userPolicy);
+
+    if (!ceiling.enabled) {
       const client = this.buildClient();
       return withHelpScoutApi(client, () => this.gateway.callTool(request));
+    }
+
+    if (!effective.enabled) {
+      logger.warn('Write refused: user policy withholds write access', { userId: String(this.requireProps().userId) });
+      return writePermissionDeniedResult();
+    }
+
+    const gateway = new GatewayHandler(toolHandler, {
+      writes: writeHandler,
+      writeFlags: effective,
     });
+    const client = this.buildClient();
+    return withHelpScoutApi(client, () => gateway.callTool(request));
   }
 
   /**

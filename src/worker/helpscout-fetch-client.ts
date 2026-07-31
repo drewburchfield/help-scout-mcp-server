@@ -180,6 +180,24 @@ export class HelpScoutFetchClient implements HelpScoutApi {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * https is required so OAuth2 credentials are never sent in the clear, with a
+   * loopback exception for the smoke harness's mock upstream. This mirrors the
+   * `isSecureUpstreamUrl` allowance the consent handler already applies to the
+   * token/base URLs (help-scout-handler.ts): a real deployment is always https,
+   * and only 127.0.0.1 / localhost / [::1] over http is tolerated for the mock.
+   */
+  private isSecureUpstream(parsed: URL): boolean {
+    if (parsed.protocol === 'https:') return true;
+    return (
+      parsed.protocol === 'http:' &&
+      (parsed.hostname === '127.0.0.1' ||
+        parsed.hostname === 'localhost' ||
+        parsed.hostname === '[::1]' ||
+        parsed.hostname === '::1')
+    );
+  }
+
   private validateHttpsBaseUrl(baseUrl: string): void {
     let parsed: URL;
     try {
@@ -188,7 +206,7 @@ export class HelpScoutFetchClient implements HelpScoutApi {
       throw new Error(`Invalid Help Scout base URL: ${baseUrl}`);
     }
 
-    if (parsed.protocol !== 'https:') {
+    if (!this.isSecureUpstream(parsed)) {
       throw new Error('HELPSCOUT_BASE_URL must use HTTPS to protect OAuth2 credentials');
     }
   }
@@ -201,7 +219,7 @@ export class HelpScoutFetchClient implements HelpScoutApi {
       throw new Error(`Invalid ${label}: ${url}`);
     }
 
-    if (parsed.protocol !== 'https:') {
+    if (!this.isSecureUpstream(parsed)) {
       throw new Error(`${label} must use HTTPS to protect OAuth2 credentials`);
     }
   }

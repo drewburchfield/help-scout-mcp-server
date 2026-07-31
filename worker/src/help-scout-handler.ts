@@ -27,6 +27,8 @@ import {
   verifyConsentCookie,
   type ConsentTransaction,
 } from './oauth-cookie.js';
+import { evaluateAccess, getConfig, getUserPolicy } from './policy.js';
+import { handleTestPolicyRoute } from './test-policy-route.js';
 
 /** HTML-escape untrusted values before echoing them into a page. */
 function esc(value: unknown): string {
@@ -383,6 +385,40 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     email ||
     `Help Scout user ${userId}`;
 
+  // --- Access policy gate (NAS-1501). Runs after identity, before the grant. ---
+  // An explicit allowed:false blocks even in open mode; allowlist mode blocks any
+  // user without an explicit allowed:true entry. A KV failure fails closed: no
+  // grant is completed. The consent cookie is cleared like every terminal path.
+  let accessAllowed: boolean;
+  try {
+    const [config, userPolicy] = await Promise.all([
+      getConfig(env),
+      getUserPolicy(env, userId),
+    ]);
+    accessAllowed = evaluateAccess(config, userPolicy).allowed;
+  } catch {
+    return htmlResponse(
+      page(
+        'Authorize Help Scout',
+        'Access could not be verified',
+        '<p>This deployment could not verify whether your account is enabled right now. Try again in a moment. If this persists, contact the administrator of this deployment.</p>',
+      ),
+      503,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
+  if (!accessAllowed) {
+    return htmlResponse(
+      page(
+        'Help Scout access not enabled',
+        'Access is not enabled for your account',
+        '<p>Your Help Scout account is not enabled to use this connection. Contact the administrator of this deployment to request access, then reconnect the connector.</p>',
+      ),
+      403,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
+
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
     request: txn.oauthReq,
     userId: String(userId),
@@ -404,6 +440,18 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
 export const helpScoutHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // Test-harness-only policy-seeding route. Mounted ONLY when the deployment
+    // opts in via HELPSCOUT_TEST_POLICY_ROUTES (never in the template). The smoke
+    // suite uses it to seed config/policy and to exercise revokeUser; it asserts
+    // this route 404s when the var is unset, which is the default everywhere.
+    if (
+      env.HELPSCOUT_TEST_POLICY_ROUTES === 'true' &&
+      url.pathname === '/__test__/policy' &&
+      request.method === 'POST'
+    ) {
+      return handleTestPolicyRoute(request, env);
+    }
 
     // Refuse to run the consent flow with a missing signing key: an empty-key
     // HMAC would still "verify", silently weakening the confused-deputy
