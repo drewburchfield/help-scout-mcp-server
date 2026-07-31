@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import crypto from 'crypto';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 import { config } from './config.js';
@@ -59,6 +60,22 @@ export class HelpScoutDocsClient {
 
   private setupInterceptors(): void {
     this.client.interceptors.request.use((requestConfig) => {
+      // Defense in depth: refuse to send the Docs API key anywhere but the
+      // configured Docs origin. An absolute url replaces baseURL, so a crafted
+      // endpoint could otherwise carry the credential off-host.
+      let resolvedOrigin: string | undefined;
+      try {
+        resolvedOrigin = new URL(requestConfig.url ?? '', requestConfig.baseURL).origin;
+      } catch {
+        resolvedOrigin = undefined;
+      }
+      if (resolvedOrigin !== this.getBaseOrigin()) {
+        delete requestConfig.auth;
+        throw new Error(
+          `Refusing to send Help Scout Docs credentials to a non-Help-Scout origin (${resolvedOrigin ?? 'unknown'})`,
+        );
+      }
+
       requestConfig.docsMetadata = {
         requestId: Math.random().toString(36).substring(7),
         startTime: Date.now(),
@@ -114,6 +131,45 @@ export class HelpScoutDocsClient {
     }
 
     return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  }
+
+  private getBaseOrigin(): string {
+    return new URL(this.getBaseUrl()).origin;
+  }
+
+  /**
+   * Reject any resolved request URL that leaves the configured Docs origin or
+   * embeds credentials, before the API key is ever attached. Same-origin
+   * absolute URLs (the only ones buildUrl produces for legitimate endpoints)
+   * pass through unchanged.
+   */
+  private validateResolvedUrl(url: string): void {
+    let resolved: URL;
+    try {
+      resolved = new URL(url);
+    } catch {
+      throw new Error(`Invalid Help Scout Docs endpoint: ${url}`);
+    }
+
+    if (resolved.username || resolved.password) {
+      throw new Error('Help Scout Docs endpoint must not contain embedded credentials');
+    }
+
+    if (resolved.origin !== this.getBaseOrigin()) {
+      throw new Error(
+        `Refusing to send Help Scout Docs credentials to a non-Help-Scout origin (${resolved.origin})`,
+      );
+    }
+  }
+
+  /**
+   * Non-secret identity prefix for cache keys: the first 12 hex chars of a
+   * SHA-256 over the Docs API key. Namespacing entries per key stops a shared
+   * cache from serving one identity's data to another and makes a rotated key
+   * miss the previous key's entries. One-way; never contains the raw key.
+   */
+  private cacheIdentityPrefix(apiKey: string): string {
+    return `${crypto.createHash('sha256').update(apiKey).digest('hex').slice(0, 12)}:`;
   }
 
   private getApiKey(): string {
@@ -210,8 +266,9 @@ export class HelpScoutDocsClient {
   async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {
     const apiKey = this.getApiKey();
     const url = this.buildUrl(endpoint);
+    this.validateResolvedUrl(url);
     const requestParams = this.cleanParams(params);
-    const cacheKey = `DOCS_GET:${url}`;
+    const cacheKey = `${this.cacheIdentityPrefix(apiKey)}DOCS_GET:${url}`;
     const bypassCache = cacheOptions?.ttl !== undefined && cacheOptions.ttl <= 0;
 
     if (!bypassCache) {

@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
+import crypto from 'crypto';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 import {
@@ -70,6 +71,10 @@ export class HelpScoutClient implements HelpScoutApi {
   private authenticationPromise: Promise<void> | null = null;
   private httpAgent: HttpAgent;
   private httpsAgent: HttpsAgent;
+  // Origin of the configured Help Scout base URL. Every outbound endpoint must
+  // resolve to this origin before the bearer token is attached, so a crafted
+  // absolute URL cannot redirect the credential to another host.
+  private readonly baseOrigin: string;
   private readonly poolConfig: ConnectionPoolConfig;
   private defaultRetryConfig: RetryConfig = {
     retries: 3,
@@ -87,6 +92,7 @@ export class HelpScoutClient implements HelpScoutApi {
 
   constructor(poolConfig: Partial<ConnectionPoolConfig> = {}) {
     this.validateHttpsBaseUrl(config.helpscout.baseUrl);
+    this.baseOrigin = new URL(config.helpscout.baseUrl).origin;
 
     // Merge default pool config with any custom settings
     this.poolConfig = { ...DEFAULT_POOL_CONFIG, ...poolConfig };
@@ -144,6 +150,71 @@ export class HelpScoutClient implements HelpScoutApi {
     if (parsed.protocol !== 'https:') {
       throw new Error('HELPSCOUT_BASE_URL must use HTTPS to protect OAuth2 credentials');
     }
+  }
+
+  /**
+   * Reject any endpoint that would send the request off the configured Help
+   * Scout origin. axios lets an absolute URL in the request path replace
+   * baseURL entirely, so a crafted `_links.next.href` or any endpoint coerced
+   * into an absolute URL could carry the bearer token to an attacker host.
+   *
+   * Same-origin absolute URLs stay legal: Help Scout returns absolute HAL
+   * pagination links and the v3 surface builds absolute `api.helpscout.net/v3`
+   * URLs, both of which resolve to `baseOrigin`.
+   */
+  private validateEndpoint(endpoint: string): void {
+    let resolved: URL;
+    try {
+      resolved = new URL(endpoint, this.baseOrigin);
+    } catch {
+      throw new Error(`Invalid Help Scout endpoint: ${endpoint}`);
+    }
+
+    if (resolved.username || resolved.password) {
+      throw new Error('Help Scout endpoint must not contain embedded credentials');
+    }
+
+    if (resolved.origin !== this.baseOrigin) {
+      throw new Error(
+        `Refusing to send Help Scout credentials to a non-Help-Scout origin (${resolved.origin})`,
+      );
+    }
+  }
+
+  /**
+   * Resolve the OAuth2 client credentials from the environment/config, applying
+   * the same precedence the token request uses. Shared so the cache identity
+   * fingerprint is derived from exactly the credentials that authenticate.
+   */
+  private resolveOAuthCredentials(): { clientId: string; clientSecret: string } {
+    const currentApiKey = process.env.HELPSCOUT_API_KEY || '';
+    const clientId = process.env.HELPSCOUT_APP_ID ||
+      process.env.HELPSCOUT_CLIENT_ID ||
+      (currentApiKey.startsWith('Bearer ') ? '' : currentApiKey) ||
+      config.helpscout.clientId ||
+      '';
+    const clientSecret = process.env.HELPSCOUT_APP_SECRET ||
+      process.env.HELPSCOUT_CLIENT_SECRET ||
+      config.helpscout.clientSecret ||
+      '';
+    return { clientId, clientSecret };
+  }
+
+  /**
+   * Non-secret identity prefix for cache keys: the first 12 hex chars of a
+   * SHA-256 over the authenticating credentials. Keys are namespaced per
+   * identity so one process-wide cache cannot serve entries across identities,
+   * and rotated credentials naturally miss the previous account's entries. The
+   * fingerprint is one-way and never contains the raw key material.
+   */
+  private cacheIdentityPrefix(): string {
+    const { clientId, clientSecret } = this.resolveOAuthCredentials();
+    const fingerprint = crypto
+      .createHash('sha256')
+      .update(`${clientId}:${clientSecret}`)
+      .digest('hex')
+      .slice(0, 12);
+    return `${fingerprint}:`;
   }
 
   private parseRetryAfterMs(value: unknown, fallbackMs = 60000): number {
@@ -260,6 +331,21 @@ export class HelpScoutClient implements HelpScoutApi {
       delete (config.headers as Record<string, unknown>).Authorization;
       delete (config.headers as Record<string, unknown>).authorization;
 
+      // Defense in depth: resolve the final request origin (an absolute url
+      // replaces baseURL) and refuse to attach the bearer token if it points
+      // anywhere but the configured Help Scout origin.
+      let resolvedOrigin: string | undefined;
+      try {
+        resolvedOrigin = new URL(config.url ?? '', config.baseURL).origin;
+      } catch {
+        resolvedOrigin = undefined;
+      }
+      if (resolvedOrigin !== this.baseOrigin) {
+        throw new Error(
+          `Refusing to attach Help Scout credentials to a non-Help-Scout origin (${resolvedOrigin ?? 'unknown'})`,
+        );
+      }
+
       await this.ensureAuthenticated();
       if (this.accessToken) {
         config.headers.Authorization = `Bearer ${this.accessToken}`;
@@ -329,14 +415,7 @@ export class HelpScoutClient implements HelpScoutApi {
   private async authenticate(): Promise<void> {
     try {
       // OAuth2 Client Credentials flow (only supported method)
-      const currentApiKey = process.env.HELPSCOUT_API_KEY || '';
-      const clientId = process.env.HELPSCOUT_APP_ID ||
-        process.env.HELPSCOUT_CLIENT_ID ||
-        (currentApiKey.startsWith('Bearer ') ? '' : currentApiKey) ||
-        config.helpscout.clientId;
-      const clientSecret = process.env.HELPSCOUT_APP_SECRET ||
-        process.env.HELPSCOUT_CLIENT_SECRET ||
-        config.helpscout.clientSecret;
+      const { clientId, clientSecret } = this.resolveOAuthCredentials();
 
       if (!clientId || !clientSecret) {
         throw new Error(
@@ -500,7 +579,8 @@ export class HelpScoutClient implements HelpScoutApi {
   }
 
   async get<T>(endpoint: string, params?: Record<string, unknown>, cacheOptions?: { ttl?: number }): Promise<T> {
-    const cacheKey = `GET:${endpoint}`;
+    this.validateEndpoint(endpoint);
+    const cacheKey = `${this.cacheIdentityPrefix()}GET:${endpoint}`;
     const bypassCache = cacheOptions?.ttl !== undefined && cacheOptions.ttl <= 0;
 
     if (!bypassCache) {
@@ -549,6 +629,7 @@ export class HelpScoutClient implements HelpScoutApi {
     params: Record<string, unknown> = {},
     maxItems: number = Number.POSITIVE_INFINITY,
   ): Promise<{ items: T[]; totalElements: number; pagesFetched: number; truncated: boolean }> {
+    this.validateEndpoint(endpoint);
     const items: T[] = [];
     let pageNum = typeof params.page === 'number' && params.page > 0 ? params.page : 1;
     let totalElements = 0;
@@ -577,6 +658,7 @@ export class HelpScoutClient implements HelpScoutApi {
   }
 
   async getRaw<T>(endpoint: string, params?: Record<string, unknown>, options: RawGetOptions = {}): Promise<AxiosResponse<T>> {
+    this.validateEndpoint(endpoint);
     return this.executeWithRetry<T>(() =>
       this.client.get<T>(endpoint, {
         params,
@@ -604,6 +686,7 @@ export class HelpScoutClient implements HelpScoutApi {
     endpoint: string,
     body?: unknown,
   ): Promise<WriteResponse<T>> {
+    this.validateEndpoint(endpoint);
     try {
       const response = await this.client.request<T>({
         method,

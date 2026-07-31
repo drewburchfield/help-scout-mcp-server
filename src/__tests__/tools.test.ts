@@ -3332,8 +3332,10 @@ describe('ToolHandler', () => {
         assignmentMethod: 'round_robin',
       }));
       expect(response.routing.rotation).toHaveLength(2);
+      // Cache keys are namespaced with a per-identity fingerprint prefix
+      // (NAS-1496), so match the endpoint portion rather than the full key.
       expect(cacheSetSpy).toHaveBeenCalledWith(
-        'GET:/mailboxes/359402/routing',
+        expect.stringContaining('GET:/mailboxes/359402/routing'),
         undefined,
         expect.objectContaining({ state: 'enabled' }),
         { ttl: 300 }
