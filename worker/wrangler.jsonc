@@ -1,6 +1,8 @@
 {
-  // Template for self-hosters. Copy this, fill in the KV id and your Help Scout
-  // app details, set the three secrets (see README), then `wrangler deploy`.
+  // Template for self-hosters. Copy this to wrangler.deploy.jsonc (gitignored),
+  // fill in the KV id and your account_id, set the three secrets, then
+  // `wrangler deploy --config wrangler.deploy.jsonc`. Full runbook:
+  // ../guides/remote-self-host.md.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "helpscout-mcp-oauth",
   "main": "src/index.ts",
@@ -33,7 +35,7 @@
   // Non-secret configuration. Secrets (HELPSCOUT_CLIENT_ID, HELPSCOUT_CLIENT_SECRET,
   // COOKIE_ENCRYPTION_KEY) are set with `wrangler secret put` and never live here.
   // COOKIE_ENCRYPTION_KEY signs the consent-transaction cookie (the confused-deputy
-  // defense) — set it to a long random string. Optional: `wrangler secret put
+  // defense); set it to a long random string. Optional: `wrangler secret put
   // HELPSCOUT_DOCS_API_KEY` enables the Docs API operations; without it they are
   // still advertised but fail at call time with a credentials-missing error.
   //
