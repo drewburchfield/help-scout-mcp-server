@@ -215,6 +215,16 @@ export class HelpScoutClient implements HelpScoutApi {
    */
   private cacheIdentityPrefix(): string {
     const { clientId, clientSecret } = this.resolveOAuthCredentials();
+    return this.fingerprintFor(clientId, clientSecret);
+  }
+
+  /**
+   * Fingerprint a specific credential pair. authenticate() uses this with the
+   * exact credentials it sent to the token endpoint: recomputing from the
+   * mutable environment after the awaited exchange could label one account's
+   * token with another account's identity if a rotation landed mid-sign-in.
+   */
+  private fingerprintFor(clientId: string, clientSecret: string): string {
     const fingerprint = crypto
       .createHash('sha256')
       .update(`${clientId}:${clientSecret}`)
@@ -461,7 +471,7 @@ export class HelpScoutClient implements HelpScoutApi {
 
       this.accessToken = response.data.access_token;
       this.tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000; // 1 minute buffer
-      this.accessTokenFingerprint = this.cacheIdentityPrefix();
+      this.accessTokenFingerprint = this.fingerprintFor(clientId, clientSecret);
 
       logger.info('Authenticated with Help Scout API using OAuth2 Client Credentials');
     } catch (error) {
