@@ -136,7 +136,7 @@ async function renderConsent(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  const txn: ConsentTransaction = { oauthReq, exp: Date.now() + CONSENT_TTL_MS };
+  const txn: ConsentTransaction<AuthRequest> = { oauthReq, exp: Date.now() + CONSENT_TTL_MS };
   const cookie = await signConsentCookie(txn, env.COOKIE_ENCRYPTION_KEY ?? '');
   const clientLabel = client.clientName ? esc(client.clientName) : esc(oauthReq.clientId);
 
@@ -158,7 +158,7 @@ async function renderConsent(request: Request, env: Env): Promise<Response> {
  */
 async function handleApprove(request: Request, env: Env): Promise<Response> {
   const cookieValue = readCookie(request, CONSENT_COOKIE_NAME);
-  const txn = await verifyConsentCookie(cookieValue, env.COOKIE_ENCRYPTION_KEY ?? '');
+  const txn = await verifyConsentCookie<AuthRequest>(cookieValue, env.COOKIE_ENCRYPTION_KEY ?? '');
   if (!txn) {
     return htmlResponse(
       page('Authorize Help Scout', 'Session expired', '<p>This authorization session is missing or expired. Reconnect the connector to try again.</p>'),
@@ -179,7 +179,7 @@ async function handleApprove(request: Request, env: Env): Promise<Response> {
   // (get-then-delete) at /callback so a replayed callback finds nothing.
   await env.OAUTH_KV.put(`${STATE_MARKER_PREFIX}${state}`, '1', { expirationTtl: STATE_MARKER_TTL_S });
 
-  const boundTxn: ConsentTransaction = { oauthReq: txn.oauthReq, state, exp: Date.now() + CONSENT_TTL_MS };
+  const boundTxn: ConsentTransaction<AuthRequest> = { oauthReq: txn.oauthReq, state, exp: Date.now() + CONSENT_TTL_MS };
   const cookie = await signConsentCookie(boundTxn, env.COOKIE_ENCRYPTION_KEY ?? '');
 
   const authorizeUrl = new URL(env.HELPSCOUT_AUTHORIZE_URL);
@@ -219,7 +219,7 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   const state = url.searchParams.get('state');
 
   const cookieValue = readCookie(request, CONSENT_COOKIE_NAME);
-  const txn = await verifyConsentCookie(cookieValue, env.COOKIE_ENCRYPTION_KEY ?? '');
+  const txn = await verifyConsentCookie<AuthRequest>(cookieValue, env.COOKIE_ENCRYPTION_KEY ?? '');
 
   // The cookie must verify, carry the same state Help Scout echoed back, and the
   // request must actually carry a code and state. Any mismatch is a hard reject:

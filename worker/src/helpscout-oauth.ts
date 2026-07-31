@@ -42,7 +42,12 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 function alignedAccessTokenTtl(expiresAt: number): number | undefined {
   if (!expiresAt) return undefined;
   const seconds = Math.floor((expiresAt - Date.now() - REFRESH_SKEW_MS) / 1000);
-  return Math.max(60, seconds);
+  // An expiry at or inside the skew window means we have nothing meaningful to
+  // align to (typically a stale pair that could not be rotated). Fall back to
+  // the provider's default TTL rather than clamping to a floor that would push
+  // the client into a tight refresh loop.
+  if (seconds < 60) return undefined;
+  return seconds;
 }
 
 interface HelpScoutTokenResponse {
@@ -133,10 +138,12 @@ export async function helpScoutTokenExchangeCallback(
 
   if (options.grantType === 'refresh_token') {
     const rotated = await refreshHelpScoutTokens(props);
-    const accessTokenTTL = alignedAccessTokenTtl(rotated.expiresAt);
     // Only claim a props change when the pair actually rotated (refresh may be a
     // no-op when credentials are absent), so the provider skips a needless write.
+    // A no-op also keeps the provider's default TTL: aligning to the stale
+    // expiry of a pair we could not rotate would hand out ever-shorter tokens.
     const rotatedPair = rotated.accessToken !== props.accessToken || rotated.refreshToken !== props.refreshToken;
+    const accessTokenTTL = rotatedPair ? alignedAccessTokenTtl(rotated.expiresAt) : undefined;
     return {
       ...(rotatedPair ? { newProps: rotated } : {}),
       ...(accessTokenTTL ? { accessTokenTTL } : {}),

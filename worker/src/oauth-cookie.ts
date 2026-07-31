@@ -14,8 +14,6 @@
  * (state, scope, client-chosen redirect) and bare btoa throws on any code point
  * above U+00FF.
  */
-import type { AuthRequest } from '@cloudflare/workers-oauth-provider';
-
 /** The cookie name for the pending consent transaction. */
 export const CONSENT_COOKIE_NAME = 'hs_mcp_txn';
 
@@ -24,12 +22,13 @@ export const CONSENT_TTL_MS = 10 * 60 * 1000;
 
 /**
  * The signed transaction. `oauthReq` is the whole parsed MCP authorization
- * request (its integrity is what the signature protects); `state` is the random
- * nonce we hand Help Scout and expect echoed back (absent until /approve mints
- * it); `exp` is the epoch-ms expiry.
+ * request (its integrity is what the signature protects; generic so this module
+ * carries no dependency on the provider's types and stays testable from the
+ * root suite); `state` is the random nonce we hand Help Scout and expect echoed
+ * back (absent until /approve mints it); `exp` is the epoch-ms expiry.
  */
-export interface ConsentTransaction {
-  oauthReq: AuthRequest;
+export interface ConsentTransaction<T = unknown> {
+  oauthReq: T;
   state?: string;
   exp: number;
 }
@@ -51,7 +50,10 @@ function base64UrlDecode(value: string): Uint8Array {
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
 
-async function importHmacKey(secret: string): Promise<CryptoKey> {
+// Return type inferred from WebCrypto: the ambient CryptoKey name differs
+// between the workers and Node type libs, and this module must type-check
+// under both (the root suite unit-tests it).
+async function importHmacKey(secret: string) {
   return crypto.subtle.importKey(
     'raw',
     encoder.encode(secret),
@@ -65,8 +67,8 @@ async function importHmacKey(secret: string): Promise<CryptoKey> {
  * Sign a consent transaction into a cookie value: `body.signature`, where body
  * is base64url(JSON) and signature is base64url(HMAC-SHA256(body)).
  */
-export async function signConsentCookie(
-  txn: ConsentTransaction,
+export async function signConsentCookie<T>(
+  txn: ConsentTransaction<T>,
   secret: string,
 ): Promise<string> {
   const body = base64UrlEncode(encoder.encode(JSON.stringify(txn)));
@@ -80,10 +82,10 @@ export async function signConsentCookie(
  * is missing, malformed, has a bad signature, or is expired, so callers treat
  * every failure the same way: reject the request.
  */
-export async function verifyConsentCookie(
+export async function verifyConsentCookie<T = unknown>(
   value: string | undefined,
   secret: string,
-): Promise<ConsentTransaction | null> {
+): Promise<ConsentTransaction<T> | null> {
   if (!value) return null;
   const dot = value.lastIndexOf('.');
   if (dot <= 0) return null;
@@ -91,7 +93,7 @@ export async function verifyConsentCookie(
   const body = value.slice(0, dot);
   const providedSig = value.slice(dot + 1);
 
-  let key: CryptoKey;
+  let key: Awaited<ReturnType<typeof importHmacKey>>;
   let providedSigBytes: Uint8Array;
   try {
     key = await importHmacKey(secret);
@@ -107,7 +109,7 @@ export async function verifyConsentCookie(
   if (!ok) return null;
 
   try {
-    const txn = JSON.parse(decoder.decode(base64UrlDecode(body))) as ConsentTransaction;
+    const txn = JSON.parse(decoder.decode(base64UrlDecode(body))) as ConsentTransaction<T>;
     if (typeof txn.exp !== 'number' || Date.now() > txn.exp) return null;
     return txn;
   } catch {

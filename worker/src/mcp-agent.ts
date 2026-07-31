@@ -81,10 +81,12 @@ export interface Env {
 }
 
 export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
-  server = new Server(
-    { name: SERVER_NAME, version: SERVER_VERSION },
-    { capabilities: { tools: {} } },
-  );
+  // Constructed once, in init(): the instructions read the grant props, which
+  // are only injected by the time init() runs. A field initializer here would
+  // create a second Server the base class might capture; McpAgent connects the
+  // transport only after init() resolves, so this single construction site is
+  // the safe pattern.
+  server!: Server;
 
   /**
    * Serializes Help Scout token refresh for THIS Durable Object instance so
@@ -99,7 +101,7 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
   private gateway!: GatewayHandler;
 
   async init(): Promise<void> {
-    // Rebuild the server with instructions that name the connected user, read
+    // Build the server with instructions that name the connected user, read
     // from the grant props. This is the confirmation that the grant carried a
     // real per-user identity through the Help Scout leg, surfaced to the client
     // in the initialize response without any Help Scout call.
