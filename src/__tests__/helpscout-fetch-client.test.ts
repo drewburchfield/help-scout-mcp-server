@@ -608,6 +608,24 @@ describe('HelpScoutFetchClient', () => {
       expect(error.code).toBe('UPSTREAM_ERROR');
     });
 
+    it.each([0, -1, Number.NaN])(
+      'refuses to persist a refresh response with a nonsensical lifetime (%p)',
+      async (expiresIn) => {
+        const { client, persistTokens } = makeHarness();
+        fetchMock.mockImplementation(async (input) => {
+          if ((input as string) === TOKEN_URL) {
+            return jsonResponse({ access_token: 'access-2', refresh_token: 'refresh-2', expires_in: expiresIn });
+          }
+          return jsonResponse({ error: 'unauthorized' }, 401);
+        });
+
+        const error = (await client.get('/conversations/1').catch((e) => e)) as { code: string };
+
+        expect(persistTokens).not.toHaveBeenCalled();
+        expect(error.code).toBe('UPSTREAM_ERROR');
+      },
+    );
+
     it('retries a stale 401 with the current token instead of rotating again', async () => {
       const harness = makeHarness();
       let apiCalls = 0;

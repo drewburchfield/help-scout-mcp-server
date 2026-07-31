@@ -32,12 +32,20 @@
 
   // Non-secret configuration. Secrets (HELPSCOUT_CLIENT_ID, HELPSCOUT_CLIENT_SECRET,
   // COOKIE_ENCRYPTION_KEY) are set with `wrangler secret put` and never live here.
-  // Optional: `wrangler secret put HELPSCOUT_DOCS_API_KEY` enables the Docs API
-  // operations; without it they are still advertised but fail at call time with
-  // a credentials-missing error.
+  // COOKIE_ENCRYPTION_KEY signs the consent-transaction cookie (the confused-deputy
+  // defense) — set it to a long random string. Optional: `wrangler secret put
+  // HELPSCOUT_DOCS_API_KEY` enables the Docs API operations; without it they are
+  // still advertised but fail at call time with a credentials-missing error.
+  //
+  // SETUP CAVEAT: the Help Scout app's Redirection URL is fixed at registration
+  // and MUST be this deployed worker's `https://<worker>/callback`. An app born
+  // with an `http://` redirect is permanently broken for the authorize flow
+  // (Help Scout silently bounces it; editing the URL later does not heal it), so
+  // register the https callback from the start.
   "vars": {
     "HELPSCOUT_BASE_URL": "https://api.helpscout.net/v2/",
     "HELPSCOUT_TOKEN_URL": "https://api.helpscout.net/v2/oauth2/token",
+    // Takes only client_id and state (no redirect_uri, no scope, no PKCE).
     "HELPSCOUT_AUTHORIZE_URL": "https://secure.helpscout.net/authentication/authorizeClientApplication",
     // Opt-in write surface. Both default off; flip to "true" to enable.
     "HELPSCOUT_ENABLE_WRITES": "false",
