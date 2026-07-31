@@ -49,6 +49,12 @@
   // HELPSCOUT_DOCS_API_KEY` enables the Docs API operations; without it they are
   // still advertised but fail at call time with a credentials-missing error.
   //
+  // NEVER set HELPSCOUT_TEST_POLICY_ROUTES in a real deployment. It exists only for
+  // the smoke harness: its value is a secret key that must be presented in the
+  // X-Test-Policy-Key header to reach an internal policy-mutation route, and it also
+  // relaxes the https guard to allow an http loopback upstream. Setting it in
+  // production would both weaken that guard and expose the access-policy store.
+  //
   // SETUP CAVEAT: the Help Scout app's Redirection URL is fixed at registration
   // and MUST be this deployed worker's `https://<worker>/callback`. An app born
   // with an `http://` redirect is permanently broken for the authorize flow

@@ -75,6 +75,15 @@ export interface FetchClientDeps {
   persistTokens: (tokens: UserTokenContext) => Promise<void>;
   refreshMutex: RefreshMutex;
   timeoutMs?: number;
+  /**
+   * Opt-in, DEFAULT false: tolerate an http loopback base/token URL so the smoke
+   * harness can point the client at a local mock. Only the Workers request path
+   * sets it, and only in test mode (Boolean(HELPSCOUT_TEST_POLICY_ROUTES)); every
+   * stdio and unit path leaves it off, so https is enforced unless explicitly
+   * opted in. The allow-list is exact-match, so http://127.0.0.1.evil.com is
+   * still rejected.
+   */
+  allowInsecureLoopback?: boolean;
 }
 
 /**
@@ -165,8 +174,11 @@ function headersToObject(headers: Headers): Record<string, string> {
 export class HelpScoutFetchClient implements HelpScoutApi {
   private readonly timeoutMs: number;
   private readonly retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
+  /** Test-only http-loopback allowance; false everywhere except the smoke path. */
+  private readonly allowInsecureLoopback: boolean;
 
   constructor(private readonly deps: FetchClientDeps) {
+    this.allowInsecureLoopback = deps.allowInsecureLoopback ?? false;
     this.validateHttpsBaseUrl(deps.baseUrl);
     // The token endpoint receives the refresh token and the client secret, so
     // it gets the same HTTPS requirement as the API base.
@@ -181,14 +193,18 @@ export class HelpScoutFetchClient implements HelpScoutApi {
   }
 
   /**
-   * https is required so OAuth2 credentials are never sent in the clear, with a
-   * loopback exception for the smoke harness's mock upstream. This mirrors the
-   * `isSecureUpstreamUrl` allowance the consent handler already applies to the
-   * token/base URLs (help-scout-handler.ts): a real deployment is always https,
-   * and only 127.0.0.1 / localhost / [::1] over http is tolerated for the mock.
+   * https is required so OAuth2 credentials are never sent in the clear. A narrow
+   * http-loopback exception exists ONLY when the caller opted in via
+   * `allowInsecureLoopback` (the smoke harness's mock upstream); with it off,
+   * every non-https URL is rejected. This mirrors the `isSecureUpstreamUrl`
+   * allowance the consent handler applies under the same test-mode signal
+   * (help-scout-handler.ts): a real deployment is always https, and only
+   * 127.0.0.1 / localhost / [::1] over http is tolerated, and only in test mode.
+   * The host match is exact so http://127.0.0.1.evil.com is rejected.
    */
   private isSecureUpstream(parsed: URL): boolean {
     if (parsed.protocol === 'https:') return true;
+    if (!this.allowInsecureLoopback) return false;
     return (
       parsed.protocol === 'http:' &&
       (parsed.hostname === '127.0.0.1' ||

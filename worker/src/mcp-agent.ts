@@ -88,9 +88,13 @@ export interface Env {
   HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES?: string;
   COOKIE_ENCRYPTION_KEY?: string;
   /**
-   * Test-harness only. When "true", the consent handler mounts an internal
-   * policy-seeding route used by the smoke suite. Never set in the deployment
-   * template; the smoke asserts the route 404s without it.
+   * Test-harness only, and its VALUE is a secret. When set to a non-empty string,
+   * it (a) marks the deployment as test-mode, which is the ONLY thing that lets
+   * the consent handler and fetch client tolerate an http loopback upstream, and
+   * (b) mounts the internal policy-seeding route the smoke suite uses, but only
+   * for a request that presents this exact value in the X-Test-Policy-Key header.
+   * Never set in a real deployment: it both weakens the https guard and exposes an
+   * unauthenticated policy-mutation surface to anyone who knows the key.
    */
   HELPSCOUT_TEST_POLICY_ROUTES?: string;
   /**
@@ -378,6 +382,9 @@ export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {
       tokenUrl: this.env.HELPSCOUT_TOKEN_URL,
       clientId: this.env.HELPSCOUT_CLIENT_ID,
       clientSecret: this.env.HELPSCOUT_CLIENT_SECRET,
+      // Strict https unless the deployment is in test mode (the smoke's http
+      // loopback mock). Production never sets the var, so this stays false.
+      allowInsecureLoopback: Boolean(this.env.HELPSCOUT_TEST_POLICY_ROUTES),
       // Read tokens fresh each request so a mid-request rotation is seen next time.
       getTokens: (): UserTokenContext => {
         const props = this.requireProps();

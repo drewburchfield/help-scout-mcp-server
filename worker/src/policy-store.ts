@@ -64,6 +64,20 @@ export interface PolicyRevokeEnv extends PolicyStoreEnv {
 /** Resolve the single coordinator instance by its fixed name. */
 function coordinator(env: PolicyStoreEnv): PolicyCoordinatorStub {
   const namespace = env.POLICY_OBJECT;
+  // A deployment upgraded with an older wrangler.deploy.jsonc that predates the
+  // policy coordinator has no POLICY_OBJECT binding, so this is undefined. Left
+  // unchecked, `namespace.idFromName` throws a cryptic "cannot read properties of
+  // undefined", which every policy read/write turns into an opaque "access could
+  // not be verified" (the gates fail closed on any throw). Name the real cause
+  // instead so an operator knows exactly which config edit is missing.
+  if (!namespace) {
+    throw new Error(
+      'POLICY_OBJECT Durable Object binding is missing from this deployment\'s wrangler config. ' +
+        'This build\'s access-policy engine requires it. Add the POLICY_OBJECT binding and the v2 ' +
+        'migration to your wrangler.deploy.jsonc, then re-deploy. See the upgrade section of ' +
+        'guides/remote-self-host.md.',
+    );
+  }
   const id = namespace.idFromName(POLICY_COORDINATOR_NAME);
   return namespace.get(id) as unknown as PolicyCoordinatorStub;
 }
@@ -135,12 +149,17 @@ export async function deleteUserPolicy(env: PolicyStoreEnv, hsUserId: string | n
  * pin their policy to allowed:false through the coordinator's atomic put. Listing
  * is paged in case a user holds many grants.
  *
- * The two effects are complementary: revoking grants invalidates every live
- * access token immediately (the next /mcp request fails auth at the library
- * layer), and allowed:false denies any re-connection attempt and any session
- * that is serving reads from an unexpired policy cache once that cache lapses.
- * The pin runs inside the DO in one transaction and carries no expectedVersion,
- * so a racing admin edit cannot re-open the account: the revoke is authoritative.
+ * The two effects are complementary: allowed:false denies any re-connection
+ * attempt and any session serving reads from an unexpired policy cache once that
+ * cache lapses, and revoking grants invalidates every live access token
+ * immediately (the next /mcp request fails auth at the library layer). The pin
+ * runs inside the DO in one transaction and carries no expectedVersion, so a
+ * racing admin edit cannot re-open the account: the revoke is authoritative.
+ *
+ * The deny is pinned FIRST, before any grant is revoked, so a partial failure
+ * fails safe: if grant revocation errors midway, the user is already blocked
+ * from reconnecting and their live sessions lapse at the cache boundary, rather
+ * than being kicked out but left able to sign straight back in.
  */
 export async function revokeUser(
   env: PolicyRevokeEnv,
@@ -148,6 +167,10 @@ export async function revokeUser(
   opts: { updatedBy: string; audit?: PolicyAuditHook },
 ): Promise<RevokeUserResult> {
   const id = String(hsUserId);
+
+  const result = await coordinator(env).pinRevokedUser(id, opts.updatedBy);
+  if (!result.ok) throwPolicyError(result.error);
+  const policy = result.value;
 
   let grantsRevoked = 0;
   let cursor: string | undefined;
@@ -159,10 +182,6 @@ export async function revokeUser(
     }
     cursor = page.cursor;
   } while (cursor);
-
-  const result = await coordinator(env).pinRevokedUser(id, opts.updatedBy);
-  if (!result.ok) throwPolicyError(result.error);
-  const policy = result.value;
 
   await opts.audit?.({ type: 'user.revoked', hsUserId: id, grantsRevoked, updatedBy: opts.updatedBy, policy });
   return { hsUserId: id, grantsRevoked, policy };

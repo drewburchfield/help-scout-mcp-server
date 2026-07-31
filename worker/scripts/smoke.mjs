@@ -27,6 +27,14 @@ const READY_TIMEOUT_MS = 90_000;
 const MOCK_USER = { id: 987, firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.test', type: 'user' };
 const HS_EXPIRES_IN = 172800; // 48h, matching Help Scout
 
+// Per-run secret gating the test-only policy route AND signalling test-mode (the
+// worker tolerates an http loopback upstream only when this var is non-empty).
+// It is a fresh random value every run (never hardcode it) and every request to
+// the /__test__/policy route must present it in the X-Test-Policy-Key header. The
+// worker mounts that route only for a request whose header equals this exact
+// value; a missing or wrong key 404s, so the route stays invisible.
+const TEST_POLICY_KEY = crypto.randomBytes(24).toString('hex');
+
 let passed = 0;
 const failures = [];
 function check(name, cond, detail = '') {
@@ -148,7 +156,7 @@ function startMockHelpScout() {
 }
 
 // --- wrangler dev lifecycle -------------------------------------------------
-function startWorker({ mockUrl, enableWrites, enableCustomerVisible = false, testPolicyRoutes = false }) {
+function startWorker({ mockUrl, enableWrites, enableCustomerVisible = false }) {
   const args = [
     './node_modules/.bin/wrangler',
     'dev',
@@ -166,8 +174,13 @@ function startWorker({ mockUrl, enableWrites, enableCustomerVisible = false, tes
     `HELPSCOUT_ENABLE_WRITES:${enableWrites ? 'true' : 'false'}`,
     '--var',
     `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES:${enableCustomerVisible ? 'true' : 'false'}`,
+    // The mock upstream is http loopback, which the worker only tolerates in
+    // test mode, so every smoke worker is started in test mode with the per-run
+    // secret. The route itself stays gated by the X-Test-Policy-Key header: a
+    // worker in read/writes mode never receives that header from this suite, so
+    // its /__test__/policy 404s (see the "absent by default" check below).
     '--var',
-    `HELPSCOUT_TEST_POLICY_ROUTES:${testPolicyRoutes ? 'true' : 'false'}`,
+    `HELPSCOUT_TEST_POLICY_ROUTES:${TEST_POLICY_KEY}`,
   ];
   const proc = spawn(NODE_BIN, args, {
     cwd: WORKER_DIR,
@@ -406,12 +419,12 @@ async function mcpCallTool(headers, name, args) {
   return { httpStatus: res.status, isError: Boolean(result?.isError), structured, text };
 }
 
-// Drive the test-harness policy route (only mounted when the worker is started
-// with HELPSCOUT_TEST_POLICY_ROUTES=true).
+// Drive the test-harness policy route. The route is mounted only for a request
+// that presents the per-run secret in X-Test-Policy-Key, so every call sends it.
 async function policyRoute(command) {
   const res = await fetch(`${BASE}/__test__/policy`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Test-Policy-Key': TEST_POLICY_KEY },
     body: JSON.stringify(command),
   });
   const body = await res.json().catch(() => ({}));
@@ -551,14 +564,17 @@ async function runMode({ mock, enableWrites }) {
   check('light user hits the callback error path', lightFlow.stopped === 'callback' && lightFlow.status === 403, `status ${lightFlow.status}`);
   check('light-user page explains a full seat is required', /seat|Light User|full Help Scout/i.test(lightFlow.body || ''));
 
-  // [8b] the test-only policy route must NOT exist without the opt-in var
-  console.log('[8b] test policy route is absent by default');
+  // [8b] the test-only policy route must be invisible without the secret key.
+  // This worker runs in read/writes mode: the var is set (test-mode is on for the
+  // loopback mock), but this suite never sends X-Test-Policy-Key here, so the
+  // route must 404 exactly as it would with the var unset.
+  console.log('[8b] test policy route is absent without the secret key');
   const noRoute = await fetch(`${BASE}/__test__/policy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ op: 'getConfig' }),
   });
-  check('test policy route 404s without HELPSCOUT_TEST_POLICY_ROUTES', noRoute.status === 404, `status ${noRoute.status}`);
+  check('test policy route 404s without the X-Test-Policy-Key header', noRoute.status === 404, `status ${noRoute.status}`);
 
   // [9] RFC 8707 resource binding on token exchange (soft)
   console.log('[9] resource-mismatch on token exchange (soft)');
@@ -607,7 +623,16 @@ async function runPolicyMode({ mock }) {
   const clientId = reg.clientId;
 
   const ping = await policyRoute({ op: 'getConfig' });
-  check('test policy route is mounted with the opt-in var set', ping.status === 200, `status ${ping.status}`);
+  check('test policy route is mounted with the correct secret key', ping.status === 200, `status ${ping.status}`);
+
+  // The route is secret-gated: even with the var set, a request carrying a wrong
+  // X-Test-Policy-Key must 404 (invisible), never reveal itself with a 403.
+  const wrongKey = await fetch(`${BASE}/__test__/policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Test-Policy-Key': 'wrong-key' },
+    body: JSON.stringify({ op: 'getConfig' }),
+  });
+  check('test policy route 404s with a wrong X-Test-Policy-Key (secret gate)', wrongKey.status === 404, `status ${wrongKey.status}`);
 
   // [P1] allowlist mode denies an unlisted user's callback with the friendly page
   console.log('[P1] allowlist mode denies an unlisted user');
@@ -755,7 +780,7 @@ async function main() {
     if (runPolicy) {
       // Reset the mutable mock user id so the policy mode starts from a known id.
       mock.state.userId = MOCK_USER.id;
-      const policyWorker = startWorker({ mockUrl: mock.url, enableWrites: true, testPolicyRoutes: true });
+      const policyWorker = startWorker({ mockUrl: mock.url, enableWrites: true });
       try {
         await waitForReady(policyWorker.getLog);
         await runPolicyMode({ mock });
