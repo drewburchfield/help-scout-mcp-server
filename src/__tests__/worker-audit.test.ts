@@ -29,6 +29,7 @@ import {
   userPolicyKey,
   writeConfigDoc,
   writeUserPolicyDoc,
+  clearUserPolicyDoc,
   type AdminConfig,
   type AuditEntry,
   type UserPolicy,
@@ -117,6 +118,18 @@ describe('audit rows are recorded atomically with mutations', () => {
     expect(rows[0].targetId).toBe('42');
     expect(rows[0].before).toBeNull();
     expect((rows[0].after as UserPolicy).writes).toBe(true);
+  });
+
+  it('records a user.policy.deleted row capturing the removed document as before', async () => {
+    const { map, storage } = makeStorage({ [userPolicyKey('42')]: basePolicy({ version: 3, allowed: true, writes: true }) });
+    await clearUserPolicyDoc(storage, '42', meta());
+    expect(map.has(userPolicyKey('42'))).toBe(false);
+    const rows = await readAuditRange(storage);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].action).toBe('user.policy.deleted');
+    expect(rows[0].targetId).toBe('42');
+    expect((rows[0].before as UserPolicy).writes).toBe(true);
+    expect(rows[0].after).toBeNull();
   });
 
   it('records a user.policy.update.conflict row and leaves the document untouched', async () => {
@@ -250,6 +263,20 @@ describe('list pagination', () => {
     const page = await readAuditPage(storage, { from, to, limit: 50 });
     expect(page.entries.map((e) => e.seq)).toEqual([4, 3]); // seq 3 (:02) and seq 4 (:03), newest-first
   });
+
+  it('never returns entries past the one-year retention floor, in a page or an export', async () => {
+    const { storage } = makeStorage();
+    jest.setSystemTime(new Date(Date.UTC(2026, 0, 1, 0, 0, 0)));
+    await appendAuditRow(storage, { action: 'old', actorId: 'x', actorEmail: '', targetId: '1', outcome: 'success' });
+    // Advance past the one-year window; the old row is now beyond retention.
+    jest.setSystemTime(new Date(Date.UTC(2027, 1, 1, 0, 0, 0)));
+    await appendAuditRow(storage, { action: 'fresh', actorId: 'x', actorEmail: '', targetId: '2', outcome: 'success' });
+
+    const page = await readAuditPage(storage, { limit: 50 });
+    expect(page.entries.map((e) => e.action)).toEqual(['fresh']);
+    const range = await readAuditRange(storage);
+    expect(range.map((e) => e.action)).toEqual(['fresh']);
+  });
 });
 
 describe('CSV export quoting (RFC 4180)', () => {
@@ -258,6 +285,22 @@ describe('CSV export quoting (RFC 4180)', () => {
     const [header, row] = csv.split('\r\n');
     expect(header).toBe('a,b');
     expect(row).toBe('plain,"has,comma ""quote"" and\nnewline"');
+  });
+
+  it.each(['=cmd|/c calc', '+1+2', '-2+3', '@SUM(A1)', '\ttab-lead'])(
+    'neutralizes a spreadsheet formula-injection cell (%p)',
+    (payload) => {
+      const csv = toCsv(['a'], [[payload]]);
+      const cell = csv.split('\r\n')[1];
+      // The value is prefixed with a single quote so Excel/Sheets treat it as
+      // text, then normal RFC-4180 quoting wraps it if it also contains a comma.
+      expect(cell.startsWith("'") || cell.startsWith('"\'')).toBe(true);
+      expect(cell).toContain(payload.replace(/"/g, '""'));
+    },
+  );
+
+  it('leaves an ordinary leading character untouched', () => {
+    expect(toCsv(['a'], [['ada@example.test']]).split('\r\n')[1]).toBe('ada@example.test');
   });
 
   it('quotes JSON before/after columns that contain commas and quotes', () => {

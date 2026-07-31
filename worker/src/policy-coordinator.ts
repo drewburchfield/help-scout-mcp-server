@@ -93,8 +93,8 @@ export class PolicyCoordinator extends DurableObject {
     return this.envelope(() => writeConfigDoc(this.store, patch, meta));
   }
 
-  async deleteConfigDoc(): Promise<void> {
-    await clearConfigDoc(this.store);
+  async deleteConfigDoc(meta?: MutationMeta): Promise<void> {
+    await clearConfigDoc(this.store, meta);
   }
 
   async getUserPolicyDoc(hsUserId: string): Promise<UserPolicyDocResult> {
@@ -105,8 +105,8 @@ export class PolicyCoordinator extends DurableObject {
     return this.envelope(() => writeUserPolicyDoc(this.store, hsUserId, input, meta));
   }
 
-  async deleteUserPolicyDoc(hsUserId: string): Promise<void> {
-    await clearUserPolicyDoc(this.store, hsUserId);
+  async deleteUserPolicyDoc(hsUserId: string, meta?: MutationMeta): Promise<void> {
+    await clearUserPolicyDoc(this.store, hsUserId, meta);
   }
 
   async pinRevokedUser(hsUserId: string, updatedBy: string, actorEmail?: string): Promise<UserPolicyWriteResult> {

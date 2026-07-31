@@ -180,6 +180,19 @@ export interface AccessListConfigSummary {
   allowlistMode: boolean;
   adminRole: AdminConfig['adminRole'];
   ceiling: WriteFlagSet;
+  /**
+   * What the rows represent, so a reader does not mistake the list for the full
+   * set of people with access. The rows are the users with an explicit policy
+   * document. In open mode any full Help Scout User seat that has never been
+   * configured is ALSO admitted (with the deployment ceiling as its write
+   * grant) and does not appear here; in allowlist mode only listed allowed:true
+   * users have access.
+   */
+  scope: {
+    represents: 'users-with-an-explicit-policy';
+    unlistedFullSeatUsersHaveAccess: boolean;
+    note: string;
+  };
 }
 
 /** Discriminated JSON access-list export: current effective entitlements + stamps. */
@@ -222,6 +235,13 @@ export async function exportAccessList(
     allowlistMode: config.allowlistMode,
     adminRole: config.adminRole,
     ceiling,
+    scope: {
+      represents: 'users-with-an-explicit-policy',
+      unlistedFullSeatUsersHaveAccess: !config.allowlistMode,
+      note: config.allowlistMode
+        ? 'Allowlist mode: only the users listed here with allowed=true can connect.'
+        : 'Open mode: the users listed here are the explicitly-configured ones. Any full Help Scout User seat that has not been configured is also admitted, with the deployment write ceiling as its grant, and is not enumerated here.',
+    },
   };
   if (options.format === 'csv') {
     return { format: 'csv', generatedAt, deploymentId: id, count: rows.length, config: summary, csv: accessListToCsv(rows) };

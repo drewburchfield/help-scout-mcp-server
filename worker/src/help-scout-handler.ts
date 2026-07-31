@@ -459,6 +459,18 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
  * The defaultHandler the OAuth shell delegates to. Metadata, /token, and
  * /register are the library's; /authorize, /approve, and /callback are ours.
  */
+/**
+ * The test-policy route key must be a real secret, not a guessable enable flag.
+ * Rejecting the empty value and a small set of trivial values ("true", "1", ...)
+ * disarms the footgun where an operator, misreading a doc, sets the var to
+ * "true": that would make X-Test-Policy-Key: true a public key over the whole
+ * policy store. A real per-run secret is always long, so require length >= 16.
+ */
+function isStrongTestPolicyKey(value: string | undefined): value is string {
+  if (typeof value !== 'string' || value.length < 16) return false;
+  return !['true', 'false', '1', '0', 'yes', 'on', 'enabled'].includes(value.toLowerCase());
+}
+
 export const helpScoutHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -474,8 +486,7 @@ export const helpScoutHandler: ExportedHandler<Env> = {
     // it, and asserts a missing/wrong key 404s.
     const testPolicyKey = env.HELPSCOUT_TEST_POLICY_ROUTES;
     if (
-      typeof testPolicyKey === 'string' &&
-      testPolicyKey.length > 0 &&
+      isStrongTestPolicyKey(testPolicyKey) &&
       request.headers.get('X-Test-Policy-Key') === testPolicyKey &&
       url.pathname === '/__test__/policy' &&
       request.method === 'POST'

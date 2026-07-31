@@ -379,8 +379,26 @@ export async function writeConfigDoc(
 }
 
 /** Delete the config document (harness/admin seam). Absence reads as open-mode defaults. */
-export async function clearConfigDoc(storage: PolicyStorage): Promise<void> {
-  await storage.delete(ADMIN_CONFIG_KEY);
+export async function clearConfigDoc(storage: PolicyStorage, meta?: MutationMeta): Promise<void> {
+  // Record the deletion so the ledger has no hole: capture the removed document
+  // as `before`, delete it, and append the row in one transaction.
+  await storage.transaction(async () => {
+    const before = (await storage.get<Partial<AdminConfig>>(ADMIN_CONFIG_KEY)) ?? null;
+    await storage.delete(ADMIN_CONFIG_KEY);
+    // Only record a deletion of something that existed: deleting an absent
+    // document is a no-op and must not fabricate a phantom ledger entry.
+    if (before !== null) {
+      await appendAuditRow(storage, {
+        action: 'config.deleted',
+        actorId: meta?.updatedBy ?? '',
+        actorEmail: meta?.actorEmail ?? '',
+        targetId: ADMIN_CONFIG_KEY,
+        before: before as Record<string, unknown>,
+        after: null,
+        outcome: 'success',
+      });
+    }
+  });
 }
 
 // --- User policy ----------------------------------------------------------
@@ -488,8 +506,28 @@ export async function writeUserPolicyDoc(
 }
 
 /** Delete one user's policy document (harness/admin seam). */
-export async function clearUserPolicyDoc(storage: PolicyStorage, hsUserId: string | number): Promise<void> {
-  await storage.delete(userPolicyKey(String(hsUserId)));
+export async function clearUserPolicyDoc(
+  storage: PolicyStorage,
+  hsUserId: string | number,
+  meta?: MutationMeta,
+): Promise<void> {
+  const id = String(hsUserId);
+  await storage.transaction(async () => {
+    const before = (await storage.get<Partial<UserPolicy>>(userPolicyKey(id))) ?? null;
+    await storage.delete(userPolicyKey(id));
+    // Only record a deletion of something that existed (see clearConfigDoc).
+    if (before !== null) {
+      await appendAuditRow(storage, {
+        action: 'user.policy.deleted',
+        actorId: meta?.updatedBy ?? '',
+        actorEmail: meta?.actorEmail ?? '',
+        targetId: id,
+        before: before as Record<string, unknown>,
+        after: null,
+        outcome: 'success',
+      });
+    }
+  });
 }
 
 /**
@@ -765,7 +803,11 @@ async function pruneAuditByAge(storage: PolicyStorage, nowMs: number): Promise<v
 export async function readAuditPage(storage: PolicyStorage, options: AuditListOptions): Promise<AuditListPage> {
   await pruneAuditByAge(storage, Date.now());
   const limit = clampAuditLimit(options.limit);
-  const { from, to } = options;
+  // Enforce the retention floor on the result regardless of the bounded sweep,
+  // so a listing never surfaces a record past the one-year window.
+  const floor = new Date(Date.now() - AUDIT_MAX_AGE_MS).toISOString();
+  const from = options.from !== undefined && options.from > floor ? options.from : floor;
+  const { to } = options;
   const chunk = limit + 1;
   const collected: AuditEntry[] = [];
   let endExclusiveSeq = decodeAuditCursor(options.cursor);
@@ -807,11 +849,19 @@ export async function readAuditRange(
   storage: PolicyStorage,
   options: { from?: string; to?: string } = {},
 ): Promise<AuditEntry[]> {
-  const { from, to } = options;
+  await pruneAuditByAge(storage, Date.now());
+  // The retention floor is enforced on the RESULT, not just via the opportunistic
+  // sweep (which is bounded per call): an export must never hand back a record
+  // older than the one-year window we promise to have discarded, even if the
+  // sweep has not yet reached it. The effective lower bound is the later of the
+  // caller's `from` and the retention floor.
+  const floor = new Date(Date.now() - AUDIT_MAX_AGE_MS).toISOString();
+  const from = options.from !== undefined && options.from > floor ? options.from : floor;
+  const { to } = options;
   const all = await storage.list<AuditEntry>({ prefix: AUDIT_ENTRY_PREFIX });
   const out: AuditEntry[] = [];
   for (const entry of all.values()) {
-    if (from !== undefined && entry.ts < from) continue;
+    if (entry.ts < from) continue;
     if (to !== undefined && entry.ts > to) continue;
     out.push(entry);
   }
@@ -879,9 +929,18 @@ export function buildAccessListRows(
     .sort((a, b) => (a.hsUserId < b.hsUserId ? -1 : a.hsUserId > b.hsUserId ? 1 : 0));
 }
 
-/** RFC-4180 field quoting: wrap in quotes and double any embedded quote when needed. */
+/**
+ * RFC-4180 field quoting, plus spreadsheet formula-injection neutralization.
+ * A cell whose text begins with =, +, -, @, or a tab/CR is treated by Excel and
+ * Google Sheets as a formula, so a value like `=cmd|...` in a user-controlled
+ * field (email, updatedBy, the before/after JSON) could execute when an operator
+ * opens the evidence export. Prefix such a cell with a single quote, which those
+ * tools render as a leading text marker and strip on display, before applying
+ * normal RFC-4180 quoting.
+ */
 function csvCell(value: unknown): string {
-  const s = value === null || value === undefined ? '' : typeof value === 'string' ? value : String(value);
+  let s = value === null || value === undefined ? '' : typeof value === 'string' ? value : String(value);
+  if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
