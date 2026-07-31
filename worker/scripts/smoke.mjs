@@ -175,8 +175,42 @@ async function main() {
     check('write_help_scout hidden while writes disabled', !tools.includes('write_help_scout'));
   }
 
-  // 6. RFC 8707 resource binding on token exchange (soft — reference oracle #2)
-  console.log('[6] resource-mismatch on token exchange (soft)');
+  // 6. Consent-surface robustness: client-supplied unicode must not break the
+  // consent page (the AuthRequest round-trip is TextEncoder-based, not bare
+  // btoa), and a malformed round-trip blob must be a 400, not a 500.
+  console.log('[6] consent-surface robustness');
+  const uniReg = await fetch(registerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_name: 'T4 Smoke ✓ 日本語 Client',
+      redirect_uris: [REDIRECT_URI],
+      token_endpoint_auth_method: 'none',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    }),
+  });
+  const uniClientId = (await uniReg.json().catch(() => ({}))).client_id;
+  check('DCR accepts a unicode client name', typeof uniClientId === 'string');
+  if (uniClientId) {
+    const uniToken = await runAuthFlow({
+      authorizeUrl,
+      tokenUrl,
+      clientId: uniClientId,
+      resource,
+      stateOverride: 'smoke-✓-state-日本語',
+    });
+    check('auth flow survives unicode client name and state', typeof uniToken === 'string' && uniToken.length > 0);
+  }
+  const badApprove = await fetch(`${BASE}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ oauth_req: '!!not-valid-base64!!', approve: 'true' }).toString(),
+  });
+  check('malformed oauth_req is a 400, not a 500', badApprove.status === 400, `status ${badApprove.status}`);
+
+  // 7. RFC 8707 resource binding on token exchange (soft — reference oracle #2)
+  console.log('[7] resource-mismatch on token exchange (soft)');
   try {
     const mismatch = await runAuthFlow({
       authorizeUrl,
@@ -204,10 +238,10 @@ async function main() {
 
 // Drive one auth-code + PKCE flow. Returns the access token string, or when
 // expectTokenError is set, an object describing the /token response.
-async function runAuthFlow({ authorizeUrl, tokenUrl, clientId, resource, tokenResourceOverride, expectTokenError }) {
+async function runAuthFlow({ authorizeUrl, tokenUrl, clientId, resource, tokenResourceOverride, expectTokenError, stateOverride }) {
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
-  const state = b64url(crypto.randomBytes(8));
+  const state = stateOverride ?? b64url(crypto.randomBytes(8));
 
   const authGet = new URL(authorizeUrl);
   authGet.searchParams.set('response_type', 'code');

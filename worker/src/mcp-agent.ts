@@ -71,6 +71,14 @@ export interface Env {
   HELPSCOUT_ENABLE_WRITES?: string;
   HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES?: string;
   COOKIE_ENCRYPTION_KEY?: string;
+  /**
+   * Optional. Docs API operations are part of the shared registry and stay
+   * advertised; without this secret they fail at call time with a
+   * credentials-missing error. The Docs client reads it from process.env
+   * (populated from vars/secrets under nodejs_compat), so declaring it here
+   * is for documentation and wrangler type generation.
+   */
+  HELPSCOUT_DOCS_API_KEY?: string;
 }
 
 export class HelpScoutMCP extends McpAgent<Env, unknown, HelpScoutProps> {

@@ -31,6 +31,24 @@ const STUB_PROPS = {
   email: 'stub@example.invalid',
 } as const;
 
+/**
+ * Base64 round-trip for the pending AuthRequest. Goes through TextEncoder /
+ * TextDecoder because the request carries client-supplied text (state, scope,
+ * client names) and bare btoa/atob throw on any code point above U+00FF.
+ */
+function encodeAuthRequest(oauthReq: AuthRequest): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(oauthReq));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function decodeAuthRequest(encoded: string): AuthRequest {
+  const binary = atob(encoded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes)) as AuthRequest;
+}
+
 /** HTML-escape untrusted values before echoing them into the consent page. */
 function esc(value: unknown): string {
   return String(value ?? '').replace(
@@ -64,7 +82,7 @@ async function renderConsent(request: Request, env: Env): Promise<Response> {
     return new Response('Unknown OAuth client.', { status: 400 });
   }
 
-  const encoded = btoa(JSON.stringify(oauthReq));
+  const encoded = encodeAuthRequest(oauthReq);
   const clientLabel = client.clientName ? esc(client.clientName) : esc(oauthReq.clientId);
   const hidden = (name: string, value: unknown): string =>
     `<input type="hidden" name="${name}" value="${esc(value)}">`;
@@ -107,7 +125,7 @@ async function handleApprove(request: Request, env: Env): Promise<Response> {
 
   let oauthReq: AuthRequest;
   try {
-    oauthReq = JSON.parse(atob(encoded)) as AuthRequest;
+    oauthReq = decodeAuthRequest(encoded);
   } catch {
     return new Response('Malformed authorization request.', { status: 400 });
   }
