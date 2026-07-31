@@ -103,7 +103,7 @@ For a team, you can host one instance instead of giving everyone the same App ID
 This is the recommended path for teams that would rather not hand out shared API credentials, and for organizations with role-based access control or compliance-style requirements (for example teams operating under SOC 2 or ISO 27001 controls). The worker gives you per-user attribution, access that revokes with each person's Help Scout account, and a deployment that runs on your own infrastructure. That does not make the software certified or compliant on its own, but it supports the control requirements those organizations have to meet.
 
 1. `cd worker && npm install`
-2. Run `npm run setup` (creates the KV namespace and writes your deploy config), then register a Help Scout app with an `https` callback, set three secrets, and `wrangler deploy`
+2. Run `npm run setup` (creates the KV namespace and writes your deploy config), deploy once to learn your worker URL, then register a Help Scout app with the `https://<your-worker>/callback` redirect, set three secrets, and deploy again
 3. Add `https://<your-worker>/mcp` as a custom connector in claude.ai or Claude Desktop
 
 This needs a Cloudflare account (the free tier works) and a full Help Scout User seat; Light User seats cannot use it. Writes are opt-in per deployment, off by default. Full runbook, including the token behavior and the redirect-URL trap to avoid: [Self-hosting the remote server](guides/remote-self-host.md).

@@ -41,9 +41,9 @@ function parseArgs(argv) {
     else if (a === '--yes' || a === '-y') opts.yes = true;
     else if (a === '--dry-run') opts.dryRun = true;
     else if (a === '--skip-auth-check') opts.skipAuthCheck = true;
-    else if (a === '--kv-id') opts.kvId = argv[++i];
-    else if (a === '--account-id') opts.accountId = argv[++i];
-    else if (a === '--name') opts.name = argv[++i];
+    else if (a === '--kv-id') opts.kvId = takeValue(argv, ++i, a);
+    else if (a === '--account-id') opts.accountId = takeValue(argv, ++i, a);
+    else if (a === '--name') opts.name = takeValue(argv, ++i, a);
     else if (a === '--help' || a === '-h') opts.help = true;
     else {
       console.error(`Unknown argument: ${a}`);
@@ -51,6 +51,17 @@ function parseArgs(argv) {
     }
   }
   return opts;
+}
+
+// A flag that expects a value must actually get one; swallowing the next flag
+// would silently create namespaces or write configs with names like "--force".
+function takeValue(argv, i, flag) {
+  const value = argv[i];
+  if (value === undefined || value.startsWith('--')) {
+    console.error(`${flag} expects a value`);
+    process.exit(2);
+  }
+  return value;
 }
 
 function printHelp() {
@@ -83,8 +94,13 @@ function runWrangler(args) {
 function checkAuth() {
   const res = runWrangler(['whoami']);
   const out = `${res.stdout || ''}${res.stderr || ''}`;
-  // wrangler exits non-zero and/or prints a login hint when not authenticated.
-  const loggedOut = res.status !== 0 || /not authenticated|log ?in|not logged in/i.test(out);
+  // A signed-in `wrangler whoami` exits zero and says "You are logged in";
+  // signed-out runs exit non-zero and/or say "not authenticated". Matching a
+  // bare "login" would misread signed-in output that merely mentions logging in.
+  const loggedOut =
+    res.status !== 0 ||
+    /not authenticated|not logged in/i.test(out) ||
+    !/logged in/i.test(out);
   return { ok: !loggedOut, output: out.trim() };
 }
 
@@ -127,6 +143,9 @@ function createKvNamespace() {
 function renderDeployConfig(template, { kvId, accountId, name }) {
   let out = template;
 
+  if (!out.includes('<REPLACE_WITH_KV_ID>')) {
+    throw new Error('template no longer contains the <REPLACE_WITH_KV_ID> placeholder');
+  }
   out = out.replace('<REPLACE_WITH_KV_ID>', kvId);
 
   if (name && name !== DEFAULT_NAME) {
