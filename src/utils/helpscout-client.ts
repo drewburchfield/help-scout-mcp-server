@@ -74,6 +74,9 @@ export class HelpScoutClient implements HelpScoutApi {
   // would be sent while cache keys are computed for the new identity, filing
   // one account's responses under the other's cache namespace.
   private accessTokenFingerprint: string | null = null;
+  // Identity the in-flight authentication was started for; a caller whose
+  // resolved credentials differ must not adopt that promise.
+  private authenticationPromiseFingerprint: string | null = null;
   private authenticationPromise: Promise<void> | null = null;
   private httpAgent: HttpAgent;
   private httpsAgent: HttpsAgent;
@@ -413,22 +416,32 @@ export class HelpScoutClient implements HelpScoutApi {
   private async ensureAuthenticated(): Promise<void> {
     // A token is only reusable while it is unexpired AND still belongs to the
     // currently resolved credentials; a mid-process rotation invalidates it.
+    const currentFingerprint = this.cacheIdentityPrefix();
     if (
       this.accessToken &&
       Date.now() < this.tokenExpiresAt &&
-      this.accessTokenFingerprint === this.cacheIdentityPrefix()
+      this.accessTokenFingerprint === currentFingerprint
     ) {
       return;
     }
 
-    // If authentication is already in progress, wait for it
+    // Adopt an in-flight exchange only when it was started for this identity.
+    // A rotation landing during a slow exchange must not let the new identity
+    // ride the previous identity's sign-in: wait it out, then re-evaluate and
+    // exchange fresh for the current credentials.
     if (this.authenticationPromise) {
-      return this.authenticationPromise;
+      if (this.authenticationPromiseFingerprint === currentFingerprint) {
+        return this.authenticationPromise;
+      }
+      await this.authenticationPromise.catch(() => undefined);
+      return this.ensureAuthenticated();
     }
 
     // Start authentication and cache the promise to prevent concurrent auth requests
+    this.authenticationPromiseFingerprint = currentFingerprint;
     this.authenticationPromise = this.authenticate().finally(() => {
       this.authenticationPromise = null;
+      this.authenticationPromiseFingerprint = null;
     });
 
     return this.authenticationPromise;

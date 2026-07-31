@@ -156,6 +156,48 @@ describe('cache identity isolation (NAS-1496)', () => {
     await client.closePool();
   });
 
+  it('does not let a rotated identity adopt an in-flight sign-in for the previous identity', async () => {
+    const dataA = { _embedded: { mailboxes: [{ id: 'A' }] } };
+    const dataB = { _embedded: { conversations: [{ id: 'B' }] } };
+
+    process.env.HELPSCOUT_APP_ID = 'app-A';
+    process.env.HELPSCOUT_APP_SECRET = 'secret-A';
+    const client = new HelpScoutClient();
+
+    // A's token exchange is slow; the rotation lands while it is in flight.
+    nock('https://api.helpscout.net')
+      .post('/v2/oauth2/token')
+      .delay(200)
+      .reply(200, { access_token: 'tokA', expires_in: 7200 });
+    nock('https://api.helpscout.net')
+      .get('/v2/mailboxes')
+      .matchHeader('authorization', 'Bearer tokA')
+      .reply(200, dataA);
+
+    const requestA = client.get('/mailboxes');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Rotate mid-exchange. B's request must NOT ride A's in-flight sign-in:
+    // it has to wait it out and run its own exchange, carrying tokB.
+    process.env.HELPSCOUT_APP_ID = 'app-B';
+    process.env.HELPSCOUT_APP_SECRET = 'secret-B';
+    const tokenB = nock('https://api.helpscout.net')
+      .post('/v2/oauth2/token')
+      .reply(200, { access_token: 'tokB', expires_in: 7200 });
+    const apiB = nock('https://api.helpscout.net')
+      .get('/v2/conversations')
+      .matchHeader('authorization', 'Bearer tokB')
+      .reply(200, dataB);
+    const requestB = client.get('/conversations');
+
+    await expect(requestA).resolves.toEqual(dataA);
+    await expect(requestB).resolves.toEqual(dataB);
+    expect(tokenB.isDone()).toBe(true);
+    expect(apiB.isDone()).toBe(true);
+
+    await client.closePool();
+  });
+
   it('does not serve Docs-client cache across API keys', async () => {
     const setSpy = jest.spyOn(cache, 'set');
     const dataA = { items: [{ id: 'A' }] };
