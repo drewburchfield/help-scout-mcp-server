@@ -18,12 +18,15 @@
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 
 import { HelpScoutMCP } from './mcp-agent.js';
+import { PolicyCoordinator } from './policy-coordinator.js';
 import { helpScoutHandler } from './help-scout-handler.js';
 import { helpScoutTokenExchangeCallback } from './helpscout-oauth.js';
 import type { Env } from './mcp-agent.js';
 
-// The Durable Object class must be exported for the wrangler migration binding.
-export { HelpScoutMCP };
+// Both Durable Object classes must be exported for their wrangler migration
+// bindings: HelpScoutMCP (v1, the per-session MCP agent) and PolicyCoordinator
+// (v2, the single per-deployment access-policy owner, NAS-1501).
+export { HelpScoutMCP, PolicyCoordinator };
 
 export default new OAuthProvider<Env>({
   // The protected MCP endpoint. Unauthenticated requests get 401 +

@@ -17,15 +17,25 @@
   // runtime under workerd). Outbound calls use the global fetch, not node http.
   "compatibility_flags": ["nodejs_compat"],
 
-  // The McpAgent is a Durable Object. `McpAgent.serve("/mcp")` looks up this
-  // binding by the default name MCP_OBJECT.
+  // Two Durable Objects. MCP_OBJECT is the per-session McpAgent
+  // (`McpAgent.serve("/mcp")` looks it up by that default name). POLICY_OBJECT is
+  // the single per-deployment access-policy coordinator (NAS-1501): every policy
+  // read/write resolves it by a fixed name so reads are strongly consistent and
+  // version writes are atomic compare-and-swap.
   "durable_objects": {
-    "bindings": [{ "class_name": "HelpScoutMCP", "name": "MCP_OBJECT" }]
+    "bindings": [
+      { "class_name": "HelpScoutMCP", "name": "MCP_OBJECT" },
+      { "class_name": "PolicyCoordinator", "name": "POLICY_OBJECT" }
+    ]
   },
 
-  // McpAgent stores per-session state in SQLite, so the class ships as a
-  // new_sqlite_classes migration.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HelpScoutMCP"] }],
+  // Both classes use the SQLite storage backend (Cloudflare's recommendation for
+  // all new Durable Object namespaces). v1 ships HelpScoutMCP; v2 adds the policy
+  // coordinator without touching v1.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["HelpScoutMCP"] },
+    { "tag": "v2", "new_sqlite_classes": ["PolicyCoordinator"] }
+  ],
 
   // workers-oauth-provider stores hashed client secrets and AES-GCM-encrypted
   // grant props (which hold the per-user Help Scout tokens) here. Create the
@@ -38,6 +48,12 @@
   // defense); set it to a long random string. Optional: `wrangler secret put
   // HELPSCOUT_DOCS_API_KEY` enables the Docs API operations; without it they are
   // still advertised but fail at call time with a credentials-missing error.
+  //
+  // NEVER set HELPSCOUT_TEST_POLICY_ROUTES in a real deployment. It exists only for
+  // the smoke harness: its value is a secret key that must be presented in the
+  // X-Test-Policy-Key header to reach an internal policy-mutation route, and it also
+  // relaxes the https guard to allow an http loopback upstream. Setting it in
+  // production would both weaken that guard and expose the access-policy store.
   //
   // SETUP CAVEAT: the Help Scout app's Redirection URL is fixed at registration
   // and MUST be this deployed worker's `https://<worker>/callback`. An app born

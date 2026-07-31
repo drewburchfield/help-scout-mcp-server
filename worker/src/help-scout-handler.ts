@@ -27,6 +27,9 @@ import {
   verifyConsentCookie,
   type ConsentTransaction,
 } from './oauth-cookie.js';
+import { evaluateAccess } from './policy.js';
+import { getConfig, getUserPolicy } from './policy-store.js';
+import { handleTestPolicyRoute } from './test-policy-route.js';
 
 /** HTML-escape untrusted values before echoing them into a page. */
 function esc(value: unknown): string {
@@ -57,10 +60,17 @@ function joinUrl(base: string, path: string): string {
 
 /**
  * Codes, client secrets, and fresh bearer tokens flow to these URLs, so they
- * must be https — the same invariant the fetch client enforces — with a
- * loopback exception so the smoke harness can stand in a mock upstream.
+ * must be https, the same invariant the fetch client enforces.
+ *
+ * `allowLoopback` opens a narrow exception for the smoke harness's http mock
+ * upstream, and ONLY the smoke turns it on: it is the deployment's test-mode
+ * signal (Boolean(HELPSCOUT_TEST_POLICY_ROUTES)), which production never sets.
+ * With it false, only https passes: a loopback http URL is rejected like any
+ * other non-https URL, so a production deployment cannot be pointed at http.
+ * The loopback allow-list is exact-match so `http://127.0.0.1.evil.com` (which
+ * merely starts with 127.0.0.1) is rejected.
  */
-function isSecureUpstreamUrl(value: string): boolean {
+function isSecureUpstreamUrl(value: string, allowLoopback: boolean): boolean {
   let url: URL;
   try {
     url = new URL(value);
@@ -68,6 +78,7 @@ function isSecureUpstreamUrl(value: string): boolean {
     return false;
   }
   if (url.protocol === 'https:') return true;
+  if (!allowLoopback) return false;
   return (
     url.protocol === 'http:' &&
     (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname === '::1')
@@ -181,8 +192,9 @@ async function handleApprove(request: Request, env: Env): Promise<Response> {
   }
 
   // The browser is about to be sent to this URL; hold it to the same https
-  // bar as the other upstream endpoints (loopback excepted for the mock).
-  if (!isSecureUpstreamUrl(env.HELPSCOUT_AUTHORIZE_URL)) {
+  // bar as the other upstream endpoints (loopback tolerated only in test mode).
+  const allowLoopback = Boolean(env.HELPSCOUT_TEST_POLICY_ROUTES);
+  if (!isSecureUpstreamUrl(env.HELPSCOUT_AUTHORIZE_URL, allowLoopback)) {
     return htmlResponse(
       page('Authorize Help Scout', 'Deployment misconfigured', '<p>This server is configured with a non-https Help Scout URL. Ask whoever operates it to fix HELPSCOUT_AUTHORIZE_URL.</p>'),
       500,
@@ -270,8 +282,12 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   }
 
   // Refuse to send the code, client secret, or a fresh bearer token anywhere
-  // that is not https (loopback excepted for the mock-upstream harness).
-  if (!isSecureUpstreamUrl(env.HELPSCOUT_TOKEN_URL) || !isSecureUpstreamUrl(env.HELPSCOUT_BASE_URL)) {
+  // that is not https (loopback tolerated only in test mode for the mock).
+  const allowLoopback = Boolean(env.HELPSCOUT_TEST_POLICY_ROUTES);
+  if (
+    !isSecureUpstreamUrl(env.HELPSCOUT_TOKEN_URL, allowLoopback) ||
+    !isSecureUpstreamUrl(env.HELPSCOUT_BASE_URL, allowLoopback)
+  ) {
     return htmlResponse(
       page('Authorize Help Scout', 'Deployment misconfigured', '<p>This server is configured with a non-https Help Scout URL. Ask whoever operates it to fix HELPSCOUT_TOKEN_URL / HELPSCOUT_BASE_URL.</p>'),
       500,
@@ -383,6 +399,42 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     email ||
     `Help Scout user ${userId}`;
 
+  // --- Access policy gate (NAS-1501). Runs after identity, before the grant. ---
+  // An explicit allowed:false blocks even in open mode; allowlist mode blocks any
+  // user without an explicit allowed:true entry. The coordinator's reads are
+  // strongly consistent, so a user blocked moments earlier is denied here with no
+  // stale-colo admit. A coordinator failure fails closed: no grant is completed.
+  // The consent cookie is cleared like every terminal path.
+  let accessAllowed: boolean;
+  try {
+    const [config, userPolicy] = await Promise.all([
+      getConfig(env),
+      getUserPolicy(env, userId),
+    ]);
+    accessAllowed = evaluateAccess(config, userPolicy).allowed;
+  } catch {
+    return htmlResponse(
+      page(
+        'Authorize Help Scout',
+        'Access could not be verified',
+        '<p>This deployment could not verify whether your account is enabled right now. Try again in a moment. If this persists, contact the administrator of this deployment.</p>',
+      ),
+      503,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
+  if (!accessAllowed) {
+    return htmlResponse(
+      page(
+        'Help Scout access not enabled',
+        'Access is not enabled for your account',
+        '<p>Your Help Scout account is not enabled to use this connection. Contact the administrator of this deployment to request access, then reconnect the connector.</p>',
+      ),
+      403,
+      { 'Set-Cookie': buildConsentClearCookie() },
+    );
+  }
+
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
     request: txn.oauthReq,
     userId: String(userId),
@@ -404,6 +456,26 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
 export const helpScoutHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // Test-harness-only policy-seeding route. This can read and rewrite the whole
+    // access-policy store with no OAuth, so it is gated by a SECRET, not a boolean:
+    // HELPSCOUT_TEST_POLICY_ROUTES holds a random per-run key, and the request must
+    // present that exact key in X-Test-Policy-Key. When the var is unset/empty, or
+    // the header is missing or wrong, the route is completely invisible: it falls
+    // through to the 404 below, never revealing that it exists (no 403). Production
+    // never sets the var, so the route can never be reached there even if a caller
+    // guesses the path. The smoke seeds config/policy and drives revokeUser through
+    // it, and asserts a missing/wrong key 404s.
+    const testPolicyKey = env.HELPSCOUT_TEST_POLICY_ROUTES;
+    if (
+      typeof testPolicyKey === 'string' &&
+      testPolicyKey.length > 0 &&
+      request.headers.get('X-Test-Policy-Key') === testPolicyKey &&
+      url.pathname === '/__test__/policy' &&
+      request.method === 'POST'
+    ) {
+      return handleTestPolicyRoute(request, env);
+    }
 
     // Refuse to run the consent flow with a missing signing key: an empty-key
     // HMAC would still "verify", silently weakening the confused-deputy

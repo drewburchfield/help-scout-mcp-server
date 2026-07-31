@@ -27,6 +27,14 @@ const READY_TIMEOUT_MS = 90_000;
 const MOCK_USER = { id: 987, firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.test', type: 'user' };
 const HS_EXPIRES_IN = 172800; // 48h, matching Help Scout
 
+// Per-run secret gating the test-only policy route AND signalling test-mode (the
+// worker tolerates an http loopback upstream only when this var is non-empty).
+// It is a fresh random value every run (never hardcode it) and every request to
+// the /__test__/policy route must present it in the X-Test-Policy-Key header. The
+// worker mounts that route only for a request whose header equals this exact
+// value; a missing or wrong key 404s, so the route stays invisible.
+const TEST_POLICY_KEY = crypto.randomBytes(24).toString('hex');
+
 let passed = 0;
 const failures = [];
 function check(name, cond, detail = '') {
@@ -46,7 +54,7 @@ const b64url = (buf) =>
 // State is mutated directly from the smoke process (same runtime) to exercise
 // the light-user path and to observe refresh-token rotation.
 function startMockHelpScout() {
-  const state = { lightUser: false, refreshCount: 0, currentRefreshToken: null, accessCounter: 0, issuedCodes: new Set() };
+  const state = { lightUser: false, refreshCount: 0, currentRefreshToken: null, accessCounter: 0, issuedCodes: new Set(), userId: MOCK_USER.id, noteWrites: 0 };
 
   const readBody = (req) =>
     new Promise((resolve) => {
@@ -114,6 +122,7 @@ function startMockHelpScout() {
     }
 
     // Identity. Light Users have no Mailbox API access: 403 even with a token.
+    // The user id is overridable so policy tests can drive distinct users.
     if (url.pathname === '/hs/users/me' && req.method === 'GET') {
       if (state.lightUser) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
@@ -121,7 +130,16 @@ function startMockHelpScout() {
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(MOCK_USER));
+      res.end(JSON.stringify({ ...MOCK_USER, id: state.userId }));
+      return;
+    }
+
+    // Write endpoint for the policy write test: createNote POSTs here. Answers
+    // 201 with the Resource-Id header the write handler reads.
+    if (req.method === 'POST' && /^\/hs\/conversations\/\d+\/notes$/.test(url.pathname)) {
+      state.noteWrites += 1;
+      res.writeHead(201, { 'Content-Type': 'application/json', 'Resource-Id': '5551' });
+      res.end(JSON.stringify({}));
       return;
     }
 
@@ -138,7 +156,7 @@ function startMockHelpScout() {
 }
 
 // --- wrangler dev lifecycle -------------------------------------------------
-function startWorker({ mockUrl, enableWrites }) {
+function startWorker({ mockUrl, enableWrites, enableCustomerVisible = false }) {
   const args = [
     './node_modules/.bin/wrangler',
     'dev',
@@ -154,6 +172,15 @@ function startWorker({ mockUrl, enableWrites }) {
     `HELPSCOUT_BASE_URL:${mockUrl}/hs/`,
     '--var',
     `HELPSCOUT_ENABLE_WRITES:${enableWrites ? 'true' : 'false'}`,
+    '--var',
+    `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES:${enableCustomerVisible ? 'true' : 'false'}`,
+    // The mock upstream is http loopback, which the worker only tolerates in
+    // test mode, so every smoke worker is started in test mode with the per-run
+    // secret. The route itself stays gated by the X-Test-Policy-Key header: a
+    // worker in read/writes mode never receives that header from this suite, so
+    // its /__test__/policy 404s (see the "absent by default" check below).
+    '--var',
+    `HELPSCOUT_TEST_POLICY_ROUTES:${TEST_POLICY_KEY}`,
   ];
   const proc = spawn(NODE_BIN, args, {
     cwd: WORKER_DIR,
@@ -369,6 +396,41 @@ async function toolsList(headers) {
   return { status: res.status, tools: (body?.result?.tools || []).map((t) => t.name) };
 }
 
+// Dispatch one tools/call and return the parsed structured result. `isError`
+// reflects the CallToolResult.isError flag the gateway/policy layer sets.
+async function mcpCallTool(headers, name, args) {
+  const res = await fetch(`${BASE}/mcp`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name, arguments: args ?? {} },
+    }),
+  });
+  const body = await readRpc(res);
+  const result = body?.result;
+  const text = result?.content?.[0]?.text;
+  let structured = result?.structuredContent;
+  if (!structured && typeof text === 'string') {
+    try { structured = JSON.parse(text); } catch { /* not JSON */ }
+  }
+  return { httpStatus: res.status, isError: Boolean(result?.isError), structured, text };
+}
+
+// Drive the test-harness policy route. The route is mounted only for a request
+// that presents the per-run secret in X-Test-Policy-Key, so every call sends it.
+async function policyRoute(command) {
+  const res = await fetch(`${BASE}/__test__/policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Test-Policy-Key': TEST_POLICY_KEY },
+    body: JSON.stringify(command),
+  });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
+
 // --- One full mode (writes off / on) ----------------------------------------
 async function runMode({ mock, enableWrites }) {
   const label = enableWrites ? 'writes enabled' : 'read-only';
@@ -502,6 +564,18 @@ async function runMode({ mock, enableWrites }) {
   check('light user hits the callback error path', lightFlow.stopped === 'callback' && lightFlow.status === 403, `status ${lightFlow.status}`);
   check('light-user page explains a full seat is required', /seat|Light User|full Help Scout/i.test(lightFlow.body || ''));
 
+  // [8b] the test-only policy route must be invisible without the secret key.
+  // This worker runs in read/writes mode: the var is set (test-mode is on for the
+  // loopback mock), but this suite never sends X-Test-Policy-Key here, so the
+  // route must 404 exactly as it would with the var unset.
+  console.log('[8b] test policy route is absent without the secret key');
+  const noRoute = await fetch(`${BASE}/__test__/policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'getConfig' }),
+  });
+  check('test policy route 404s without the X-Test-Policy-Key header', noRoute.status === 404, `status ${noRoute.status}`);
+
   // [9] RFC 8707 resource binding on token exchange (soft)
   console.log('[9] resource-mismatch on token exchange (soft)');
   try {
@@ -533,9 +607,161 @@ async function runMode({ mock, enableWrites }) {
   }
 }
 
+// --- Policy engine (NAS-1501) -----------------------------------------------
+// Runs against its own worker: writes enabled at the deployment ceiling, and the
+// test-harness policy route mounted so the smoke can seed config/policy and drive
+// revokeUser. Distinct Help Scout user ids per sub-test keep the KV state clean.
+async function runPolicyMode({ mock }) {
+  console.log(`\n=== mode: policy engine (${BASE}) ===\n`);
+
+  const prm = await (await fetch(`${BASE}/.well-known/oauth-protected-resource`)).json().catch(() => ({}));
+  const resource = prm.resource;
+  const as = await (await fetch(`${BASE}/.well-known/oauth-authorization-server`)).json().catch(() => ({}));
+  const registerUrl = as.registration_endpoint || `${BASE}/register`;
+  const reg = await registerClient(registerUrl, 'Policy Smoke Client');
+  check('policy mode: DCR returned client_id', typeof reg.clientId === 'string', `status ${reg.status}`);
+  const clientId = reg.clientId;
+
+  const ping = await policyRoute({ op: 'getConfig' });
+  check('test policy route is mounted with the correct secret key', ping.status === 200, `status ${ping.status}`);
+
+  // The route is secret-gated: even with the var set, a request carrying a wrong
+  // X-Test-Policy-Key must 404 (invisible), never reveal itself with a 403.
+  const wrongKey = await fetch(`${BASE}/__test__/policy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Test-Policy-Key': 'wrong-key' },
+    body: JSON.stringify({ op: 'getConfig' }),
+  });
+  check('test policy route 404s with a wrong X-Test-Policy-Key (secret gate)', wrongKey.status === 404, `status ${wrongKey.status}`);
+
+  // [P1] allowlist mode denies an unlisted user's callback with the friendly page
+  console.log('[P1] allowlist mode denies an unlisted user');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1001 });
+  const cfg1 = await policyRoute({ op: 'putConfig', patch: { allowlistMode: true, policyCacheTtlSeconds: 15 }, expectedVersion: 0 });
+  check('allowlist config written (version 1)', cfg1.status === 200 && cfg1.body.config?.allowlistMode === true && cfg1.body.config?.version === 1, JSON.stringify(cfg1.body));
+  mock.state.userId = 1001;
+  const denied1 = await runFullFlow({ clientId, resource, mock });
+  check('allowlist mode denies the callback (403)', denied1.stopped === 'callback' && denied1.status === 403, `status ${denied1.status}`);
+  check('denied page says access not enabled / contact administrator', /not enabled|administrator/i.test(denied1.body || ''));
+
+  // [P2] explicit allowed:false denies in open mode (no config document)
+  console.log('[P2] explicit block denies in open mode');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1002 });
+  const p2 = await policyRoute({ op: 'putUserPolicy', hsUserId: 1002, input: { allowed: false, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  check('explicit-block policy written', p2.status === 200 && p2.body.policy?.allowed === false, JSON.stringify(p2.body));
+  mock.state.userId = 1002;
+  const denied2 = await runFullFlow({ clientId, resource, mock });
+  check('explicit allowed:false denies the callback in open mode (403)', denied2.stopped === 'callback' && denied2.status === 403, `status ${denied2.status}`);
+
+  // [P3] per-user write permission: writes:false refused, writes:true succeeds
+  console.log('[P3] per-user write permission gating');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1003 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1003, input: { allowed: true, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  mock.state.userId = 1003;
+  const flow3 = await runFullFlow({ clientId, resource, mock });
+  check('write-test user connects', typeof flow3.accessToken === 'string' && flow3.accessToken.length > 0);
+  const init3 = await mcpInitialize(flow3.accessToken);
+  check('write-test initialize is 200', init3.status === 200, `status ${init3.status}`);
+  const list3 = await toolsList(init3.headers);
+  check('write_help_scout advertised at the deployment ceiling', list3.tools.includes('write_help_scout'));
+  const noteArgs = { name: 'createNote', arguments: { conversationId: '123', text: 'policy smoke note' } };
+  const notesBefore = mock.state.noteWrites;
+  const denyWrite = await mcpCallTool(init3.headers, 'write_help_scout', noteArgs);
+  check('writes:false user is refused with a structured permission error', denyWrite.isError === true && denyWrite.structured?.code === 'PERMISSION_DENIED', JSON.stringify(denyWrite.structured));
+  check('the refused write never reached the mock upstream', mock.state.noteWrites === notesBefore, `noteWrites ${mock.state.noteWrites}`);
+  const cur3 = await policyRoute({ op: 'getUserPolicy', hsUserId: 1003 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1003, input: { allowed: true, writes: true, customerVisibleWrites: false }, expectedVersion: cur3.body.policy?.version ?? 0 });
+  const okWrite = await mcpCallTool(init3.headers, 'write_help_scout', noteArgs);
+  check('writes:true user succeeds against the mock upstream', okWrite.isError === false && okWrite.structured?.status === 'succeeded', JSON.stringify(okWrite.structured));
+  check('the successful write reached the mock upstream', mock.state.noteWrites === notesBefore + 1, `noteWrites ${mock.state.noteWrites}`);
+
+  // [P4] mid-session revocation honors the policy cache TTL as the SLA
+  console.log('[P4] mid-session revocation after the cache window');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1004 });
+  await policyRoute({ op: 'putConfig', patch: { allowlistMode: false, policyCacheTtlSeconds: 15 }, expectedVersion: 0 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1004, input: { allowed: true, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  mock.state.userId = 1004;
+  const flow4 = await runFullFlow({ clientId, resource, mock });
+  const init4 = await mcpInitialize(flow4.accessToken);
+  const search1 = await mcpCallTool(init4.headers, 'search_help_scout', { query: 'conversations' });
+  check('allowed read succeeds and warms the policy cache', search1.isError === false && Array.isArray(search1.structured?.results), JSON.stringify(search1.structured));
+  const cur4 = await policyRoute({ op: 'getUserPolicy', hsUserId: 1004 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1004, input: { allowed: false, writes: false, customerVisibleWrites: false }, expectedVersion: cur4.body.policy?.version ?? 0 });
+  const searchWithin = await mcpCallTool(init4.headers, 'search_help_scout', { query: 'conversations' });
+  check('read still served from the unexpired cache immediately after revoke', searchWithin.isError === false, JSON.stringify(searchWithin.structured));
+  console.log('       waiting out the 15s policy cache TTL...');
+  await new Promise((r) => setTimeout(r, 17000));
+  const searchAfter = await mcpCallTool(init4.headers, 'search_help_scout', { query: 'conversations' });
+  check('read denied once the cache window lapses (revocation SLA)', searchAfter.isError === true && searchAfter.structured?.code === 'ACCESS_REVOKED', JSON.stringify(searchAfter.structured));
+
+  // [P5] revokeUser tears down grants and pins allowed:false
+  console.log('[P5] revokeUser revokes grants and blocks the user');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1005 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1005, input: { allowed: true, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  mock.state.userId = 1005;
+  const flow5 = await runFullFlow({ clientId, resource, mock });
+  const init5 = await mcpInitialize(flow5.accessToken);
+  const list5 = await toolsList(init5.headers);
+  check('revoke-test session works before revoke', list5.status === 200 && list5.tools.includes('search_help_scout'));
+  const rev = await policyRoute({ op: 'revokeUser', hsUserId: 1005 });
+  check('revokeUser revoked at least one grant', rev.status === 200 && (rev.body.result?.grantsRevoked ?? 0) >= 1, JSON.stringify(rev.body));
+  check('revokeUser pinned the policy to allowed:false', rev.body.result?.policy?.allowed === false, JSON.stringify(rev.body.result?.policy));
+  const afterRevoke = await toolsList(init5.headers);
+  check('revoked grant makes the OUR token unauthorized at /mcp (401)', afterRevoke.status === 401, `status ${afterRevoke.status}`);
+
+  // [P6] optimistic concurrency: a stale putConfig is a 409 conflict
+  console.log('[P6] optimistic-concurrency conflict');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'putConfig', patch: { allowlistMode: false }, expectedVersion: 0 });
+  const stale = await policyRoute({ op: 'putConfig', patch: { allowlistMode: true }, expectedVersion: 0 });
+  check('stale putConfig returns a 409 conflict', stale.status === 409 && stale.body.code === 'POLICY_CONFLICT', JSON.stringify(stale.body));
+
+  // [P7] atomic CAS through the coordinator DO: two writes presenting the SAME
+  // expectedVersion, fired concurrently (both requests in flight before either
+  // resolves), resolve to exactly one 200 and one 409 — no lost update. This is
+  // the defect the KV get-then-put had; the DO serializes the check-and-increment.
+  console.log('[P7] concurrent same-version writes resolve to one winner + one conflict');
+  await policyRoute({ op: 'del', target: 'config' });
+  const seed7 = await policyRoute({ op: 'putConfig', patch: { allowlistMode: false }, expectedVersion: 0 });
+  check('CAS seed config written (version 1)', seed7.status === 200 && seed7.body.config?.version === 1, JSON.stringify(seed7.body));
+  const [w1, w2] = await Promise.all([
+    policyRoute({ op: 'putConfig', patch: { allowlistMode: true }, expectedVersion: 1 }),
+    policyRoute({ op: 'putConfig', patch: { policyCacheTtlSeconds: 120 }, expectedVersion: 1 }),
+  ]);
+  const statuses = [w1.status, w2.status].sort((a, b) => a - b);
+  check('concurrent same-version writes: exactly one 200 and one 409', statuses[0] === 200 && statuses[1] === 409, JSON.stringify(statuses));
+  const conflict7 = [w1, w2].find((r) => r.status === 409);
+  check('the losing concurrent write is a POLICY_CONFLICT', conflict7?.body?.code === 'POLICY_CONFLICT', JSON.stringify(conflict7?.body));
+  const after7 = await policyRoute({ op: 'getConfig' });
+  check('exactly one concurrent write landed (config advanced to version 2)', after7.body.config?.version === 2, JSON.stringify(after7.body.config));
+
+  // [P8] strong-consistency admission gate: a fresh /callback immediately after a
+  // revoke reads the deny with no stale admit. Under the old KV store a callback
+  // landing in a lagging colo could still read the pre-revoke policy and mint a
+  // grant; the coordinator's reads are strongly consistent, so the very next
+  // sign-in is refused.
+  console.log('[P8] revoke then immediate fresh callback is denied');
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 1008 });
+  await policyRoute({ op: 'putUserPolicy', hsUserId: 1008, input: { allowed: true, writes: false, customerVisibleWrites: false }, expectedVersion: 0 });
+  mock.state.userId = 1008;
+  const preRevoke8 = await runFullFlow({ clientId, resource, mock });
+  check('user connects before revoke', typeof preRevoke8.accessToken === 'string' && preRevoke8.accessToken.length > 0);
+  const rev8 = await policyRoute({ op: 'revokeUser', hsUserId: 1008 });
+  check('revoke pins the policy to allowed:false', rev8.body.result?.policy?.allowed === false, JSON.stringify(rev8.body.result?.policy));
+  const postRevoke8 = await runFullFlow({ clientId, resource, mock });
+  check('a fresh callback immediately after revoke is denied (403, no stale admit)', postRevoke8.stopped === 'callback' && postRevoke8.status === 403, `status ${postRevoke8.status}`);
+}
+
 async function main() {
-  const only = process.env.SMOKE_MODE; // 'reads' | 'writes' | undefined (both)
-  const modes = only === 'reads' ? [false] : only === 'writes' ? [true] : [false, true];
+  const only = process.env.SMOKE_MODE; // 'reads' | 'writes' | 'policy' | undefined (all)
+  const modes = only === 'reads' ? [false] : only === 'writes' ? [true] : only === 'policy' ? [] : [false, true];
+  const runPolicy = only === undefined || only === 'policy';
 
   const mock = await startMockHelpScout();
   console.log(`mock Help Scout on ${mock.url}`);
@@ -548,6 +774,18 @@ async function main() {
         await runMode({ mock, enableWrites });
       } finally {
         await worker.close();
+      }
+    }
+
+    if (runPolicy) {
+      // Reset the mutable mock user id so the policy mode starts from a known id.
+      mock.state.userId = MOCK_USER.id;
+      const policyWorker = startWorker({ mockUrl: mock.url, enableWrites: true });
+      try {
+        await waitForReady(policyWorker.getLog);
+        await runPolicyMode({ mock });
+      } finally {
+        await policyWorker.close();
       }
     }
   } finally {

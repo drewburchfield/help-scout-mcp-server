@@ -311,6 +311,39 @@ reconnect; other users are unaffected.
   If you want a check before shipping an update, run the smoke suite first (`npm run
   smoke`); it drives the whole OAuth flow against a local mock without touching Help
   Scout or your live deployment.
+
+  **When an upgrade introduces a new Durable Object.** Some upgrades add a new
+  Durable Object class. Because your `wrangler.deploy.jsonc` is your own gitignored
+  copy, it does NOT pick these up from `git pull`, and the wizard does not reconcile
+  them for you: you must add the new binding and a new migration tag by hand before
+  deploying, or every request that uses the new object fails. This version added the
+  access-policy coordinator (`PolicyCoordinator`), bound as `POLICY_OBJECT`. Compare
+  your `wrangler.deploy.jsonc` against the shipped `wrangler.jsonc` template and, if
+  it is missing, add the binding:
+
+  ```jsonc
+  "durable_objects": {
+    "bindings": [
+      { "class_name": "HelpScoutMCP", "name": "MCP_OBJECT" },
+      // Add this line if your config predates the policy engine:
+      { "class_name": "PolicyCoordinator", "name": "POLICY_OBJECT" }
+    ]
+  },
+  ```
+
+  and the matching migration tag:
+
+  ```jsonc
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["HelpScoutMCP"] },
+    // Add this entry alongside your existing tags:
+    { "tag": "v2", "new_sqlite_classes": ["PolicyCoordinator"] }
+  ],
+  ```
+
+  Deploying without the `POLICY_OBJECT` binding leaves the worker unable to read or
+  write the access policy, and because that check fails closed every callback and
+  tool call returns "access could not be verified" until the binding is added.
 - Live logs: `npm run tail` (wraps `wrangler tail`) streams request logs from the
   deployed worker.
 - The three advertised tools are a gateway over the read operations; Claude finds

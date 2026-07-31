@@ -716,4 +716,51 @@ describe('HelpScoutFetchClient', () => {
       expect(() => makeHarness({ baseUrl: 'not a url' })).toThrow(/Invalid Help Scout base URL/);
     });
   });
+
+  describe('insecure loopback allowance', () => {
+    // Default (no flag): https is enforced, so even an http loopback URL (which
+    // the smoke's mock upstream uses) is rejected. Only the Workers request path
+    // opts in, and only in test mode.
+    it('rejects an http loopback base URL without the flag', () => {
+      expect(() => makeHarness({ baseUrl: 'http://127.0.0.1:8787/hs/' })).toThrow(/HTTPS/);
+    });
+
+    it('rejects an http loopback token URL without the flag', () => {
+      expect(() => makeHarness({ tokenUrl: 'http://127.0.0.1:8787/hs/token' })).toThrow(/HTTPS/);
+    });
+
+    it('accepts http loopback base and token URLs when the flag is set', () => {
+      expect(() =>
+        makeHarness({
+          baseUrl: 'http://127.0.0.1:8787/hs/',
+          tokenUrl: 'http://127.0.0.1:8787/hs/token',
+          allowInsecureLoopback: true,
+        }),
+      ).not.toThrow();
+    });
+
+    it('accepts localhost and [::1] over http when the flag is set', () => {
+      expect(() =>
+        makeHarness({
+          baseUrl: 'http://localhost:8787/hs/',
+          tokenUrl: 'http://[::1]:8787/hs/token',
+          allowInsecureLoopback: true,
+        }),
+      ).not.toThrow();
+    });
+
+    // The allow-list is exact-match: a host that merely starts with 127.0.0.1 is
+    // a different, attacker-controlled host and must be rejected even with the flag.
+    it('rejects http://127.0.0.1.evil.com even with the flag (exact-match host)', () => {
+      expect(() =>
+        makeHarness({ baseUrl: 'http://127.0.0.1.evil.com/v2/', allowInsecureLoopback: true }),
+      ).toThrow(/HTTPS/);
+    });
+
+    it('still requires https for a public host even with the flag', () => {
+      expect(() =>
+        makeHarness({ baseUrl: 'http://api.helpscout.net/v2/', allowInsecureLoopback: true }),
+      ).toThrow(/HTTPS/);
+    });
+  });
 });
