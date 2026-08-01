@@ -31,6 +31,8 @@ import { evaluateAccess, type AccessDecision } from './policy.js';
 import { getConfig, getUserPolicy } from './policy-store.js';
 import { recordAdmissionDenied, recordGrantCreated } from './audit-store.js';
 import { handleTestPolicyRoute } from './test-policy-route.js';
+import { isSecureUpstreamUrl, joinUrl } from './upstream-url.js';
+import { handleAdmin, tryAdminCallback } from './admin-handler.js';
 
 /** HTML-escape untrusted values before echoing them into a page. */
 function esc(value: unknown): string {
@@ -52,38 +54,6 @@ function newState(): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/** Join base URL + path the way the fetch client does, tolerating a trailing slash on the base. */
-function joinUrl(base: string, path: string): string {
-  return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-}
-
-/**
- * Codes, client secrets, and fresh bearer tokens flow to these URLs, so they
- * must be https, the same invariant the fetch client enforces.
- *
- * `allowLoopback` opens a narrow exception for the smoke harness's http mock
- * upstream, and ONLY the smoke turns it on: it is the deployment's test-mode
- * signal (Boolean(HELPSCOUT_TEST_POLICY_ROUTES)), which production never sets.
- * With it false, only https passes: a loopback http URL is rejected like any
- * other non-https URL, so a production deployment cannot be pointed at http.
- * The loopback allow-list is exact-match so `http://127.0.0.1.evil.com` (which
- * merely starts with 127.0.0.1) is rejected.
- */
-function isSecureUpstreamUrl(value: string, allowLoopback: boolean): boolean {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return false;
-  }
-  if (url.protocol === 'https:') return true;
-  if (!allowLoopback) return false;
-  return (
-    url.protocol === 'http:' &&
-    (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]' || url.hostname === '::1')
-  );
 }
 
 /**
@@ -504,6 +474,13 @@ export const helpScoutHandler: ExportedHandler<Env> = {
       );
     }
 
+    // The self-hosted admin surface (NAS-1503). Its own signed HTTP-only session
+    // cookie gates /admin and /admin/api/*; this is SEPARATE from the MCP OAuth
+    // token. Mounted before the consent routes and the 404 so it owns its paths.
+    if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+      return handleAdmin(request, env);
+    }
+
     if (url.pathname === '/authorize' && request.method === 'GET') {
       return renderConsent(request, env);
     }
@@ -511,6 +488,14 @@ export const helpScoutHandler: ExportedHandler<Env> = {
       return handleApprove(request, env);
     }
     if (url.pathname === '/callback' && request.method === 'GET') {
+      // The Help Scout app has ONE registered Redirection URL (this /callback),
+      // so the admin login's authorize leg lands here too, not on a separate
+      // /admin/callback. An admin-login callback is disambiguated by its own
+      // signed state cookie: tryAdminCallback returns a Response when this
+      // callback carries a valid admin-login state, otherwise null and the MCP
+      // consent callback runs exactly as before.
+      const adminResponse = await tryAdminCallback(request, env);
+      if (adminResponse) return adminResponse;
       return handleCallback(request, env);
     }
 

@@ -253,6 +253,28 @@ role cannot write to a mailbox gets a structured permission error. The full rule
 (confirmation envelope, dry-run) are in the
 [write tool contract](architecture/mcp-tool-contract.md#write-tool-contract).
 
+## The admin console
+
+An Owner (or an Administrator, when the deployment sets its admin role to
+`administrator`) can manage access at `https://<worker-url>/admin`. Signing in
+runs the same Help Scout login as a normal connection, but the console never
+stores your Help Scout token: it reads your identity and the account roster once
+at login, then holds only a short-lived signed session cookie. From there you can
+allow or block individual users, set each person's write tier up to the
+deployment ceiling, toggle allowlist mode, and download the audit log and access
+list as evidence.
+
+**Security note on the admin session and role changes.** Admin console sessions
+last one hour. A change to the deployment admin-role setting takes effect
+immediately, on the next request. A demotion made in Help Scout itself (for
+example dropping someone from Owner to User) is reflected in the admin console
+within at most one hour: the session captures the Help Scout role at login and
+the console does not re-read it from Help Scout on every request (it keeps no
+stored token to do so), so the demotion is picked up when the session expires and
+re-login re-reads the live role. This is separate from a user's MCP access, which
+the policy engine revokes immediately: blocking or revoking a user in the console
+denies their connector on the very next request regardless of any session.
+
 ## How tokens and sessions behave
 
 - Help Scout access tokens last about 48 hours. The token the worker issues to your

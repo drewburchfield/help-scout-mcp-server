@@ -45,7 +45,12 @@
   // Non-secret configuration. Secrets (HELPSCOUT_CLIENT_ID, HELPSCOUT_CLIENT_SECRET,
   // COOKIE_ENCRYPTION_KEY) are set with `wrangler secret put` and never live here.
   // COOKIE_ENCRYPTION_KEY signs the consent-transaction cookie (the confused-deputy
-  // defense); set it to a long random string. Optional: `wrangler secret put
+  // defense); set it to a long random string. It ALSO signs the admin surface's
+  // session and login-state cookies (NAS-1503, at /admin + /admin/api/*), so no
+  // additional secret is needed for the admin console: it logs in through the same
+  // Help Scout OAuth app (HELPSCOUT_CLIENT_ID/SECRET) as the consent flow, and its
+  // Owner/Administrator role gate is driven by config.adminRole in the policy store.
+  // Optional: `wrangler secret put
   // HELPSCOUT_DOCS_API_KEY` enables the Docs API operations; without it they are
   // still advertised but fail at call time with a credentials-missing error.
   //

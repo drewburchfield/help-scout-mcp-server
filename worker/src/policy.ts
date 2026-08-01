@@ -868,6 +868,50 @@ export async function readAuditRange(
   return out;
 }
 
+// --- Help Scout user directory cache (NAS-1503) ----------------------------
+//
+// The admin GUI's roster is the full set of Help Scout account users merged with
+// the policy documents. Listing account users needs an admin's Help Scout token
+// (GET /v2/users), which the admin surface holds only during login. Rather than
+// keep that token for the life of the 8-hour admin session, the login fetches the
+// directory ONCE and caches this non-secret snapshot (ids, emails, names, roles)
+// in the coordinator's storage; the roster endpoint then merges the cached
+// directory with LIVE policy/grant state on every request. A re-login refreshes
+// the snapshot. No Help Scout token is retained past login.
+
+/** The single storage key holding the cached Help Scout user directory. */
+export const ADMIN_DIRECTORY_KEY = 'admin:directory:v1';
+
+/** The Help Scout account roles the admin surface distinguishes. */
+export type HelpScoutRole = 'Owner' | 'Administrator' | 'User' | 'Light';
+
+/** One cached Help Scout account user (display directory data, never a secret). */
+export interface DirectoryUser {
+  hsUserId: string;
+  email: string;
+  name: string;
+  role: HelpScoutRole;
+}
+
+/** The cached directory snapshot plus the provenance of when/who fetched it. */
+export interface UserDirectory {
+  users: DirectoryUser[];
+  fetchedAt: string;
+  fetchedBy: string;
+}
+
+/** Read the cached directory snapshot, or null when login has not populated it. */
+export async function readDirectory(storage: PolicyStorage): Promise<UserDirectory | null> {
+  const raw = await storage.get<UserDirectory>(ADMIN_DIRECTORY_KEY);
+  if (!raw || !Array.isArray(raw.users)) return null;
+  return raw;
+}
+
+/** Overwrite the cached directory snapshot (a cache; not versioned, not audited). */
+export async function writeDirectory(storage: PolicyStorage, directory: UserDirectory): Promise<void> {
+  await storage.put(ADMIN_DIRECTORY_KEY, directory);
+}
+
 /** List every stored user policy document (normalized), keyed by hsUserId. */
 export async function listUserPolicyDocs(
   storage: PolicyStorage,

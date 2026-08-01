@@ -8,9 +8,11 @@
 // localhost (the redirect URL is fixed at app registration), so the mock stands
 // in for it.
 //
-// Usage: node scripts/smoke.mjs            (runs read-only and write modes)
+// Usage: node scripts/smoke.mjs            (runs read-only, write, policy, admin)
 //        SMOKE_MODE=reads node scripts/smoke.mjs
 //        SMOKE_MODE=writes node scripts/smoke.mjs
+//        SMOKE_MODE=policy node scripts/smoke.mjs
+//        SMOKE_MODE=admin node scripts/smoke.mjs
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -54,7 +56,19 @@ const b64url = (buf) =>
 // State is mutated directly from the smoke process (same runtime) to exercise
 // the light-user path and to observe refresh-token rotation.
 function startMockHelpScout() {
-  const state = { lightUser: false, refreshCount: 0, currentRefreshToken: null, accessCounter: 0, issuedCodes: new Set(), userId: MOCK_USER.id, noteWrites: 0 };
+  // `role` backs /hs/users/me for the admin login (NAS-1503): the admin role gate
+  // requires Owner (or Administrator when configured). `userId` overrides the me
+  // identity so policy/admin tests can drive distinct users.
+  const state = { lightUser: false, refreshCount: 0, currentRefreshToken: null, accessCounter: 0, issuedCodes: new Set(), userId: MOCK_USER.id, role: 'owner', noteWrites: 0 };
+
+  // The account directory GET /v2/users returns for the admin roster. Includes a
+  // full agent and a Light user (ineligible for the Mailbox API). The signed-in
+  // admin id is injected so it always appears in its own roster.
+  const usersList = () => [
+    { id: state.userId, email: 'admin@example.test', firstName: 'Ada', lastName: 'Admin', role: 'owner' },
+    { id: 5001, email: 'agent@example.test', firstName: 'Grace', lastName: 'Agent', role: 'user' },
+    { id: 5002, email: 'light@example.test', firstName: 'Lee', lastName: 'Light', role: 'user', type: 'light' },
+  ];
 
   const readBody = (req) =>
     new Promise((resolve) => {
@@ -130,7 +144,16 @@ function startMockHelpScout() {
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ...MOCK_USER, id: state.userId }));
+      res.end(JSON.stringify({ ...MOCK_USER, id: state.userId, role: state.role }));
+      return;
+    }
+
+    // Account user directory for the admin roster (NAS-1503). Needs an admin's
+    // token; the mock accepts any bearer here, since the worker only reaches it
+    // after its own role gate has passed at /callback.
+    if (url.pathname === '/hs/users' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ _embedded: { users: usersList() }, page: { totalPages: 1 } }));
       return;
     }
 
@@ -558,6 +581,44 @@ async function runMode({ mock, enableWrites }) {
     check('replayed callback is rejected via the single-use code', replayed.status === 502, `status ${replayed.status}`);
   }
 
+  // [7c] an abandoned admin sign-in must not break the next MCP connector sign-in.
+  // A leftover admin-state cookie (admin opened /admin, wandered off) carried into
+  // an MCP /callback whose state is the MCP flow's state must fall through to the
+  // MCP consent callback, not 400 as an admin error.
+  console.log('[7c] a stale admin-state cookie does not hijack the MCP callback');
+  const adminStart = await fetch(`${BASE}/admin`, { redirect: 'manual' });
+  const staleAdminState = setCookieValues(adminStart)[ADMIN_STATE_COOKIE];
+  check('captured a leftover admin-state cookie from an abandoned admin sign-in', typeof staleAdminState === 'string' && staleAdminState.length > 0);
+  {
+    const verifier = b64url(crypto.randomBytes(32));
+    const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+    const st = b64url(crypto.randomBytes(8));
+    const a = new URL(`${BASE}/authorize`);
+    a.searchParams.set('response_type', 'code');
+    a.searchParams.set('client_id', reg.clientId);
+    a.searchParams.set('redirect_uri', REDIRECT_URI);
+    a.searchParams.set('code_challenge', challenge);
+    a.searchParams.set('code_challenge_method', 'S256');
+    a.searchParams.set('state', st);
+    if (resource) a.searchParams.set('resource', resource);
+    const consentR = await fetch(a, { headers: { Accept: 'text/html' }, redirect: 'manual' });
+    const c1 = setCookieValues(consentR)[CONSENT_COOKIE];
+    const appr = await fetch(`${BASE}/approve`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: `${CONSENT_COOKIE}=${c1}` }, body: 'approve=true' });
+    const c2 = setCookieValues(appr)[CONSENT_COOKIE] || c1;
+    const hs = await fetch(appr.headers.get('location'), { redirect: 'manual' });
+    const callbackUrl = new URL(hs.headers.get('location'));
+    // Land on /callback carrying BOTH the MCP consent cookie AND the leftover admin
+    // state cookie. The query state is the MCP state (not the admin one), so the
+    // admin handler must decline and the MCP consent callback must complete.
+    const cb = await fetch(callbackUrl, {
+      redirect: 'manual',
+      headers: { Cookie: `${CONSENT_COOKIE}=${c2}; ${ADMIN_STATE_COOKIE}=${staleAdminState}` },
+    });
+    check('MCP /callback with a stale admin-state cookie still completes (302, not an admin 400)', cb.status === 302, `status ${cb.status}`);
+    const cbCode = cb.status === 302 ? new URL(cb.headers.get('location')).searchParams.get('code') : null;
+    check('the MCP callback minted an OUR code despite the stale admin cookie', typeof cbCode === 'string' && cbCode.length > 0);
+  }
+
   // [8] light-user 403 -> seat-required page, no grant
   console.log('[8] light-user seat-required path');
   const lightFlow = await runFullFlow({ clientId: reg.clientId, resource, mock, lightUser: true });
@@ -830,10 +891,187 @@ async function runPolicyMode({ mock }) {
   check('access list shows the revoked user as not allowed', revokedRow?.allowed === false && revokedRow?.effectiveAllowed === false, JSON.stringify(revokedRow));
 }
 
+// --- Admin surface (NAS-1503) -----------------------------------------------
+// Runs against its own worker (writes enabled at the ceiling, customer-visible
+// off, so the tier control's top option is greyed and the server rejects it).
+// The admin session is minted by driving the full Help Scout dance through the
+// mock: GET /admin -> mock authorize -> /callback with the admin-state cookie ->
+// signed admin-session cookie. No test-only backdoor; the real handler runs.
+const ADMIN_SESSION_COOKIE = 'hs_admin_session';
+const ADMIN_STATE_COOKIE = 'hs_admin_state';
+
+// Drive the admin login. Returns { status, sessionCookie? }, a 302 with a
+// session cookie on success, or the terminal callback status when refused.
+async function adminLogin({ mock, role }) {
+  const prevRole = mock.state.role;
+  mock.state.role = role;
+  try {
+    const start = await fetch(`${BASE}/admin`, { redirect: 'manual' });
+    if (start.status !== 302) return { status: start.status, start };
+    const stateCookie = setCookieValues(start)[ADMIN_STATE_COOKIE];
+    const hsAuthorize = start.headers.get('location');
+    const hsRes = await fetch(hsAuthorize, { redirect: 'manual' });
+    const callbackUrl = hsRes.headers.get('location');
+    const cb = await fetch(callbackUrl, { redirect: 'manual', headers: { Cookie: `${ADMIN_STATE_COOKIE}=${stateCookie}` } });
+    const sessionCookie = setCookieValues(cb)[ADMIN_SESSION_COOKIE];
+    const body = cb.status === 302 ? '' : await cb.text();
+    return { status: cb.status, sessionCookie, start, body };
+  } finally {
+    mock.state.role = prevRole;
+  }
+}
+
+async function runAdminMode({ mock }) {
+  console.log(`\n=== mode: admin surface (${BASE}) ===\n`);
+  mock.state.role = 'owner';
+  mock.state.userId = MOCK_USER.id;
+
+  // The coordinator DO's storage persists across wrangler-dev sessions, so clear
+  // the documents this mode asserts on (via the secret-gated test route the smoke
+  // worker mounts) to keep the roster deterministic across re-runs.
+  await policyRoute({ op: 'del', target: 'config' });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 5001 });
+  await policyRoute({ op: 'del', target: 'user', hsUserId: 5002 });
+
+  // [A1] unauthenticated /admin starts the login dance, it does NOT serve the page.
+  console.log('[A1] unauthenticated /admin redirects to login');
+  const anon = await fetch(`${BASE}/admin`, { redirect: 'manual' });
+  check('GET /admin without a session is a 302 login start (not the console)', anon.status === 302, `status ${anon.status}`);
+  check('the login start sets an admin-state cookie', typeof setCookieValues(anon)[ADMIN_STATE_COOKIE] === 'string');
+  check('the login start redirects to the Help Scout authorize URL', /\/hs\/authorize/.test(anon.headers.get('location') || ''));
+
+  // [A2] /admin/api/* without a session is 401.
+  console.log('[A2] admin API requires a session');
+  const noSessRoster = await fetch(`${BASE}/admin/api/roster`, { redirect: 'manual' });
+  check('GET /admin/api/roster without a session is 401', noSessRoster.status === 401, `status ${noSessRoster.status}`);
+  const noSessPost = await fetch(`${BASE}/admin/api/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"allowlistMode":true,"expectedVersion":0}' });
+  check('POST /admin/api/config without a session is 401', noSessPost.status === 401, `status ${noSessPost.status}`);
+
+  // [A3] a non-Owner role is refused a session.
+  console.log('[A3] a non-administrator role is refused a session');
+  const refused = await adminLogin({ mock, role: 'user' });
+  check('a plain User is refused at the admin callback (403)', refused.status === 403, `status ${refused.status}`);
+  check('the refusal page explains they are not an administrator', /not an administrator/i.test(refused.body || ''));
+  check('no admin session cookie is minted for a refused role', !refused.sessionCookie);
+
+  // [A4] full happy path: Owner logs in, gets a session + roster.
+  console.log('[A4] owner login mints a session and roster');
+  const login = await adminLogin({ mock, role: 'owner' });
+  check('an Owner completes the admin login (302 to /admin)', login.status === 302, `status ${login.status}`);
+  check('the login mints a signed admin-session cookie', typeof login.sessionCookie === 'string' && login.sessionCookie.length > 0);
+  const session = login.sessionCookie;
+  const authed = { Cookie: `${ADMIN_SESSION_COOKIE}=${session}` };
+
+  // GET /admin with the session serves the console and embeds the CSRF token.
+  const page = await fetch(`${BASE}/admin`, { headers: authed });
+  const pageHtml = await page.text();
+  check('GET /admin with a session serves the console page (200)', page.status === 200, `status ${page.status}`);
+  const csrfMatch = pageHtml.match(/var CSRF = "([^"]+)"/);
+  check('the console embeds a per-session CSRF token', Boolean(csrfMatch));
+  const csrf = csrfMatch ? csrfMatch[1] : '';
+  check('the console sets a strict Content-Security-Policy', /content-security-policy/i.test([...page.headers.keys()].join(',')) && /frame-ancestors 'none'/.test(page.headers.get('content-security-policy') || ''));
+
+  const roster1 = await (await fetch(`${BASE}/admin/api/roster`, { headers: authed })).json();
+  check('roster lists the account users merged with policy state', Array.isArray(roster1.rows) && roster1.rows.length >= 2, JSON.stringify(roster1.rows?.length));
+  check('roster reports the deployment write ceiling and cap', roster1.deployment?.ceiling?.enabled === true && roster1.deployment?.ceilingCap === 'writes', JSON.stringify(roster1.deployment));
+  check('roster flags the Light user as ineligible', (roster1.rows || []).some((r) => r.email === 'light@example.test' && r.eligible === false));
+  const agentBefore = (roster1.rows || []).find((r) => r.email === 'agent@example.test');
+  check('the agent starts open-default (no explicit policy)', agentBefore?.policyState === 'open-default', JSON.stringify(agentBefore));
+
+  // [A5] a mutating POST without the CSRF token is rejected.
+  console.log('[A5] CSRF is enforced on mutations');
+  const noCsrf = await fetch(`${BASE}/admin/api/user-policy`, {
+    method: 'POST',
+    headers: { ...authed, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hsUserId: '5001', allowed: false, writeTier: 'none', expectedVersion: agentBefore?.version ?? 0 }),
+  });
+  check('a mutating POST without the CSRF header is 403', noCsrf.status === 403, `status ${noCsrf.status}`);
+
+  // A tier above the ceiling is rejected server-side even with a valid CSRF token.
+  const overCeiling = await fetch(`${BASE}/admin/api/user-policy`, {
+    method: 'POST',
+    headers: { ...authed, 'Content-Type': 'application/json', 'X-Admin-CSRF': csrf },
+    body: JSON.stringify({ hsUserId: '5001', allowed: true, writeTier: 'writes+customerVisible', expectedVersion: agentBefore?.version ?? 0 }),
+  });
+  check('a write tier above the deployment ceiling is rejected (400)', overCeiling.status === 400, `status ${overCeiling.status}`);
+
+  // [A6] block the agent with a valid CSRF token, then confirm the roster + audit.
+  console.log('[A6] blocking a user is applied and audited');
+  const block = await fetch(`${BASE}/admin/api/user-policy`, {
+    method: 'POST',
+    headers: { ...authed, 'Content-Type': 'application/json', 'X-Admin-CSRF': csrf },
+    body: JSON.stringify({ hsUserId: '5001', allowed: false, writeTier: 'none', expectedVersion: agentBefore?.version ?? 0 }),
+  });
+  check('blocking the agent with a valid CSRF token succeeds (200)', block.status === 200, `status ${block.status}`);
+  const roster2 = await (await fetch(`${BASE}/admin/api/roster`, { headers: authed })).json();
+  const agentAfter = (roster2.rows || []).find((r) => r.email === 'agent@example.test');
+  check('the roster shows the agent as blocked after the mutation', agentAfter?.policyState === 'blocked' && agentAfter?.effectiveAllowed === false, JSON.stringify(agentAfter));
+
+  const audit = await (await fetch(`${BASE}/admin/api/audit?limit=10`, { headers: authed })).json();
+  const adminRow = (audit.page?.entries || []).find((e) => e.action === 'user.policy.updated' && e.targetId === '5001');
+  check('the block is recorded in the audit ledger with the admin actor', adminRow?.actorId === String(MOCK_USER.id), JSON.stringify(adminRow));
+
+  // The console resolves the user's email from the cached directory when it writes
+  // the policy, so the evidence export carries a real email, not a blank column.
+  const alAfterBlock = await (await fetch(`${BASE}/admin/api/export/access-list.json`, { headers: authed })).json();
+  const agentAlRow = (alAfterBlock.rows || []).find((r) => r.hsUserId === '5001');
+  check('the access-list export row for the configured user carries a non-empty email', typeof agentAlRow?.email === 'string' && agentAlRow.email.length > 0, JSON.stringify(agentAlRow));
+  check('the configured user email matches the directory (not blanked)', agentAlRow?.email === 'agent@example.test', JSON.stringify(agentAlRow?.email));
+
+  // [A7] the allowlist toggle goes through putConfig with optimistic concurrency.
+  console.log('[A7] the allowlist toggle updates config');
+  const cfgVer = roster2.deployment?.configVersion ?? 0;
+  const toggle = await fetch(`${BASE}/admin/api/config`, {
+    method: 'POST',
+    headers: { ...authed, 'Content-Type': 'application/json', 'X-Admin-CSRF': csrf },
+    body: JSON.stringify({ allowlistMode: true, expectedVersion: cfgVer }),
+  });
+  check('the allowlist toggle succeeds (200)', toggle.status === 200, `status ${toggle.status}`);
+  const stale = await fetch(`${BASE}/admin/api/config`, {
+    method: 'POST',
+    headers: { ...authed, 'Content-Type': 'application/json', 'X-Admin-CSRF': csrf },
+    body: JSON.stringify({ allowlistMode: false, expectedVersion: cfgVer }),
+  });
+  check('a stale allowlist toggle is a 409 conflict', stale.status === 409, `status ${stale.status}`);
+
+  // [A8] evidence exports download with a Content-Disposition attachment.
+  console.log('[A8] evidence exports download');
+  const auditCsv = await fetch(`${BASE}/admin/api/export/audit.csv`, { headers: authed });
+  check('audit CSV export is a 200 attachment', auditCsv.status === 200 && /attachment/.test(auditCsv.headers.get('content-disposition') || ''), `status ${auditCsv.status}`);
+  const auditCsvBody = await auditCsv.text();
+  check('audit CSV export carries the documented header row', auditCsvBody.split('\r\n')[0] === 'seq,ts,actorId,actorEmail,action,targetId,before,after,outcome');
+  const alJson = await fetch(`${BASE}/admin/api/export/access-list.json`, { headers: authed });
+  check('access-list JSON export is a 200 attachment', alJson.status === 200 && /attachment/.test(alJson.headers.get('content-disposition') || ''), `status ${alJson.status}`);
+  const alBody = await alJson.json();
+  check('access-list export is stamped with the config scope note', typeof alBody.config?.scope?.note === 'string' && alBody.config.scope.note.length > 0);
+
+  // Reset the toggled config so a re-run starts clean.
+  await fetch(`${BASE}/admin/api/config`, {
+    method: 'POST',
+    headers: { ...authed, 'Content-Type': 'application/json', 'X-Admin-CSRF': csrf },
+    body: JSON.stringify({ allowlistMode: false, expectedVersion: (await (await fetch(`${BASE}/admin/api/roster`, { headers: authed })).json()).deployment?.configVersion ?? 0 }),
+  });
+
+  // [A9] logout is a CSRF-protected POST: a cross-site GET must not sign the admin
+  // out, and a POST without the CSRF token is rejected. Run last, since the final
+  // successful POST clears the session.
+  console.log('[A9] logout requires POST + CSRF');
+  const getLogout = await fetch(`${BASE}/admin/logout`, { headers: authed, redirect: 'manual' });
+  check('GET /admin/logout does not clear the session cookie', !/hs_admin_session=;/.test(getLogout.headers.get('set-cookie') || ''), `set-cookie ${getLogout.headers.get('set-cookie')}`);
+  const stillValid = await fetch(`${BASE}/admin/api/roster`, { headers: authed });
+  check('the session still works after a GET /admin/logout (no logout happened)', stillValid.status === 200, `status ${stillValid.status}`);
+  const logoutNoCsrf = await fetch(`${BASE}/admin/logout`, { method: 'POST', headers: authed });
+  check('POST /admin/logout without a CSRF token is rejected (403)', logoutNoCsrf.status === 403, `status ${logoutNoCsrf.status}`);
+  const logoutOk = await fetch(`${BASE}/admin/logout`, { method: 'POST', headers: { ...authed, 'X-Admin-CSRF': csrf } });
+  check('POST /admin/logout with a valid CSRF token succeeds (200)', logoutOk.status === 200, `status ${logoutOk.status}`);
+  check('a valid logout clears the admin session cookie', /hs_admin_session=;/.test(logoutOk.headers.get('set-cookie') || ''), `set-cookie ${logoutOk.headers.get('set-cookie')}`);
+}
+
 async function main() {
-  const only = process.env.SMOKE_MODE; // 'reads' | 'writes' | 'policy' | undefined (all)
-  const modes = only === 'reads' ? [false] : only === 'writes' ? [true] : only === 'policy' ? [] : [false, true];
+  const only = process.env.SMOKE_MODE; // 'reads' | 'writes' | 'policy' | 'admin' | undefined (all)
+  const modes = only === 'reads' ? [false] : only === 'writes' ? [true] : only === 'policy' || only === 'admin' ? [] : [false, true];
   const runPolicy = only === undefined || only === 'policy';
+  const runAdmin = only === undefined || only === 'admin';
 
   const mock = await startMockHelpScout();
   console.log(`mock Help Scout on ${mock.url}`);
@@ -858,6 +1096,20 @@ async function main() {
         await runPolicyMode({ mock });
       } finally {
         await policyWorker.close();
+      }
+    }
+
+    if (runAdmin) {
+      // Writes enabled at the ceiling but customer-visible off, so the admin tier
+      // control's top option is greyed and the server rejects it.
+      mock.state.userId = MOCK_USER.id;
+      mock.state.role = 'owner';
+      const adminWorker = startWorker({ mockUrl: mock.url, enableWrites: true, enableCustomerVisible: false });
+      try {
+        await waitForReady(adminWorker.getLog);
+        await runAdminMode({ mock });
+      } finally {
+        await adminWorker.close();
       }
     }
   } finally {
