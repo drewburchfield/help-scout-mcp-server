@@ -172,8 +172,8 @@ function onAllowlist(){
   var cb = document.getElementById('allowlist-toggle');
   cb.disabled = true;
   req('POST', '/admin/api/config', { allowlistMode: cb.checked, expectedVersion: deployment.configVersion }).then(function(res){
-    if(res.status === 200){ flash('Access mode updated.', 'ok'); loadRoster(); }
-    else if(res.status === 409){ flash('Configuration changed since load, reloading.', 'err'); loadRoster(); }
+    if(res.status === 200){ flash('Access mode updated.', 'ok'); reload(); }
+    else if(res.status === 409){ flash('Configuration changed since load, reloading.', 'err'); reload(); }
     else { flash((res.body && res.body.error) || 'Update failed.', 'err'); cb.checked = !!deployment.allowlistMode; cb.disabled = false; }
   });
 }
@@ -187,6 +187,10 @@ function loadRoster(){
     renderRoster();
   });
 }
+// After any mutation (including a rejected one, which records a denied audit
+// row) refresh both the roster and the audit table so the ledger the admin sees
+// stays live without a page reload.
+function reload(){ loadRoster(); loadAudit(true); }
 
 function makeTierSelect(row, allowedNow){
   var sel = document.createElement('select');
@@ -203,9 +207,9 @@ function makeTierSelect(row, allowedNow){
     var tier = sel.value;
     sel.disabled = true;
     req('POST', '/admin/api/user-policy', { hsUserId: row.hsUserId, allowed: allowedNow, writeTier: tier, expectedVersion: row.version }).then(function(res){
-      if(res.status === 200){ flash('Write tier updated for ' + row.email + '.', 'ok'); loadRoster(); }
-      else if(res.status === 409){ flash('This user changed since load, reloading.', 'err'); loadRoster(); }
-      else { flash((res.body && res.body.error) || 'Update failed.', 'err'); loadRoster(); }
+      if(res.status === 200){ flash('Write tier updated for ' + row.email + '.', 'ok'); reload(); }
+      else if(res.status === 409){ flash('This user changed since load, reloading.', 'err'); reload(); }
+      else { flash((res.body && res.body.error) || 'Update failed.', 'err'); reload(); }
     });
   });
   return sel;
@@ -256,9 +260,9 @@ function renderRoster(){
     block.addEventListener('click', function(){
       block.disabled = true;
       req('POST', '/admin/api/user-policy', { hsUserId: row.hsUserId, allowed: !allowedNow, writeTier: row.writeTier, expectedVersion: row.version }).then(function(res){
-        if(res.status === 200){ flash((allowedNow ? 'Blocked ' : 'Unblocked ') + row.email + '.', 'ok'); loadRoster(); }
-        else if(res.status === 409){ flash('This user changed since load, reloading.', 'err'); loadRoster(); }
-        else { flash((res.body && res.body.error) || 'Update failed.', 'err'); loadRoster(); }
+        if(res.status === 200){ flash((allowedNow ? 'Blocked ' : 'Unblocked ') + row.email + '.', 'ok'); reload(); }
+        else if(res.status === 409){ flash('This user changed since load, reloading.', 'err'); reload(); }
+        else { flash((res.body && res.body.error) || 'Update failed.', 'err'); reload(); }
       });
     });
     actions.appendChild(block);
@@ -269,8 +273,8 @@ function renderRoster(){
       if(!window.confirm('Revoke all access for ' + row.email + '? This tears down their live sessions and blocks reconnection.')) return;
       revoke.disabled = true;
       req('POST', '/admin/api/revoke', { hsUserId: row.hsUserId }).then(function(res){
-        if(res.status === 200){ flash('Revoked ' + row.email + ' (' + ((res.body.result && res.body.result.grantsRevoked) || 0) + ' grant(s)).', 'ok'); loadRoster(); }
-        else { flash((res.body && res.body.error) || 'Revoke failed.', 'err'); loadRoster(); }
+        if(res.status === 200){ flash('Revoked ' + row.email + ' (' + ((res.body.result && res.body.result.grantsRevoked) || 0) + ' grant(s)).', 'ok'); reload(); }
+        else { flash((res.body && res.body.error) || 'Revoke failed.', 'err'); reload(); }
       });
     });
     actions.appendChild(revoke);
