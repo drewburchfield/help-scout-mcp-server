@@ -8,8 +8,10 @@
  * Security model:
  *   - The admin session is SEPARATE from the MCP OAuth token. An admin logs in
  *     through the same Help Scout Authorization Code dance the consent flow uses,
- *     but the credential is a short-lived (8h) signed HTTP-only cookie THIS
+ *     but the credential is a short-lived (1h) signed HTTP-only cookie THIS
  *     surface owns (admin-auth.ts). No Help Scout token is retained past login.
+ *     The 1h ceiling bounds the window in which a Help-Scout-side demotion is
+ *     still reflected by the cached session role (see ADMIN_SESSION_TTL_MS).
  *   - The Help Scout app has ONE registered Redirection URL (the worker's
  *     /callback), so the admin login's authorize leg lands on /callback too. It
  *     is disambiguated from the MCP consent callback by its own signed state
@@ -64,10 +66,39 @@ import {
   type WriteTier,
 } from './admin-auth.js';
 import { renderAdminPage, renderAdminNotice } from './admin-page.js';
+import { logger } from '../../src/utils/logger.js';
 
 const HELP_SCOUT_FETCH_TIMEOUT_MS = 30_000;
 /** Cap the /v2/users pagination so a hostile or broken upstream cannot loop unbounded. */
 const MAX_USER_PAGES = 200;
+/**
+ * Cap the connection probe: a large account (fetchDirectory pages up to
+ * MAX_USER_PAGES) could otherwise fan out thousands of concurrent KV-backed
+ * grant lookups and exceed the per-invocation operation budget, silently making
+ * the Connected column wrong. Above this cap the unprobed users are reported
+ * honestly (connected: null) rather than as disconnected.
+ */
+const CONNECTION_PROBE_CAP = 250;
+/** How many grant lookups to run at once (a small pool keeps the op budget bounded). */
+const CONNECTION_PROBE_CONCURRENCY = 8;
+
+/** Run `worker` over `items` with at most `limit` in flight at any moment. */
+async function runPool<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let index = 0;
+  const size = Math.min(limit, items.length);
+  const runners: Promise<void>[] = [];
+  for (let i = 0; i < size; i++) {
+    runners.push(
+      (async () => {
+        while (index < items.length) {
+          const current = index++;
+          await worker(items[current]);
+        }
+      })(),
+    );
+  }
+  await Promise.all(runners);
+}
 
 // --- Response helpers ------------------------------------------------------
 
@@ -118,6 +149,21 @@ function htmlResponse(html: string, nonce: string, status = 200, extra: Record<s
 function noticePage(title: string, heading: string, message: string, status: number, extra: Record<string, string> = {}): Response {
   const nonce = randomToken(16);
   return htmlResponse(renderAdminNotice(nonce, title, heading, message), nonce, status, extra);
+}
+
+/**
+ * Fail-closed page when the cookie signing key is absent (NAS-1503 hardening).
+ * The admin surface self-guards this rather than trusting the caller's ordering,
+ * so it never signs or verifies a cookie with an empty key. Mirrors the
+ * consent-flow guard copy.
+ */
+function misconfiguredKeyPage(): Response {
+  return noticePage(
+    'Admin',
+    'Deployment misconfigured',
+    'This server is missing its COOKIE_ENCRYPTION_KEY secret. Ask whoever operates it to set one with wrangler secret put COOKIE_ENCRYPTION_KEY.',
+    500,
+  );
 }
 
 // --- The deployment write ceiling (env-only, never raised from the GUI) ----
@@ -215,15 +261,34 @@ async function startAdminLogin(env: Env): Promise<Response> {
 }
 
 /**
- * Handle the admin-login callback at /callback. Returns a Response when this
- * callback carries an admin-login state cookie (admin intent), otherwise null so
- * the MCP consent callback runs unchanged. Once an admin-state cookie is present
- * we own the callback and never fall through, so a dangling admin cookie cannot
- * hijack an MCP sign-in (which never carries this cookie).
+ * Handle the admin-login callback at /callback. Returns a Response ONLY when this
+ * callback is genuinely an admin callback: an admin-state cookie is present AND
+ * its bound state equals the query `state`. Otherwise it returns null so the MCP
+ * consent callback runs unchanged.
+ *
+ * The one fixed /callback is shared by both flows, so an abandoned admin sign-in
+ * can leave a still-valid admin-state cookie in the browser. If we claimed the
+ * callback on the mere presence of that cookie, a later connector sign-in
+ * returning to /callback with the MCP flow's state would be answered with an
+ * admin error page and break. Gating on state equality lets the leftover cookie
+ * fall through to the MCP flow; only a matching admin state proceeds, and there a
+ * missing code etc. is a real admin error.
  */
 export async function tryAdminCallback(request: Request, env: Env): Promise<Response | null> {
   const stateCookie = readCookie(request, ADMIN_STATE_COOKIE_NAME);
   if (!stateCookie) return null;
+
+  // A present admin-state cookie signals admin intent, so fail closed on an
+  // empty signing key rather than verify it with one (defense in depth: the
+  // fetch entrypoint already guards this before delegating).
+  if (!env.COOKIE_ENCRYPTION_KEY) return misconfiguredKeyPage();
+
+  const state = new URL(request.url).searchParams.get('state');
+  const boundState = await verifyAdminState(stateCookie, env.COOKIE_ENCRYPTION_KEY);
+  // Claim the callback only on an exact admin-state match; anything else (no
+  // binding, or the MCP flow's state) falls through to the MCP consent callback.
+  if (!boundState || !state || boundState !== state) return null;
+
   return handleAdminCallback(request, env, stateCookie);
 }
 
@@ -403,19 +468,26 @@ async function handleRoster(env: Env, config: AdminConfig): Promise<Response> {
   const policies = await listUserPolicies(env);
 
   const users = directory?.users ?? [];
-  const connectedIds = new Set<string>();
-  await Promise.all(
-    users.map(async (u) => {
-      try {
-        const page = await env.OAUTH_PROVIDER.listUserGrants(u.hsUserId);
-        if (page.items.length > 0) connectedIds.add(u.hsUserId);
-      } catch {
-        // Grant lookup is informational; a failure just leaves "connected" false.
-      }
-    }),
-  );
 
-  const rows = buildRoster(users, policies, connectedIds, config, ceiling);
+  // Bound the grant probe: cap the users probed and run with a small concurrency
+  // pool so a large account cannot blow the per-invocation op budget. Users past
+  // the cap are left unprobed and reported honestly (connected: null), never as
+  // a misleading connected:false.
+  const probed = users.slice(0, CONNECTION_PROBE_CAP);
+  const probedIds = new Set(probed.map((u) => u.hsUserId));
+  const connectedIds = new Set<string>();
+  await runPool(probed, CONNECTION_PROBE_CONCURRENCY, async (u) => {
+    try {
+      const page = await env.OAUTH_PROVIDER.listUserGrants(u.hsUserId);
+      if (page.items.length > 0) connectedIds.add(u.hsUserId);
+    } catch {
+      // Grant lookup is informational; a single failure just leaves this user
+      // not-connected/unknown and never fails the roster request.
+    }
+  });
+  const connectionStatus: 'complete' | 'partial' = users.length > probed.length ? 'partial' : 'complete';
+
+  const rows = buildRoster(users, policies, connectedIds, probedIds, config, ceiling);
   return jsonResponse({
     deployment: {
       allowlistMode: config.allowlistMode,
@@ -426,6 +498,9 @@ async function handleRoster(env: Env, config: AdminConfig): Promise<Response> {
       workerVersion: SERVER_VERSION,
       deploymentId: deploymentId(env),
       directoryFetchedAt: directory?.fetchedAt ?? null,
+      connectionStatus,
+      connectionProbeCap: CONNECTION_PROBE_CAP,
+      connectionProbedCount: probed.length,
     },
     rows,
   });
@@ -480,8 +555,16 @@ async function handleUserPolicy(request: Request, env: Env, session: AdminSessio
     );
   }
 
+  // Resolve the user's email from the cached directory so the stored policy (and
+  // therefore the evidence export) carries it instead of a blank. When the
+  // directory has no entry for this id, omit the email so putUserPolicy preserves
+  // whatever the current document holds rather than blanking it.
+  const directory = await getDirectory(env);
+  const directoryEmail = directory?.users.find((u) => u.hsUserId === hsUserId)?.email;
+  const email = directoryEmail && directoryEmail.length > 0 ? directoryEmail : undefined;
+
   try {
-    const policy = await putUserPolicy(env, hsUserId, policyInputFromTier(allowed, writeTier), {
+    const policy = await putUserPolicy(env, hsUserId, policyInputFromTier(allowed, writeTier, email), {
       expectedVersion,
       updatedBy: session.hsUserId,
       actorEmail: session.email,
@@ -606,11 +689,20 @@ async function handleAdminRoot(request: Request, env: Env): Promise<Response> {
   return htmlResponse(renderAdminPage(nonce, verified.session.csrf), nonce);
 }
 
-/** GET /admin/logout: clear the admin session and return to /admin. */
-function handleLogout(): Response {
-  const headers = new Headers(securityHeaders({ Location: '/admin' }));
-  headers.append('Set-Cookie', buildAdminSessionClearCookie());
-  return new Response(null, { status: 302, headers });
+/**
+ * POST /admin/logout: clear the admin session. Requires a valid session AND the
+ * session CSRF token, exactly like the mutating API, so a cross-site page (which
+ * cannot read the signed cookie or the in-page token) cannot force a logout. The
+ * clear is returned as JSON with the clear-cookie header; the page's small fetch
+ * then navigates back to /admin.
+ */
+async function handleLogout(request: Request, env: Env): Promise<Response> {
+  const gate = await requireSession(request, env);
+  if ('error' in gate) return gate.error;
+  if (!csrfTokensMatch(gate.session.csrf, request.headers.get('X-Admin-CSRF'))) {
+    return jsonResponse({ error: 'Missing or invalid CSRF token.', code: 'CSRF_FAILED' }, 403);
+  }
+  return jsonResponse({ ok: true }, 200, { 'Set-Cookie': buildAdminSessionClearCookie() });
 }
 
 /** The entry point help-scout-handler delegates every /admin and /admin/api/* path to. */
@@ -618,21 +710,35 @@ export async function handleAdmin(request: Request, env: Env): Promise<Response>
   const url = new URL(request.url);
   const { pathname } = url;
 
+  // Self-guard the signing key rather than trust the caller's ordering: never
+  // sign or verify an admin cookie with an empty key (NAS-1503 hardening).
+  if (!env.COOKIE_ENCRYPTION_KEY) return misconfiguredKeyPage();
+
   if (pathname === '/admin') {
     if (request.method !== 'GET') return jsonResponse({ error: 'Method not allowed.' }, 405);
     return handleAdminRoot(request, env);
   }
   if (pathname === '/admin/logout') {
-    return handleLogout();
+    // Logout is a mutation: only POST with a valid session + CSRF may clear the
+    // cookie. A cross-site GET must not log the admin out, so it just returns to
+    // /admin without clearing anything.
+    if (request.method !== 'POST') {
+      return new Response(null, { status: 302, headers: securityHeaders({ Location: '/admin' }) });
+    }
+    return handleLogout(request, env);
   }
   if (pathname.startsWith('/admin/api/')) {
     try {
       return await handleAdminApi(request, env, pathname);
     } catch (error) {
-      return jsonResponse(
-        { error: error instanceof Error ? error.message : 'Internal error.', code: 'INTERNAL' },
-        500,
-      );
+      // Never leak an internal message to the client: log the detail server-side
+      // and return a generic error.
+      logger.error('Admin API request failed', {
+        pathname,
+        method: request.method,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return jsonResponse({ error: 'Something went wrong handling that request.', code: 'INTERNAL' }, 500);
     }
   }
   return noticePage('Admin', 'Not found', 'This admin page does not exist.', 404);

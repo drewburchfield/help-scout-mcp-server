@@ -190,13 +190,15 @@ describe('buildRoster merge', () => {
   ];
   const ceiling: WriteFlagSet = { enabled: true, customerVisibleEnabled: false };
 
+  const allProbed = (dir: DirectoryUser[]): Set<string> => new Set(dir.map((u) => u.hsUserId));
+
   it('merges policy + grant state, flags light users, and sorts by email', () => {
     const policies = new Map<string, UserPolicy>([
       ['20', policy({ allowed: false, version: 2 })],
       ['40', policy({ allowed: true, writes: true, customerVisibleWrites: true, version: 5 })],
     ]);
     const connected = new Set<string>(['10']);
-    const rows = buildRoster(directory, policies, connected, config(), ceiling);
+    const rows = buildRoster(directory, policies, connected, allProbed(directory), config(), ceiling);
 
     // Sorted by email: blocked, light, owner, writer.
     expect(rows.map((r) => r.hsUserId)).toEqual(['20', '30', '10', '40']);
@@ -204,6 +206,7 @@ describe('buildRoster merge', () => {
     const owner = rows.find((r) => r.hsUserId === '10')!;
     expect(owner.policyState).toBe('open-default');
     expect(owner.connected).toBe(true);
+    expect(owner.connectionProbed).toBe(true);
     expect(owner.writeTier).toBe('writes'); // open-default inherits the ceiling cap
     expect(owner.version).toBe(0);
 
@@ -224,8 +227,29 @@ describe('buildRoster merge', () => {
   });
 
   it('reflects allowlist admission in effectiveAllowed', () => {
-    const rows = buildRoster(directory, new Map(), new Set(), config({ allowlistMode: true }), ceiling);
+    const rows = buildRoster(directory, new Map(), new Set(), allProbed(directory), config({ allowlistMode: true }), ceiling);
     // In allowlist mode, an unconfigured user is not admitted.
     expect(rows.every((r) => r.effectiveAllowed === false)).toBe(true);
+  });
+
+  it('represents an unprobed user honestly instead of reporting them disconnected', () => {
+    // Only user 10 was probed (and found connected); user 40 was probed but has
+    // no grant; users 20 and 30 were NOT probed at all (over the cap).
+    const connected = new Set<string>(['10']);
+    const probed = new Set<string>(['10', '40']);
+    const rows = buildRoster(directory, new Map(), connected, probed, config(), ceiling);
+
+    const probedConnected = rows.find((r) => r.hsUserId === '10')!;
+    expect(probedConnected.connectionProbed).toBe(true);
+    expect(probedConnected.connected).toBe(true);
+
+    const probedDisconnected = rows.find((r) => r.hsUserId === '40')!;
+    expect(probedDisconnected.connectionProbed).toBe(true);
+    expect(probedDisconnected.connected).toBe(false);
+
+    // Not probed: connected is null (unknown), never a misleading false.
+    const unprobed = rows.find((r) => r.hsUserId === '20')!;
+    expect(unprobed.connectionProbed).toBe(false);
+    expect(unprobed.connected).toBeNull();
   });
 });

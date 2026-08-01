@@ -38,8 +38,15 @@ export const ADMIN_SESSION_COOKIE_NAME = 'hs_admin_session';
 /** The transient admin-login state cookie (the OAuth CSRF nonce for the dance). */
 export const ADMIN_STATE_COOKIE_NAME = 'hs_admin_state';
 
-/** Admin sessions live 8 hours: long enough for real work, short enough to bound a stolen cookie. */
-export const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+/**
+ * Admin sessions live 1 hour. The session captures the Help Scout role at login
+ * and the per-request gate only re-reads config.adminRole, so a Help-Scout-side
+ * demotion (Owner to User) is not caught until the cookie expires and re-login
+ * re-reads the live role. A 1 hour ceiling bounds that role window without
+ * storing the admin's Help Scout token. This is separate from a user's MCP
+ * access, which the policy engine revokes immediately.
+ */
+export const ADMIN_SESSION_TTL_MS = 1 * 60 * 60 * 1000;
 
 /** The admin-login state cookie lives 10 minutes, like the consent transaction. */
 export const ADMIN_STATE_TTL_MS = 10 * 60 * 1000;
@@ -226,7 +233,15 @@ export interface RosterRow {
   effectiveWriteTier: WriteTier;
   /** Admission decision under the current config (allowlist mode + explicit block). */
   effectiveAllowed: boolean;
-  connected: boolean;
+  /**
+   * Whether the user holds a live OAuth grant. `null` means the user was NOT
+   * probed (the connection probe is capped for large accounts), so the console
+   * must not present them as disconnected. `connectionProbed` says the same thing
+   * as a plain boolean for callers that would rather branch on it.
+   */
+  connected: boolean | null;
+  /** False when the grant probe was skipped for this user (over the probe cap). */
+  connectionProbed: boolean;
   hasPolicy: boolean;
   /** Policy doc version, for the optimistic-concurrency guard on a write (0 = no doc). */
   version: number;
@@ -252,17 +267,24 @@ function policyState(policy: UserPolicy | null): PolicyState {
  * inherits the ceiling as their write tier); a policy document narrows both
  * admission and the write tier. Light users are flagged ineligible. Sorted by
  * email for a stable, human-scannable roster.
+ *
+ * `connectedIds` holds the users found to have a live grant; `probedIds` holds
+ * the users the grant probe actually ran for. A user outside `probedIds` was not
+ * probed (the probe is capped for large accounts), so its `connected` is `null`
+ * rather than a misleading `false`.
  */
 export function buildRoster(
   directory: DirectoryUser[],
   policies: Map<string, UserPolicy>,
   connectedIds: Set<string>,
+  probedIds: Set<string>,
   config: AdminConfig,
   ceiling: WriteFlagSet,
 ): RosterRow[] {
   const rows = directory.map((user): RosterRow => {
     const policy = policies.get(user.hsUserId) ?? null;
     const configuredTier = policy ? tierFromPolicy(policy) : ceilingTierCap(ceiling);
+    const probed = probedIds.has(user.hsUserId);
     return {
       hsUserId: user.hsUserId,
       email: user.email,
@@ -273,7 +295,8 @@ export function buildRoster(
       writeTier: configuredTier,
       effectiveWriteTier: effectiveTier(ceiling, policy),
       effectiveAllowed: evaluateAccess(config, policy).allowed,
-      connected: connectedIds.has(user.hsUserId),
+      connected: probed ? connectedIds.has(user.hsUserId) : null,
+      connectionProbed: probed,
       hasPolicy: policy !== null,
       version: policy?.version ?? 0,
       updatedAt: policy?.updatedAt ?? '',

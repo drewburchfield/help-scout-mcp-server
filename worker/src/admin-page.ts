@@ -49,6 +49,7 @@ td.user{white-space:normal;min-width:180px}
 .badge.muted{color:var(--muted)}
 select,button{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);padding:5px 8px}
 button{cursor:pointer}
+button.link{background:none;border:0;color:var(--accent);padding:0;font:inherit;cursor:pointer;text-decoration:underline}
 button.primary{background:var(--accent);color:#fff;border-color:transparent}
 button.danger{color:var(--danger)}
 button:disabled,select:disabled{opacity:.5;cursor:not-allowed}
@@ -76,7 +77,7 @@ export function renderAdminNotice(nonce: string, title: string, heading: string,
 export function renderAdminPage(nonce: string, csrf: string): string {
   const body = `<header class="top">
   <h1>Help Scout MCP Admin</h1>
-  <a href="/admin/logout">Sign out</a>
+  <button type="button" id="signout" class="link">Sign out</button>
 </header>
 <p class="flash" id="flash"></p>
 
@@ -98,6 +99,7 @@ export function renderAdminPage(nonce: string, csrf: string): string {
 <section class="card">
   <h2>Users</h2>
   <input type="search" id="roster-search" placeholder="Filter by name, email, or role" autocomplete="off">
+  <p class="note" id="conn-note"></p>
   <div class="scroll"><table>
     <thead><tr><th>User</th><th>Role</th><th>Status</th><th>Admission</th><th>Write tier</th><th>Actions</th></tr></thead>
     <tbody id="roster-body"><tr><td colspan="6" class="muted">Loading roster…</td></tr></tbody>
@@ -158,6 +160,12 @@ function renderDeployment(dep){
   var cb = document.getElementById('allowlist-toggle');
   cb.checked = !!dep.allowlistMode;
   cb.disabled = false;
+  var connNote = document.getElementById('conn-note');
+  if(dep.connectionStatus === 'partial'){
+    connNote.textContent = 'Connection status shown for the first ' + dep.connectionProbedCount + ' users.';
+  } else {
+    connNote.textContent = '';
+  }
 }
 
 function onAllowlist(){
@@ -232,6 +240,7 @@ function renderRoster(){
 
     var status = document.createElement('td');
     if(!row.eligible){ status.appendChild(badge('Light (ineligible)', 'muted')); }
+    else if(row.connected === null){ status.appendChild(badge('Not probed', 'muted')); }
     else { status.appendChild(badge(row.connected ? 'Connected' : 'Not connected', row.connected ? 'ok' : 'muted')); }
     tr.appendChild(status);
 
@@ -314,6 +323,11 @@ function loadScope(){
   });
 }
 
+// Logout is a CSRF-protected POST (a cross-site GET must not sign the admin out).
+// req() attaches the X-Admin-CSRF header on POST; navigate to /admin either way.
+document.getElementById('signout').addEventListener('click', function(){
+  req('POST', '/admin/logout').then(toLogin, toLogin);
+});
 document.getElementById('allowlist-toggle').addEventListener('change', onAllowlist);
 document.getElementById('roster-search').addEventListener('input', renderRoster);
 document.getElementById('audit-more').addEventListener('click', function(){ loadAudit(false); });

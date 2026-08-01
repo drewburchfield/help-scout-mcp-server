@@ -581,6 +581,44 @@ async function runMode({ mock, enableWrites }) {
     check('replayed callback is rejected via the single-use code', replayed.status === 502, `status ${replayed.status}`);
   }
 
+  // [7c] an abandoned admin sign-in must not break the next MCP connector sign-in.
+  // A leftover admin-state cookie (admin opened /admin, wandered off) carried into
+  // an MCP /callback whose state is the MCP flow's state must fall through to the
+  // MCP consent callback, not 400 as an admin error.
+  console.log('[7c] a stale admin-state cookie does not hijack the MCP callback');
+  const adminStart = await fetch(`${BASE}/admin`, { redirect: 'manual' });
+  const staleAdminState = setCookieValues(adminStart)[ADMIN_STATE_COOKIE];
+  check('captured a leftover admin-state cookie from an abandoned admin sign-in', typeof staleAdminState === 'string' && staleAdminState.length > 0);
+  {
+    const verifier = b64url(crypto.randomBytes(32));
+    const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+    const st = b64url(crypto.randomBytes(8));
+    const a = new URL(`${BASE}/authorize`);
+    a.searchParams.set('response_type', 'code');
+    a.searchParams.set('client_id', reg.clientId);
+    a.searchParams.set('redirect_uri', REDIRECT_URI);
+    a.searchParams.set('code_challenge', challenge);
+    a.searchParams.set('code_challenge_method', 'S256');
+    a.searchParams.set('state', st);
+    if (resource) a.searchParams.set('resource', resource);
+    const consentR = await fetch(a, { headers: { Accept: 'text/html' }, redirect: 'manual' });
+    const c1 = setCookieValues(consentR)[CONSENT_COOKIE];
+    const appr = await fetch(`${BASE}/approve`, { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: `${CONSENT_COOKIE}=${c1}` }, body: 'approve=true' });
+    const c2 = setCookieValues(appr)[CONSENT_COOKIE] || c1;
+    const hs = await fetch(appr.headers.get('location'), { redirect: 'manual' });
+    const callbackUrl = new URL(hs.headers.get('location'));
+    // Land on /callback carrying BOTH the MCP consent cookie AND the leftover admin
+    // state cookie. The query state is the MCP state (not the admin one), so the
+    // admin handler must decline and the MCP consent callback must complete.
+    const cb = await fetch(callbackUrl, {
+      redirect: 'manual',
+      headers: { Cookie: `${CONSENT_COOKIE}=${c2}; ${ADMIN_STATE_COOKIE}=${staleAdminState}` },
+    });
+    check('MCP /callback with a stale admin-state cookie still completes (302, not an admin 400)', cb.status === 302, `status ${cb.status}`);
+    const cbCode = cb.status === 302 ? new URL(cb.headers.get('location')).searchParams.get('code') : null;
+    check('the MCP callback minted an OUR code despite the stale admin cookie', typeof cbCode === 'string' && cbCode.length > 0);
+  }
+
   // [8] light-user 403 -> seat-required page, no grant
   console.log('[8] light-user seat-required path');
   const lightFlow = await runFullFlow({ clientId: reg.clientId, resource, mock, lightUser: true });
@@ -973,6 +1011,13 @@ async function runAdminMode({ mock }) {
   const adminRow = (audit.page?.entries || []).find((e) => e.action === 'user.policy.updated' && e.targetId === '5001');
   check('the block is recorded in the audit ledger with the admin actor', adminRow?.actorId === String(MOCK_USER.id), JSON.stringify(adminRow));
 
+  // The console resolves the user's email from the cached directory when it writes
+  // the policy, so the evidence export carries a real email, not a blank column.
+  const alAfterBlock = await (await fetch(`${BASE}/admin/api/export/access-list.json`, { headers: authed })).json();
+  const agentAlRow = (alAfterBlock.rows || []).find((r) => r.hsUserId === '5001');
+  check('the access-list export row for the configured user carries a non-empty email', typeof agentAlRow?.email === 'string' && agentAlRow.email.length > 0, JSON.stringify(agentAlRow));
+  check('the configured user email matches the directory (not blanked)', agentAlRow?.email === 'agent@example.test', JSON.stringify(agentAlRow?.email));
+
   // [A7] the allowlist toggle goes through putConfig with optimistic concurrency.
   console.log('[A7] the allowlist toggle updates config');
   const cfgVer = roster2.deployment?.configVersion ?? 0;
@@ -1006,6 +1051,20 @@ async function runAdminMode({ mock }) {
     headers: { ...authed, 'Content-Type': 'application/json', 'X-Admin-CSRF': csrf },
     body: JSON.stringify({ allowlistMode: false, expectedVersion: (await (await fetch(`${BASE}/admin/api/roster`, { headers: authed })).json()).deployment?.configVersion ?? 0 }),
   });
+
+  // [A9] logout is a CSRF-protected POST: a cross-site GET must not sign the admin
+  // out, and a POST without the CSRF token is rejected. Run last, since the final
+  // successful POST clears the session.
+  console.log('[A9] logout requires POST + CSRF');
+  const getLogout = await fetch(`${BASE}/admin/logout`, { headers: authed, redirect: 'manual' });
+  check('GET /admin/logout does not clear the session cookie', !/hs_admin_session=;/.test(getLogout.headers.get('set-cookie') || ''), `set-cookie ${getLogout.headers.get('set-cookie')}`);
+  const stillValid = await fetch(`${BASE}/admin/api/roster`, { headers: authed });
+  check('the session still works after a GET /admin/logout (no logout happened)', stillValid.status === 200, `status ${stillValid.status}`);
+  const logoutNoCsrf = await fetch(`${BASE}/admin/logout`, { method: 'POST', headers: authed });
+  check('POST /admin/logout without a CSRF token is rejected (403)', logoutNoCsrf.status === 403, `status ${logoutNoCsrf.status}`);
+  const logoutOk = await fetch(`${BASE}/admin/logout`, { method: 'POST', headers: { ...authed, 'X-Admin-CSRF': csrf } });
+  check('POST /admin/logout with a valid CSRF token succeeds (200)', logoutOk.status === 200, `status ${logoutOk.status}`);
+  check('a valid logout clears the admin session cookie', /hs_admin_session=;/.test(logoutOk.headers.get('set-cookie') || ''), `set-cookie ${logoutOk.headers.get('set-cookie')}`);
 }
 
 async function main() {
