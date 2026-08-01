@@ -33,22 +33,36 @@
 import { DurableObject } from 'cloudflare:workers';
 
 import {
+  appendAuditRow,
+  buildAccessListRows,
   clearConfigDoc,
   clearUserPolicyDoc,
+  listUserPolicyDocs,
   pinUserPolicyRevoked,
+  readAuditPage,
+  readAuditRange,
   readConfigDoc,
   readUserPolicyDoc,
   toPolicyErrorEnvelope,
   writeConfigDoc,
   writeUserPolicyDoc,
+  type AccessListRow,
+  type AdminConfig,
+  type AuditEntry,
+  type AuditEventInput,
+  type AuditListOptions,
+  type AuditListPage,
   type ConfigDocResult,
   type ConfigPatch,
   type MutationMeta,
   type PolicyErrorEnvelope,
+  type PolicyListOptions,
   type PolicyStorage,
+  type UserPolicy,
   type UserPolicyDocResult,
   type UserPolicyInput,
   type UserPolicyWriteResult,
+  type WriteFlagSet,
 } from './policy.js';
 
 export class PolicyCoordinator extends DurableObject {
@@ -67,6 +81,7 @@ export class PolicyCoordinator extends DurableObject {
     delete: async (key: string): Promise<void> => {
       await this.ctx.storage.delete(key);
     },
+    list: <T>(options?: PolicyListOptions): Promise<Map<string, T>> => this.ctx.storage.list<T>(options),
     transaction: <T>(closure: () => Promise<T>): Promise<T> => this.ctx.storage.transaction(() => closure()),
   };
 
@@ -78,8 +93,8 @@ export class PolicyCoordinator extends DurableObject {
     return this.envelope(() => writeConfigDoc(this.store, patch, meta));
   }
 
-  async deleteConfigDoc(): Promise<void> {
-    await clearConfigDoc(this.store);
+  async deleteConfigDoc(meta?: MutationMeta): Promise<void> {
+    await clearConfigDoc(this.store, meta);
   }
 
   async getUserPolicyDoc(hsUserId: string): Promise<UserPolicyDocResult> {
@@ -90,12 +105,49 @@ export class PolicyCoordinator extends DurableObject {
     return this.envelope(() => writeUserPolicyDoc(this.store, hsUserId, input, meta));
   }
 
-  async deleteUserPolicyDoc(hsUserId: string): Promise<void> {
-    await clearUserPolicyDoc(this.store, hsUserId);
+  async deleteUserPolicyDoc(hsUserId: string, meta?: MutationMeta): Promise<void> {
+    await clearUserPolicyDoc(this.store, hsUserId, meta);
   }
 
-  async pinRevokedUser(hsUserId: string, updatedBy: string): Promise<UserPolicyWriteResult> {
-    return this.envelope(() => pinUserPolicyRevoked(this.store, hsUserId, updatedBy));
+  async pinRevokedUser(hsUserId: string, updatedBy: string, actorEmail?: string): Promise<UserPolicyWriteResult> {
+    return this.envelope(() => pinUserPolicyRevoked(this.store, hsUserId, updatedBy, actorEmail ?? ''));
+  }
+
+  /**
+   * Append one observational audit event (grant.created / admission.denied) in
+   * its own transaction. Policy MUTATIONS record their rows inside the mutation
+   * transaction (writeConfigDoc / writeUserPolicyDoc / pinUserPolicyRevoked), so
+   * this is only for events that are not themselves document writes.
+   */
+  async appendAuditEvent(input: AuditEventInput): Promise<void> {
+    await this.store.transaction(() => appendAuditRow(this.store, input));
+  }
+
+  /** A newest-first page of audit rows (opportunistically age-pruned). */
+  async listAuditPage(options: AuditListOptions): Promise<AuditListPage> {
+    return readAuditPage(this.store, options);
+  }
+
+  /** The full audit range (bounded by retention), ascending chronological. */
+  async listAuditRange(options: { from?: string; to?: string }): Promise<AuditEntry[]> {
+    return readAuditRange(this.store, options);
+  }
+
+  /** Every stored user policy document, for the access-list evidence export. */
+  async listUserPolicies(): Promise<Array<{ hsUserId: string; policy: UserPolicy }>> {
+    return listUserPolicyDocs(this.store);
+  }
+
+  /**
+   * Compute the current effective entitlements for every user policy, evaluated
+   * against the deployment config and the caller-supplied env write ceiling. The
+   * config lives in the coordinator's own storage; the ceiling is an env fact the
+   * worker passes in.
+   */
+  async computeAccessList(ceiling: WriteFlagSet): Promise<{ config: AdminConfig; rows: AccessListRow[] }> {
+    const config = await readConfigDoc(this.store);
+    const users = await listUserPolicyDocs(this.store);
+    return { config, rows: buildAccessListRows(config, ceiling, users) };
   }
 
   /**

@@ -44,11 +44,11 @@ import {
 interface PolicyCoordinatorStub {
   getConfigDoc(): Promise<ConfigDocResult>;
   putConfigDoc(patch: ConfigPatch, meta: MutationMeta): Promise<ConfigDocResult>;
-  deleteConfigDoc(): Promise<void>;
+  deleteConfigDoc(meta?: MutationMeta): Promise<void>;
   getUserPolicyDoc(hsUserId: string): Promise<UserPolicyDocResult>;
   putUserPolicyDoc(hsUserId: string, input: UserPolicyInput, meta: MutationMeta): Promise<UserPolicyWriteResult>;
-  deleteUserPolicyDoc(hsUserId: string): Promise<void>;
-  pinRevokedUser(hsUserId: string, updatedBy: string): Promise<UserPolicyWriteResult>;
+  deleteUserPolicyDoc(hsUserId: string, meta?: MutationMeta): Promise<void>;
+  pinRevokedUser(hsUserId: string, updatedBy: string, actorEmail?: string): Promise<UserPolicyWriteResult>;
 }
 
 /** The subset of the worker env the read/write policy functions need. */
@@ -100,6 +100,7 @@ export async function putConfig(env: PolicyStoreEnv, patch: ConfigPatch, opts: M
   const result = await coordinator(env).putConfigDoc(patch, {
     expectedVersion: opts.expectedVersion,
     updatedBy: opts.updatedBy,
+    actorEmail: opts.actorEmail,
   });
   if (!result.ok) throwPolicyError(result.error);
   await opts.audit?.({ type: 'config.updated', version: result.value.version, updatedBy: opts.updatedBy, config: result.value });
@@ -107,8 +108,8 @@ export async function putConfig(env: PolicyStoreEnv, patch: ConfigPatch, opts: M
 }
 
 /** Delete the config document (harness/admin seam). Absence reads as open-mode defaults. */
-export async function deleteConfig(env: PolicyStoreEnv): Promise<void> {
-  await coordinator(env).deleteConfigDoc();
+export async function deleteConfig(env: PolicyStoreEnv, meta?: MutationMeta): Promise<void> {
+  await coordinator(env).deleteConfigDoc(meta);
 }
 
 /** Read one user's policy, or null when the user has no explicit entry. */
@@ -133,6 +134,7 @@ export async function putUserPolicy(
   const result = await coordinator(env).putUserPolicyDoc(id, input, {
     expectedVersion: opts.expectedVersion,
     updatedBy: opts.updatedBy,
+    actorEmail: opts.actorEmail,
   });
   if (!result.ok) throwPolicyError(result.error);
   await opts.audit?.({ type: 'user.policy.updated', hsUserId: id, version: result.value.version, updatedBy: opts.updatedBy, policy: result.value });
@@ -140,8 +142,8 @@ export async function putUserPolicy(
 }
 
 /** Delete one user's policy document (harness/admin seam). */
-export async function deleteUserPolicy(env: PolicyStoreEnv, hsUserId: string | number): Promise<void> {
-  await coordinator(env).deleteUserPolicyDoc(String(hsUserId));
+export async function deleteUserPolicy(env: PolicyStoreEnv, hsUserId: string | number, meta?: MutationMeta): Promise<void> {
+  await coordinator(env).deleteUserPolicyDoc(String(hsUserId), meta);
 }
 
 /**
@@ -164,11 +166,11 @@ export async function deleteUserPolicy(env: PolicyStoreEnv, hsUserId: string | n
 export async function revokeUser(
   env: PolicyRevokeEnv,
   hsUserId: string | number,
-  opts: { updatedBy: string; audit?: PolicyAuditHook },
+  opts: { updatedBy: string; actorEmail?: string; audit?: PolicyAuditHook },
 ): Promise<RevokeUserResult> {
   const id = String(hsUserId);
 
-  const result = await coordinator(env).pinRevokedUser(id, opts.updatedBy);
+  const result = await coordinator(env).pinRevokedUser(id, opts.updatedBy, opts.actorEmail);
   if (!result.ok) throwPolicyError(result.error);
   const policy = result.value;
 

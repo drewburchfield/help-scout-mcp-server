@@ -27,8 +27,9 @@ import {
   verifyConsentCookie,
   type ConsentTransaction,
 } from './oauth-cookie.js';
-import { evaluateAccess } from './policy.js';
+import { evaluateAccess, type AccessDecision } from './policy.js';
 import { getConfig, getUserPolicy } from './policy-store.js';
+import { recordAdmissionDenied, recordGrantCreated } from './audit-store.js';
 import { handleTestPolicyRoute } from './test-policy-route.js';
 
 /** HTML-escape untrusted values before echoing them into a page. */
@@ -405,13 +406,13 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
   // strongly consistent, so a user blocked moments earlier is denied here with no
   // stale-colo admit. A coordinator failure fails closed: no grant is completed.
   // The consent cookie is cleared like every terminal path.
-  let accessAllowed: boolean;
+  let decision: AccessDecision;
   try {
     const [config, userPolicy] = await Promise.all([
       getConfig(env),
       getUserPolicy(env, userId),
     ]);
-    accessAllowed = evaluateAccess(config, userPolicy).allowed;
+    decision = evaluateAccess(config, userPolicy);
   } catch {
     return htmlResponse(
       page(
@@ -423,7 +424,9 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
       { 'Set-Cookie': buildConsentClearCookie() },
     );
   }
-  if (!accessAllowed) {
+  if (!decision.allowed) {
+    // Observational audit row; best-effort, never fails the user-facing deny.
+    await recordAdmissionDenied(env, { hsUserId: userId, email, reason: decision.reason });
     return htmlResponse(
       page(
         'Help Scout access not enabled',
@@ -443,6 +446,9 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
     props: { accessToken, refreshToken, expiresAt, userId, name, email },
   });
 
+  // Observational audit row after the grant is minted; best-effort, off the path.
+  await recordGrantCreated(env, { hsUserId: userId, email, clientId: txn.oauthReq.clientId });
+
   return new Response(null, {
     status: 302,
     headers: { Location: redirectTo, 'Set-Cookie': buildConsentClearCookie() },
@@ -453,6 +459,18 @@ async function handleCallback(request: Request, env: Env): Promise<Response> {
  * The defaultHandler the OAuth shell delegates to. Metadata, /token, and
  * /register are the library's; /authorize, /approve, and /callback are ours.
  */
+/**
+ * The test-policy route key must be a real secret, not a guessable enable flag.
+ * Rejecting the empty value and a small set of trivial values ("true", "1", ...)
+ * disarms the footgun where an operator, misreading a doc, sets the var to
+ * "true": that would make X-Test-Policy-Key: true a public key over the whole
+ * policy store. A real per-run secret is always long, so require length >= 16.
+ */
+function isStrongTestPolicyKey(value: string | undefined): value is string {
+  if (typeof value !== 'string' || value.length < 16) return false;
+  return !['true', 'false', '1', '0', 'yes', 'on', 'enabled'].includes(value.toLowerCase());
+}
+
 export const helpScoutHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -468,8 +486,7 @@ export const helpScoutHandler: ExportedHandler<Env> = {
     // it, and asserts a missing/wrong key 404s.
     const testPolicyKey = env.HELPSCOUT_TEST_POLICY_ROUTES;
     if (
-      typeof testPolicyKey === 'string' &&
-      testPolicyKey.length > 0 &&
+      isStrongTestPolicyKey(testPolicyKey) &&
       request.headers.get('X-Test-Policy-Key') === testPolicyKey &&
       url.pathname === '/__test__/policy' &&
       request.method === 'POST'

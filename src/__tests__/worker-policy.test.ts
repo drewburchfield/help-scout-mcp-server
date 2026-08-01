@@ -28,45 +28,9 @@ import {
   writeConfigDoc,
   writeUserPolicyDoc,
   type AdminConfig,
-  type PolicyStorage,
   type UserPolicy,
 } from '../../worker/src/policy.js';
-
-/**
- * An in-memory PolicyStorage that faithfully models the coordinator DO: values
- * are stored by structured copy (no aliasing, like real serialized storage) and
- * `transaction` serializes its closures through a promise chain, the way a
- * single-threaded, input-gated Durable Object serializes concurrent requests. A
- * rejected transaction still lets the next one proceed (a DO transaction that
- * throws rolls back and the next request runs).
- */
-function makeStorage(initial: Record<string, unknown> = {}) {
-  const map = new Map<string, unknown>(
-    Object.entries(initial).map(([k, v]) => [k, structuredClone(v)]),
-  );
-  let tail: Promise<unknown> = Promise.resolve();
-  const storage: PolicyStorage = {
-    get: async <T>(key: string): Promise<T | undefined> => {
-      const value = map.get(key);
-      return value === undefined ? undefined : (structuredClone(value) as T);
-    },
-    put: async (key: string, value: unknown): Promise<void> => {
-      map.set(key, structuredClone(value));
-    },
-    delete: async (key: string): Promise<void> => {
-      map.delete(key);
-    },
-    transaction: <T>(closure: () => Promise<T>): Promise<T> => {
-      const result = tail.then(() => closure());
-      tail = result.then(
-        () => undefined,
-        () => undefined,
-      );
-      return result;
-    },
-  };
-  return { map, storage };
-}
+import { makeStorage } from './policy-storage-fake.js';
 
 const baseConfig = (over: Partial<AdminConfig> = {}): AdminConfig => ({
   schemaVersion: 1,

@@ -53,9 +53,12 @@ export const ADMIN_CONFIG_KEY = 'admin:config:v1';
  */
 export const POLICY_COORDINATOR_NAME = 'policy-coordinator';
 
+/** The shared prefix every per-user policy document key carries. */
+export const USER_POLICY_PREFIX = 'policy:user:';
+
 /** The storage key for one user's policy document. */
 export function userPolicyKey(hsUserId: string | number): string {
-  return `policy:user:${String(hsUserId)}`;
+  return `${USER_POLICY_PREFIX}${String(hsUserId)}`;
 }
 
 /** Default policy cache TTL, in seconds, when the config document is missing. */
@@ -124,7 +127,25 @@ export interface PolicyStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put(key: string, value: unknown): Promise<void>;
   delete(key: string): Promise<void>;
+  list<T = unknown>(options?: PolicyListOptions): Promise<Map<string, T>>;
   transaction<T>(closure: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * The subset of the Durable Objects storage list options the audit ledger and
+ * the access-list export use. Mirrors the runtime contract: results come back in
+ * ascending UTF-8 key order, `prefix` scopes the range, `end` is EXCLUSIVE, and
+ * `reverse` flips the returned order (developers.cloudflare.com, Durable Objects
+ * Storage API `list(options)`). The coordinator binds this to ctx.storage.list
+ * and the unit fake implements the same shape over an in-memory map.
+ */
+export interface PolicyListOptions {
+  prefix?: string;
+  limit?: number;
+  reverse?: boolean;
+  start?: string;
+  startAfter?: string;
+  end?: string;
 }
 
 /**
@@ -174,12 +195,14 @@ export type PolicyAuditEvent =
 
 export type PolicyAuditHook = (event: PolicyAuditEvent) => void | Promise<void>;
 
-/** The version guard + identity a mutation carries across the DO boundary (audit-free). */
+/** The version guard + identity a mutation carries across the DO boundary. */
 export interface MutationMeta {
   /** Optimistic-concurrency guard: the version the caller believes is current. */
   expectedVersion: number;
   /** Identity of the admin performing the change; stored for display/audit. */
   updatedBy: string;
+  /** Optional display email of the admin, recorded on the audit row (NAS-1502). */
+  actorEmail?: string;
 }
 
 /** What the env-facing mutation functions accept: a MutationMeta plus the audit sink. */
@@ -303,32 +326,79 @@ export async function writeConfigDoc(
   patch: ConfigPatch,
   meta: MutationMeta,
 ): Promise<AdminConfig> {
-  return storage.transaction(async () => {
-    const current = normalizeConfig((await storage.get<Partial<AdminConfig>>(ADMIN_CONFIG_KEY)) ?? null);
-    if (current.version !== meta.expectedVersion) {
-      throw new PolicyConflictError(
-        `Config version conflict: expected ${meta.expectedVersion}, found ${current.version}. Re-read and retry.`,
-        meta.expectedVersion,
-        current.version,
-      );
-    }
-    const next: AdminConfig = {
-      schemaVersion: POLICY_CONFIG_SCHEMA_VERSION,
-      allowlistMode: patch.allowlistMode ?? current.allowlistMode,
-      adminRole: patch.adminRole ?? current.adminRole,
-      policyCacheTtlSeconds: clampTtl(patch.policyCacheTtlSeconds ?? current.policyCacheTtlSeconds),
-      version: current.version + 1,
-      updatedAt: new Date().toISOString(),
-      updatedBy: meta.updatedBy,
-    };
-    await storage.put(ADMIN_CONFIG_KEY, next);
-    return next;
-  });
+  // The whole read-compare-write PLUS its audit row commit in one transaction, so
+  // the ledger never drifts from the document. On conflict we write ONLY the
+  // denied audit row and return a marker; the throw happens after the transaction
+  // commits, so we never rely on rollback (the in-memory unit fake does not model
+  // it) and the conflict row is the sole write.
+  const outcome = await storage.transaction(
+    async (): Promise<{ ok: true; config: AdminConfig } | { ok: false; currentVersion: number }> => {
+      const current = normalizeConfig((await storage.get<Partial<AdminConfig>>(ADMIN_CONFIG_KEY)) ?? null);
+      if (current.version !== meta.expectedVersion) {
+        await appendAuditRow(storage, {
+          action: 'config.update.conflict',
+          actorId: meta.updatedBy,
+          actorEmail: meta.actorEmail ?? '',
+          targetId: ADMIN_CONFIG_KEY,
+          before: null,
+          after: { expectedVersion: meta.expectedVersion, currentVersion: current.version },
+          outcome: 'denied',
+        });
+        return { ok: false, currentVersion: current.version };
+      }
+      const next: AdminConfig = {
+        schemaVersion: POLICY_CONFIG_SCHEMA_VERSION,
+        allowlistMode: patch.allowlistMode ?? current.allowlistMode,
+        adminRole: patch.adminRole ?? current.adminRole,
+        policyCacheTtlSeconds: clampTtl(patch.policyCacheTtlSeconds ?? current.policyCacheTtlSeconds),
+        version: current.version + 1,
+        updatedAt: new Date().toISOString(),
+        updatedBy: meta.updatedBy,
+      };
+      await storage.put(ADMIN_CONFIG_KEY, next);
+      await appendAuditRow(storage, {
+        action: 'config.updated',
+        actorId: meta.updatedBy,
+        actorEmail: meta.actorEmail ?? '',
+        targetId: ADMIN_CONFIG_KEY,
+        before: current.version === 0 ? null : current,
+        after: next,
+        outcome: 'success',
+      });
+      return { ok: true, config: next };
+    },
+  );
+  if (!outcome.ok) {
+    throw new PolicyConflictError(
+      `Config version conflict: expected ${meta.expectedVersion}, found ${outcome.currentVersion}. Re-read and retry.`,
+      meta.expectedVersion,
+      outcome.currentVersion,
+    );
+  }
+  return outcome.config;
 }
 
 /** Delete the config document (harness/admin seam). Absence reads as open-mode defaults. */
-export async function clearConfigDoc(storage: PolicyStorage): Promise<void> {
-  await storage.delete(ADMIN_CONFIG_KEY);
+export async function clearConfigDoc(storage: PolicyStorage, meta?: MutationMeta): Promise<void> {
+  // Record the deletion so the ledger has no hole: capture the removed document
+  // as `before`, delete it, and append the row in one transaction.
+  await storage.transaction(async () => {
+    const before = (await storage.get<Partial<AdminConfig>>(ADMIN_CONFIG_KEY)) ?? null;
+    await storage.delete(ADMIN_CONFIG_KEY);
+    // Only record a deletion of something that existed: deleting an absent
+    // document is a no-op and must not fabricate a phantom ledger entry.
+    if (before !== null) {
+      await appendAuditRow(storage, {
+        action: 'config.deleted',
+        actorId: meta?.updatedBy ?? '',
+        actorEmail: meta?.actorEmail ?? '',
+        targetId: ADMIN_CONFIG_KEY,
+        before: before as Record<string, unknown>,
+        after: null,
+        outcome: 'success',
+      });
+    }
+  });
 }
 
 // --- User policy ----------------------------------------------------------
@@ -383,37 +453,81 @@ export async function writeUserPolicyDoc(
   meta: MutationMeta,
 ): Promise<UserPolicy> {
   const id = String(hsUserId);
-  return storage.transaction(async () => {
-    const raw = await storage.get<Partial<UserPolicy>>(userPolicyKey(id));
-    const current = raw ? normalizeUserPolicy(raw) : null;
-    const currentVersion = current?.version ?? 0;
-    if (currentVersion !== meta.expectedVersion) {
-      throw new PolicyConflictError(
-        `User policy version conflict for ${id}: expected ${meta.expectedVersion}, found ${currentVersion}. Re-read and retry.`,
-        meta.expectedVersion,
-        currentVersion,
-      );
-    }
-    const customerVisibleWrites = input.customerVisibleWrites === true;
-    const writes = customerVisibleWrites || input.writes === true;
-    const next: UserPolicy = {
-      v: POLICY_USER_SCHEMA_VERSION,
-      allowed: input.allowed === true,
-      writes,
-      customerVisibleWrites,
-      email: input.email ?? current?.email ?? '',
-      updatedAt: new Date().toISOString(),
-      updatedBy: meta.updatedBy,
-      version: currentVersion + 1,
-    };
-    await storage.put(userPolicyKey(id), next);
-    return next;
-  });
+  const outcome = await storage.transaction(
+    async (): Promise<{ ok: true; policy: UserPolicy } | { ok: false; currentVersion: number }> => {
+      const raw = await storage.get<Partial<UserPolicy>>(userPolicyKey(id));
+      const current = raw ? normalizeUserPolicy(raw) : null;
+      const currentVersion = current?.version ?? 0;
+      if (currentVersion !== meta.expectedVersion) {
+        await appendAuditRow(storage, {
+          action: 'user.policy.update.conflict',
+          actorId: meta.updatedBy,
+          actorEmail: meta.actorEmail ?? '',
+          targetId: id,
+          before: null,
+          after: { expectedVersion: meta.expectedVersion, currentVersion },
+          outcome: 'denied',
+        });
+        return { ok: false, currentVersion };
+      }
+      const customerVisibleWrites = input.customerVisibleWrites === true;
+      const writes = customerVisibleWrites || input.writes === true;
+      const next: UserPolicy = {
+        v: POLICY_USER_SCHEMA_VERSION,
+        allowed: input.allowed === true,
+        writes,
+        customerVisibleWrites,
+        email: input.email ?? current?.email ?? '',
+        updatedAt: new Date().toISOString(),
+        updatedBy: meta.updatedBy,
+        version: currentVersion + 1,
+      };
+      await storage.put(userPolicyKey(id), next);
+      await appendAuditRow(storage, {
+        action: 'user.policy.updated',
+        actorId: meta.updatedBy,
+        actorEmail: meta.actorEmail ?? '',
+        targetId: id,
+        before: current,
+        after: next,
+        outcome: 'success',
+      });
+      return { ok: true, policy: next };
+    },
+  );
+  if (!outcome.ok) {
+    throw new PolicyConflictError(
+      `User policy version conflict for ${id}: expected ${meta.expectedVersion}, found ${outcome.currentVersion}. Re-read and retry.`,
+      meta.expectedVersion,
+      outcome.currentVersion,
+    );
+  }
+  return outcome.policy;
 }
 
 /** Delete one user's policy document (harness/admin seam). */
-export async function clearUserPolicyDoc(storage: PolicyStorage, hsUserId: string | number): Promise<void> {
-  await storage.delete(userPolicyKey(String(hsUserId)));
+export async function clearUserPolicyDoc(
+  storage: PolicyStorage,
+  hsUserId: string | number,
+  meta?: MutationMeta,
+): Promise<void> {
+  const id = String(hsUserId);
+  await storage.transaction(async () => {
+    const before = (await storage.get<Partial<UserPolicy>>(userPolicyKey(id))) ?? null;
+    await storage.delete(userPolicyKey(id));
+    // Only record a deletion of something that existed (see clearConfigDoc).
+    if (before !== null) {
+      await appendAuditRow(storage, {
+        action: 'user.policy.deleted',
+        actorId: meta?.updatedBy ?? '',
+        actorEmail: meta?.actorEmail ?? '',
+        targetId: id,
+        before: before as Record<string, unknown>,
+        after: null,
+        outcome: 'success',
+      });
+    }
+  });
 }
 
 /**
@@ -428,6 +542,7 @@ export async function pinUserPolicyRevoked(
   storage: PolicyStorage,
   hsUserId: string | number,
   updatedBy: string,
+  actorEmail = '',
 ): Promise<UserPolicy> {
   const id = String(hsUserId);
   return storage.transaction(async () => {
@@ -444,6 +559,15 @@ export async function pinUserPolicyRevoked(
       version: (current?.version ?? 0) + 1,
     };
     await storage.put(userPolicyKey(id), next);
+    await appendAuditRow(storage, {
+      action: 'user.revoked',
+      actorId: updatedBy,
+      actorEmail,
+      targetId: id,
+      before: current,
+      after: next,
+      outcome: 'success',
+    });
     return next;
   });
 }
@@ -503,4 +627,390 @@ export function effectiveWriteFlags(ceiling: WriteFlagSet, userPolicy: UserPolic
   const enabled = ceiling.enabled && userPolicy.writes === true;
   const customerVisibleEnabled = enabled && ceiling.customerVisibleEnabled && userPolicy.customerVisibleWrites === true;
   return { enabled, customerVisibleEnabled };
+}
+
+// --- Audit trail (NAS-1502) ------------------------------------------------
+//
+// The coordinator DO is also the audit ledger. Every policy MUTATION records its
+// audit row in the SAME storage transaction as the document it changes (see
+// writeConfigDoc / writeUserPolicyDoc / pinUserPolicyRevoked above), so a row and
+// the mutation it describes commit together or not at all, so the ledger cannot
+// drift from the documents, and a conflict that writes nothing to a document
+// still leaves a durable denied row. Observational events that are NOT mutations
+// (a grant minted at /callback, an admission denied at the gate) are appended via
+// appendAuditRow in their own transaction, best-effort and off the user path.
+//
+// Storage model (the same key-value PolicyStorage the CAS core runs over, chosen
+// over the SQL API so the audit core stays unit-testable against the existing
+// in-memory transactional fake, and so an audit row commits inside the very same
+// transaction as its mutation with no second storage abstraction):
+//   audit:seq                 a maintained monotonic counter (last-used seq)
+//   audit:entry:{padded seq}  one immutable row per event, seq zero-padded so the
+//                             ascending UTF-8 key order the DO lists in IS the
+//                             sequence (and wall-clock) order.
+// The counter is incremented inside the serialized transaction, so sequence
+// numbers are gap-free and strictly ordered for free: the single-threaded,
+// input-gated Durable Object provides that with no extra coordination.
+//
+// Retention is bounded two ways, both documented on the reader/writer:
+//   - by COUNT: at most MAX_AUDIT_ENTRIES rows are kept. Each append drops the one
+//     row that just fell out of the window (a single delete), so the live set
+//     stays the most-recent MAX_AUDIT_ENTRIES with O(1) work per append.
+//   - by AGE: rows older than AUDIT_MAX_AGE_MS are swept on append AND on list, a
+//     bounded batch at a time from the oldest key forward (ascending order means
+//     the first non-expired row ends the sweep).
+//
+// Cloudflare storage APIs relied on (developers.cloudflare.com, Durable Objects
+// Storage API): storage.list(options) returns a Map in ascending UTF-8 key order
+// and honors { prefix, limit, reverse, end } where `end` is EXCLUSIVE, and that
+// is what makes newest-first pagination a reverse-listing bounded by the cursor key;
+// storage.transaction(closure) commits its body atomically, and on the SQLite
+// backend operations performed directly on ctx.storage inside the closure are
+// part of the transaction. The core never throws for control flow inside a
+// transaction, so it never depends on transaction rollback.
+
+/** The counter key holding the last-used audit sequence number. */
+export const AUDIT_SEQ_KEY = 'audit:seq';
+
+/** The shared prefix every audit row key carries (kept distinct from the counter). */
+export const AUDIT_ENTRY_PREFIX = 'audit:entry:';
+
+/** Count-based retention: keep at most this many of the most recent rows. */
+export const MAX_AUDIT_ENTRIES = 10_000;
+
+/** Age-based retention: rows older than this (~1 year) are pruned on append/list. */
+export const AUDIT_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
+
+/** Zero-pad width for the seq in a row key, so lexicographic order == numeric order. */
+const AUDIT_SEQ_PAD = 16;
+
+/** Bounded number of oldest rows examined per age-prune sweep. */
+const AUDIT_AGE_PRUNE_BATCH = 32;
+
+/** Pagination clamp for the audit list. */
+export const AUDIT_LIST_MIN_LIMIT = 1;
+export const AUDIT_LIST_MAX_LIMIT = 200;
+export const AUDIT_LIST_DEFAULT_LIMIT = 50;
+
+/** The storage key for one audit row at a given sequence number. */
+export function auditEntryKey(seq: number): string {
+  return `${AUDIT_ENTRY_PREFIX}${String(seq).padStart(AUDIT_SEQ_PAD, '0')}`;
+}
+
+export type AuditOutcome = 'success' | 'denied';
+
+/** One immutable audit row. `before`/`after` are event-shaped snapshots (nullable). */
+export interface AuditEntry {
+  seq: number;
+  ts: string;
+  actorId: string;
+  actorEmail: string;
+  action: string;
+  targetId: string;
+  before: unknown;
+  after: unknown;
+  outcome: AuditOutcome;
+}
+
+/** What a caller supplies to record one event; seq/ts are assigned on append. */
+export interface AuditEventInput {
+  action: string;
+  actorId: string;
+  actorEmail: string;
+  targetId: string;
+  before?: unknown;
+  after?: unknown;
+  outcome: AuditOutcome;
+}
+
+/** Options for a newest-first page of audit rows. */
+export interface AuditListOptions {
+  /** Opaque continuation from a previous page (the seq to read strictly below). */
+  cursor?: string;
+  /** Clamped to [AUDIT_LIST_MIN_LIMIT, AUDIT_LIST_MAX_LIMIT], default AUDIT_LIST_DEFAULT_LIMIT. */
+  limit?: number;
+  /** Inclusive lower bound on ts (ISO). */
+  from?: string;
+  /** Inclusive upper bound on ts (ISO). */
+  to?: string;
+}
+
+/** A newest-first page plus the cursor to fetch the next (older) page, if any. */
+export interface AuditListPage {
+  entries: AuditEntry[];
+  nextCursor?: string;
+}
+
+function clampAuditLimit(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return AUDIT_LIST_DEFAULT_LIMIT;
+  return Math.min(AUDIT_LIST_MAX_LIMIT, Math.max(AUDIT_LIST_MIN_LIMIT, Math.floor(value)));
+}
+
+/** A cursor is the decimal seq to continue strictly below; anything else means "from newest". */
+function decodeAuditCursor(cursor: string | undefined): number | undefined {
+  if (cursor === undefined) return undefined;
+  const n = Number(cursor);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Append one audit row, assign its sequence, and prune. MUST run inside a
+ * transaction supplied by the caller (a mutation's own transaction, or a
+ * standalone transaction for an observational event), so the seq read, the row
+ * write, the counter bump, and the pruning all commit together.
+ */
+export async function appendAuditRow(storage: PolicyStorage, input: AuditEventInput): Promise<AuditEntry> {
+  const seq = ((await storage.get<number>(AUDIT_SEQ_KEY)) ?? 0) + 1;
+  const entry: AuditEntry = {
+    seq,
+    ts: new Date().toISOString(),
+    actorId: input.actorId,
+    actorEmail: input.actorEmail,
+    action: input.action,
+    targetId: input.targetId,
+    before: input.before ?? null,
+    after: input.after ?? null,
+    outcome: input.outcome,
+  };
+  await storage.put(auditEntryKey(seq), entry);
+  await storage.put(AUDIT_SEQ_KEY, seq);
+  // Count-based retention: drop the single row that just fell out of the window.
+  if (seq > MAX_AUDIT_ENTRIES) {
+    await storage.delete(auditEntryKey(seq - MAX_AUDIT_ENTRIES));
+  }
+  await pruneAuditByAge(storage, Date.now());
+  return entry;
+}
+
+/** Sweep a bounded batch of the oldest rows, deleting those past the age cutoff. */
+async function pruneAuditByAge(storage: PolicyStorage, nowMs: number): Promise<void> {
+  const cutoff = new Date(nowMs - AUDIT_MAX_AGE_MS).toISOString();
+  const oldest = await storage.list<AuditEntry>({ prefix: AUDIT_ENTRY_PREFIX, limit: AUDIT_AGE_PRUNE_BATCH });
+  for (const [key, entry] of oldest) {
+    // Ascending order: the first row that is not expired ends the sweep.
+    if (!entry || entry.ts >= cutoff) break;
+    await storage.delete(key);
+  }
+}
+
+/**
+ * Read a newest-first page of audit rows, applying optional ts bounds and the
+ * cursor. Also opportunistically age-prunes. Pulls descending chunks and refills
+ * across the `to`/`from` filter so a page is never short because filtered rows
+ * sat at the top; because ts is non-decreasing with seq, a row older than `from`
+ * ends the scan.
+ */
+export async function readAuditPage(storage: PolicyStorage, options: AuditListOptions): Promise<AuditListPage> {
+  await pruneAuditByAge(storage, Date.now());
+  const limit = clampAuditLimit(options.limit);
+  // Enforce the retention floor on the result regardless of the bounded sweep,
+  // so a listing never surfaces a record past the one-year window.
+  const floor = new Date(Date.now() - AUDIT_MAX_AGE_MS).toISOString();
+  const from = options.from !== undefined && options.from > floor ? options.from : floor;
+  const { to } = options;
+  const chunk = limit + 1;
+  const collected: AuditEntry[] = [];
+  let endExclusiveSeq = decodeAuditCursor(options.cursor);
+  let done = false;
+
+  while (!done && collected.length <= limit) {
+    const listOptions: PolicyListOptions = { prefix: AUDIT_ENTRY_PREFIX, reverse: true, limit: chunk };
+    if (endExclusiveSeq !== undefined) listOptions.end = auditEntryKey(endExclusiveSeq);
+    const page = await storage.list<AuditEntry>(listOptions);
+    if (page.size === 0) break;
+
+    let smallestSeq = Number.POSITIVE_INFINITY;
+    for (const entry of page.values()) {
+      if (entry.seq < smallestSeq) smallestSeq = entry.seq;
+      if (to !== undefined && entry.ts > to) continue;
+      if (from !== undefined && entry.ts < from) {
+        done = true;
+        break;
+      }
+      collected.push(entry);
+      if (collected.length > limit) break;
+    }
+    if (page.size < chunk) break; // storage exhausted
+    endExclusiveSeq = smallestSeq; // continue strictly below the smallest seq seen
+  }
+
+  const hasMore = collected.length > limit;
+  const entries = collected.slice(0, limit);
+  const nextCursor = hasMore ? String(entries[entries.length - 1].seq) : undefined;
+  return { entries, nextCursor };
+}
+
+/**
+ * Read the full audit range (bounded by retention) in ascending, chronological
+ * order for an evidence export. Retention caps the row count, so listing the
+ * whole prefix is bounded.
+ */
+export async function readAuditRange(
+  storage: PolicyStorage,
+  options: { from?: string; to?: string } = {},
+): Promise<AuditEntry[]> {
+  await pruneAuditByAge(storage, Date.now());
+  // The retention floor is enforced on the RESULT, not just via the opportunistic
+  // sweep (which is bounded per call): an export must never hand back a record
+  // older than the one-year window we promise to have discarded, even if the
+  // sweep has not yet reached it. The effective lower bound is the later of the
+  // caller's `from` and the retention floor.
+  const floor = new Date(Date.now() - AUDIT_MAX_AGE_MS).toISOString();
+  const from = options.from !== undefined && options.from > floor ? options.from : floor;
+  const { to } = options;
+  const all = await storage.list<AuditEntry>({ prefix: AUDIT_ENTRY_PREFIX });
+  const out: AuditEntry[] = [];
+  for (const entry of all.values()) {
+    if (entry.ts < from) continue;
+    if (to !== undefined && entry.ts > to) continue;
+    out.push(entry);
+  }
+  return out;
+}
+
+/** List every stored user policy document (normalized), keyed by hsUserId. */
+export async function listUserPolicyDocs(
+  storage: PolicyStorage,
+): Promise<Array<{ hsUserId: string; policy: UserPolicy }>> {
+  const all = await storage.list<Partial<UserPolicy>>({ prefix: USER_POLICY_PREFIX });
+  const out: Array<{ hsUserId: string; policy: UserPolicy }> = [];
+  for (const [key, raw] of all) {
+    out.push({ hsUserId: key.slice(USER_POLICY_PREFIX.length), policy: normalizeUserPolicy(raw) });
+  }
+  return out;
+}
+
+/** One row of the current-entitlements evidence export. */
+export interface AccessListRow {
+  hsUserId: string;
+  email: string;
+  allowed: boolean;
+  writes: boolean;
+  customerVisibleWrites: boolean;
+  /** Admission decision under the current config (allowlist mode + explicit block). */
+  effectiveAllowed: boolean;
+  /** Write flag after intersecting the user grant with the deployment ceiling. */
+  effectiveWrites: boolean;
+  /** Customer-visible write flag after the same intersection. */
+  effectiveCustomerVisibleWrites: boolean;
+  updatedAt: string;
+  updatedBy: string;
+  version: number;
+}
+
+/**
+ * Compute the current effective entitlements for every user policy, under the
+ * deployment config and the env write ceiling. `effectiveAllowed` is the real
+ * admission decision (evaluateAccess); the write flags are narrowed to the
+ * ceiling (effectiveWriteFlags). Sorted by hsUserId for a stable export.
+ */
+export function buildAccessListRows(
+  config: AdminConfig,
+  ceiling: WriteFlagSet,
+  users: Array<{ hsUserId: string; policy: UserPolicy }>,
+): AccessListRow[] {
+  return users
+    .map(({ hsUserId, policy }) => {
+      const effective = effectiveWriteFlags(ceiling, policy);
+      return {
+        hsUserId,
+        email: policy.email,
+        allowed: policy.allowed,
+        writes: policy.writes,
+        customerVisibleWrites: policy.customerVisibleWrites,
+        effectiveAllowed: evaluateAccess(config, policy).allowed,
+        effectiveWrites: effective.enabled,
+        effectiveCustomerVisibleWrites: effective.customerVisibleEnabled,
+        updatedAt: policy.updatedAt,
+        updatedBy: policy.updatedBy,
+        version: policy.version,
+      };
+    })
+    .sort((a, b) => (a.hsUserId < b.hsUserId ? -1 : a.hsUserId > b.hsUserId ? 1 : 0));
+}
+
+/**
+ * RFC-4180 field quoting, plus spreadsheet formula-injection neutralization.
+ * A cell whose text begins with =, +, -, @, or a tab/CR is treated by Excel and
+ * Google Sheets as a formula, so a value like `=cmd|...` in a user-controlled
+ * field (email, updatedBy, the before/after JSON) could execute when an operator
+ * opens the evidence export. Prefix such a cell with a single quote, which those
+ * tools render as a leading text marker and strip on display, before applying
+ * normal RFC-4180 quoting.
+ */
+function csvCell(value: unknown): string {
+  let s = value === null || value === undefined ? '' : typeof value === 'string' ? value : String(value);
+  if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Build an RFC-4180 CSV (CRLF line breaks, quoted fields) from a header + rows. */
+export function toCsv(headers: string[], rows: unknown[][]): string {
+  const lines = [headers.map(csvCell).join(',')];
+  for (const row of rows) lines.push(row.map(csvCell).join(','));
+  return lines.join('\r\n');
+}
+
+export const AUDIT_CSV_HEADERS = [
+  'seq',
+  'ts',
+  'actorId',
+  'actorEmail',
+  'action',
+  'targetId',
+  'before',
+  'after',
+  'outcome',
+] as const;
+
+/** Serialize audit rows to CSV; before/after are JSON so commas/quotes get quoted. */
+export function auditEntriesToCsv(entries: AuditEntry[]): string {
+  return toCsv(
+    [...AUDIT_CSV_HEADERS],
+    entries.map((e) => [
+      e.seq,
+      e.ts,
+      e.actorId,
+      e.actorEmail,
+      e.action,
+      e.targetId,
+      e.before === null || e.before === undefined ? '' : JSON.stringify(e.before),
+      e.after === null || e.after === undefined ? '' : JSON.stringify(e.after),
+      e.outcome,
+    ]),
+  );
+}
+
+export const ACCESS_LIST_CSV_HEADERS = [
+  'hsUserId',
+  'email',
+  'allowed',
+  'writes',
+  'customerVisibleWrites',
+  'effectiveAllowed',
+  'effectiveWrites',
+  'effectiveCustomerVisibleWrites',
+  'updatedAt',
+  'updatedBy',
+  'version',
+] as const;
+
+/** Serialize access-list rows to CSV. */
+export function accessListToCsv(rows: AccessListRow[]): string {
+  return toCsv(
+    [...ACCESS_LIST_CSV_HEADERS],
+    rows.map((r) => [
+      r.hsUserId,
+      r.email,
+      r.allowed,
+      r.writes,
+      r.customerVisibleWrites,
+      r.effectiveAllowed,
+      r.effectiveWrites,
+      r.effectiveCustomerVisibleWrites,
+      r.updatedAt,
+      r.updatedBy,
+      r.version,
+    ]),
+  );
 }

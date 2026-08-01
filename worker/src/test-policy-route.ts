@@ -4,9 +4,11 @@
  * The worker has no admin API yet (NAS-1503), and `wrangler dev` exposes no way
  * to reach into the coordinator DO's storage mid-run, so the smoke suite needs an
  * in-process seam to seed the config/policy documents and to drive revokeUser.
- * This route provides exactly that and NOTHING else: it is mounted only when
- * HELPSCOUT_TEST_POLICY_ROUTES === "true", which the deployment template never
- * sets and the smoke asserts is absent by default (the route 404s without it).
+ * This route provides exactly that and NOTHING else. It is gated by a SECRET,
+ * never a boolean: HELPSCOUT_TEST_POLICY_ROUTES holds a long random key (not the
+ * literal "true", which the mount guard rejects), and a request must present
+ * that exact key in the X-Test-Policy-Key header. The deployment template never
+ * sets the var, and the smoke asserts the route 404s without a valid key.
  *
  * It is a thin dispatch over the same exported policy functions the real admin
  * API will call, so it exercises the production seams (which now RPC the
@@ -24,6 +26,7 @@ import {
   putUserPolicy,
   revokeUser,
 } from './policy-store.js';
+import { exportAccessList, exportAuditLog, listAuditEntries } from './audit-store.js';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -40,6 +43,12 @@ interface TestCommand {
   input?: UserPolicyInput;
   expectedVersion?: number;
   updatedBy?: string;
+  // Audit read/export parameters (NAS-1502).
+  cursor?: string;
+  limit?: number;
+  from?: string;
+  to?: string;
+  format?: 'json' | 'csv';
 }
 
 export async function handleTestPolicyRoute(request: Request, env: Env): Promise<Response> {
@@ -86,6 +95,19 @@ export async function handleTestPolicyRoute(request: Request, env: Env): Promise
       }
       case 'revokeUser':
         return json({ result: await revokeUser(env, String(command.hsUserId), { updatedBy }) });
+      case 'auditList':
+        return json({
+          page: await listAuditEntries(env, {
+            cursor: command.cursor,
+            limit: command.limit,
+            from: command.from,
+            to: command.to,
+          }),
+        });
+      case 'auditExport':
+        return json({ export: await exportAuditLog(env, { from: command.from, to: command.to, format: command.format ?? 'json' }) });
+      case 'accessListExport':
+        return json({ export: await exportAccessList(env, { format: command.format ?? 'json' }) });
       default:
         return json({ error: `Unknown op: ${command.op}` }, 400);
     }
