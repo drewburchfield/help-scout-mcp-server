@@ -42,9 +42,11 @@ import {
   readAuditPage,
   readAuditRange,
   readConfigDoc,
+  readDirectory,
   readUserPolicyDoc,
   toPolicyErrorEnvelope,
   writeConfigDoc,
+  writeDirectory,
   writeUserPolicyDoc,
   type AccessListRow,
   type AdminConfig,
@@ -58,6 +60,7 @@ import {
   type PolicyErrorEnvelope,
   type PolicyListOptions,
   type PolicyStorage,
+  type UserDirectory,
   type UserPolicy,
   type UserPolicyDocResult,
   type UserPolicyInput,
@@ -136,6 +139,16 @@ export class PolicyCoordinator extends DurableObject {
   /** Every stored user policy document, for the access-list evidence export. */
   async listUserPolicies(): Promise<Array<{ hsUserId: string; policy: UserPolicy }>> {
     return listUserPolicyDocs(this.store);
+  }
+
+  /** The cached Help Scout user directory the admin roster merges (NAS-1503), or null. */
+  async getDirectory(): Promise<UserDirectory | null> {
+    return readDirectory(this.store);
+  }
+
+  /** Overwrite the cached Help Scout user directory (populated at admin login). */
+  async putDirectory(directory: UserDirectory): Promise<void> {
+    await writeDirectory(this.store, directory);
   }
 
   /**

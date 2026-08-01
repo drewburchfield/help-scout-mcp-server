@@ -45,7 +45,8 @@ import { getConfig, getUserPolicy } from './policy-store.js';
 
 /** Kept in step with the stdio server identity in `src/index.ts`. */
 const SERVER_NAME = 'helpscout-search';
-const SERVER_VERSION = '2.1.0';
+/** Exported so the admin surface (NAS-1503) can display the deployment's worker version. */
+export const SERVER_VERSION = '2.1.0';
 
 /**
  * The per-user grant, decrypted by workers-oauth-provider and re-injected as
