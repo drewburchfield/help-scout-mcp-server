@@ -1,4 +1,7 @@
 import nock from 'nock';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 // Load the axios client so it registers itself as the default behind
 // getClient(); the handler modules no longer import it themselves.
 import '../utils/helpscout-client.js';
@@ -138,6 +141,150 @@ describe('WriteHandler', () => {
 
       expect(result.isError).toBeUndefined();
       expect(scope.isDone()).toBe(true);
+    });
+
+    it('posts the note as the named user with its attachments', async () => {
+      const attachment = { fileName: 'report.md', mimeType: 'text/markdown', data: 'IyBSZXBvcnQ=' };
+      const scope = nock(baseURL)
+        .post(`/conversations/${CONVERSATION_ID}/notes`, {
+          text: 'internal only',
+          user: 12,
+          attachments: [attachment],
+        })
+        .reply(201, '', { 'Resource-Id': '883' });
+
+      const result = await run('createNote', {
+        conversationId: CONVERSATION_ID,
+        text: 'internal only',
+        user: '12',
+        attachments: [attachment],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(scope.isDone()).toBe(true);
+    });
+
+    it('saves the draft as the named user with its attachments', async () => {
+      const attachment = { fileName: 'screenshot-1.png', mimeType: 'image/png', data: 'iVBORw0KGgo=' };
+      const scope = nock(baseURL)
+        .post(`/conversations/${CONVERSATION_ID}/reply`, {
+          text: 'draft body',
+          draft: true,
+          customer: { id: 77 },
+          user: 12,
+          attachments: [attachment],
+        })
+        .reply(201, '', { 'Resource-Id': '884' });
+
+      const result = await run('createDraftReply', {
+        conversationId: CONVERSATION_ID,
+        text: 'draft body',
+        customerId: '77',
+        user: '12',
+        attachments: [attachment],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(scope.isDone()).toBe(true);
+    });
+
+    it('rejects attachment data that is not base64 without sending a request', async () => {
+      const scope = nock(baseURL).post(`/conversations/${CONVERSATION_ID}/notes`).reply(201);
+
+      const result = await run('createNote', {
+        conversationId: CONVERSATION_ID,
+        text: 'internal only',
+        attachments: [{ fileName: 'report.md', mimeType: 'text/markdown', data: '# Report' }],
+      });
+
+      expect(result.isError).toBe(true);
+      expect(scope.isDone()).toBe(false);
+    });
+
+    describe('attachments by filePath', () => {
+      let directory: string;
+      let outside: string;
+
+      beforeEach(() => {
+        directory = mkdtempSync(join(tmpdir(), 'helpscout-attachments-'));
+        outside = mkdtempSync(join(tmpdir(), 'helpscout-outside-'));
+        writeFileSync(join(directory, 'report.md'), '# Report');
+        writeFileSync(join(directory, 'screenshot-1.png'), Buffer.from('iVBORw0KGgo=', 'base64'));
+        writeFileSync(join(outside, 'secret.txt'), 'secret');
+        process.env.HELPSCOUT_ATTACHMENT_DIR = directory;
+      });
+
+      afterEach(() => {
+        delete process.env.HELPSCOUT_ATTACHMENT_DIR;
+        rmSync(directory, { recursive: true, force: true });
+        rmSync(outside, { recursive: true, force: true });
+      });
+
+      it('reads the file and posts it as base64 data on the note', async () => {
+        const scope = nock(baseURL)
+          .post(`/conversations/${CONVERSATION_ID}/notes`, {
+            text: 'internal only',
+            attachments: [{ fileName: 'report.md', mimeType: 'text/markdown', data: 'IyBSZXBvcnQ=' }],
+          })
+          .reply(201, '', { 'Resource-Id': '885' });
+
+        const result = await run('createNote', {
+          conversationId: CONVERSATION_ID,
+          text: 'internal only',
+          attachments: [{ fileName: 'report.md', mimeType: 'text/markdown', filePath: join(directory, 'report.md') }],
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(scope.isDone()).toBe(true);
+      });
+
+      it('reads the file and saves it as base64 data on the draft', async () => {
+        const scope = nock(baseURL)
+          .post(`/conversations/${CONVERSATION_ID}/reply`, {
+            text: 'draft body',
+            draft: true,
+            customer: { id: 77 },
+            attachments: [{ fileName: 'screenshot-1.png', mimeType: 'image/png', data: 'iVBORw0KGgo=' }],
+          })
+          .reply(201, '', { 'Resource-Id': '886' });
+
+        const result = await run('createDraftReply', {
+          conversationId: CONVERSATION_ID,
+          text: 'draft body',
+          customerId: '77',
+          attachments: [{ fileName: 'screenshot-1.png', mimeType: 'image/png', filePath: join(directory, 'screenshot-1.png') }],
+        });
+
+        expect(result.isError).toBeUndefined();
+        expect(scope.isDone()).toBe(true);
+      });
+
+      it('refuses a file outside HELPSCOUT_ATTACHMENT_DIR without sending a request', async () => {
+        const scope = nock(baseURL).post(`/conversations/${CONVERSATION_ID}/notes`).reply(201);
+
+        const result = await run('createNote', {
+          conversationId: CONVERSATION_ID,
+          text: 'internal only',
+          attachments: [{ fileName: 'secret.txt', mimeType: 'text/plain', filePath: join(directory, '..', basename(outside), 'secret.txt') }],
+        });
+
+        expect(result.isError).toBe(true);
+        expect(scope.isDone()).toBe(false);
+      });
+
+      it('refuses a filePath when HELPSCOUT_ATTACHMENT_DIR is not set without sending a request', async () => {
+        delete process.env.HELPSCOUT_ATTACHMENT_DIR;
+        const scope = nock(baseURL).post(`/conversations/${CONVERSATION_ID}/notes`).reply(201);
+
+        const result = await run('createNote', {
+          conversationId: CONVERSATION_ID,
+          text: 'internal only',
+          attachments: [{ fileName: 'report.md', mimeType: 'text/markdown', filePath: join(directory, 'report.md') }],
+        });
+
+        expect(result.isError).toBe(true);
+        expect(scope.isDone()).toBe(false);
+      });
     });
 
     it('refuses a caller-supplied draft flag on createDraftReply', async () => {

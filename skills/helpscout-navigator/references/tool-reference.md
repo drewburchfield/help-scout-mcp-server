@@ -363,8 +363,8 @@ No tier-1 operation notifies a customer, and none accepts a parameter that would
 
 | Operation | Class | Arguments beyond `conversationId` | Notes |
 |-----------|-------|-----------------------------------|-------|
-| `createNote` | nonDestructive | `text` | Internal note, teammates only. No delete endpoint exists. |
-| `createDraftReply` | nonDestructive | `text`, optional `customerId`/`customerEmail`, `assignTo`, `cc`, `bcc` | Saved unsent. Cannot send. The primary customer is resolved when none is named. |
+| `createNote` | nonDestructive | `text`, optional `user`, `attachments` | Internal note, teammates only. No delete endpoint exists. Each attachment is base64 `data` or a `filePath` inside `HELPSCOUT_ATTACHMENT_DIR`. |
+| `createDraftReply` | nonDestructive | `text`, optional `customerId`/`customerEmail`, `assignTo`, `cc`, `bcc`, `user`, `attachments` | Saved unsent. Cannot send. The primary customer is resolved when none is named. Attachments as for `createNote`. |
 | `updateConversationStatus` | reversible | `status` (active, closed, pending) | Reverse by setting the previous status. |
 | `assignConversation` | reversible | `userId` | User IDs come from `listUsers`. |
 | `unassignConversation` | reversible | none | Reverse with `assignConversation`. |

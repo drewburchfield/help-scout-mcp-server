@@ -753,7 +753,9 @@ export const GetAttachmentInputSchema = z.object({
   attachmentId: z.string().regex(/^\d+$/, 'Attachment ID must be numeric').describe('Attachment ID'),
 });
 
-export const DownloadAttachmentFileInputSchema = GetAttachmentInputSchema;
+export const DownloadAttachmentFileInputSchema = GetAttachmentInputSchema.extend({
+  filePath: z.string().min(1).optional().describe('Absolute path inside HELPSCOUT_ATTACHMENT_DIR to save the file to, in a folder that exists'),
+});
 
 export const ListWorkflowsInputSchema = z.object({
   page: z.number().int().min(1).default(1),

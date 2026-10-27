@@ -214,6 +214,7 @@ Full rules: [write tool contract](guides/architecture/mcp-tool-contract.md#write
 | `REDACT_MESSAGE_CONTENT` | Replace message bodies with placeholders | `false` |
 | `HELPSCOUT_ENABLE_WRITES` | Advertise `write_help_scout` with the tier-1 conversation writes | Unset (`false`) |
 | `HELPSCOUT_ENABLE_CUSTOMER_VISIBLE_WRITES` | Also enable `sendReply` and `publishDraft`, which email the customer | Unset (`false`) |
+| `HELPSCOUT_ATTACHMENT_DIR` | Folder `createNote` and `createDraftReply` may read attachments from, and `downloadAttachmentFile` may save them to, by `filePath`, on a local server | Unset (base64 `data` only) |
 | `CACHE_TTL_SECONDS` | Cache duration for API responses | `300` |
 | `LOG_LEVEL` | Logging verbosity (`error`, `warn`, `info`, `debug`) | `info` |
 

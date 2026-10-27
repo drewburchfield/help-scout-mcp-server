@@ -890,12 +890,13 @@ export class ToolHandler {
       },
       {
         name: 'downloadAttachmentFile',
-        description: 'Download a Help Scout attachment file as base64 with response metadata.',
+        description: 'Download a Help Scout attachment file as base64 with response metadata, or save it to filePath and return only the path.',
         inputSchema: {
           type: 'object',
           properties: {
             conversationId: { type: 'string', description: 'Conversation ID from searchConversations or getConversationSummary' },
             attachmentId: { type: 'string', description: 'Attachment ID from getThreads attachment links' },
+            filePath: { type: 'string', description: 'Absolute path inside HELPSCOUT_ATTACHMENT_DIR to save the file to, in a folder that exists. The result then carries the path instead of base64 data. Local server only.' },
           },
           required: ['conversationId', 'attachmentId'],
         },
@@ -2516,6 +2517,7 @@ export class ToolHandler {
 
   private async downloadAttachmentFile(args: unknown): Promise<CallToolResult> {
     const input = DownloadAttachmentFileInputSchema.parse(args);
+    const savePath = input.filePath ? await this.attachmentSavePath(input.filePath) : undefined;
     const response = await getClient().getRaw<Buffer>(
       `/conversations/${input.conversationId}/attachments/${input.attachmentId}/file`,
       undefined,
@@ -2525,6 +2527,25 @@ export class ToolHandler {
     const contentDisposition = this.getResponseHeader(headers, 'content-disposition');
     const contentType = this.getResponseHeader(headers, 'content-type') ?? 'application/octet-stream';
     const fileBuffer = this.responseDataToBuffer(response.data);
+
+    if (savePath) {
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(savePath, fileBuffer, { flag: 'wx' }); // wx never overwrites, so it can't follow a planted symlink
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            conversationId: input.conversationId,
+            attachmentId: input.attachmentId,
+            filename: this.parseContentDispositionFilename(contentDisposition),
+            contentType,
+            byteLength: fileBuffer.byteLength,
+            filePath: savePath,
+            usage: 'The file is saved at filePath; open it from there.',
+          }, null, 2),
+        }],
+      };
+    }
 
     return {
       content: [{
@@ -2545,6 +2566,29 @@ export class ToolHandler {
         }, null, 2),
       }],
     };
+  }
+
+  /**
+   * Where downloadAttachmentFile may save a file, checked before the download: a folder that exists
+   * inside HELPSCOUT_ATTACHMENT_DIR, so text in a conversation cannot get a file written anywhere else.
+   * fs is imported here, not at the top, so the Workers build only loads it when a filePath is used.
+   */
+  private async attachmentSavePath(filePath: string): Promise<string> {
+    const directory = process.env.HELPSCOUT_ATTACHMENT_DIR;
+    if (!directory) {
+      throw new Error('Saving attachments by filePath is off because HELPSCOUT_ATTACHMENT_DIR is not set. Leave out filePath to get base64 data.');
+    }
+
+    const { realpath } = await import('node:fs/promises');
+    const path = await import('node:path');
+    const allowed = await realpath(directory);
+    const folder = path.isAbsolute(filePath) ? await realpath(path.dirname(filePath)).catch(() => undefined) : undefined;
+    const relative = folder ? path.relative(allowed, folder) : '..';
+    const name = path.basename(filePath);
+    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || name === '..' || name === '.') {
+      throw new Error(`${filePath} is not a path inside HELPSCOUT_ATTACHMENT_DIR. Pass an absolute path in a folder that exists inside it.`);
+    }
+    return path.join(folder as string, name);
   }
 
   private async listWorkflows(args: unknown): Promise<CallToolResult> {

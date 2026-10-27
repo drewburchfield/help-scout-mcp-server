@@ -1,4 +1,7 @@
 import nock from 'nock';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 // Load the axios client so it registers itself as the default behind
 // getClient(); the handler modules no longer import it themselves.
 import '../utils/helpscout-client.js';
@@ -1410,6 +1413,67 @@ describe('ToolHandler', () => {
         encoding: 'base64',
         source: 'Help Scout attachment file endpoint',
       }));
+    });
+
+    describe('downloadAttachmentFile to a filePath', () => {
+      let directory: string;
+      let outside: string;
+
+      beforeEach(() => {
+        directory = mkdtempSync(join(tmpdir(), 'helpscout-attachments-'));
+        outside = mkdtempSync(join(tmpdir(), 'helpscout-outside-'));
+        process.env.HELPSCOUT_ATTACHMENT_DIR = directory;
+      });
+
+      afterEach(() => {
+        delete process.env.HELPSCOUT_ATTACHMENT_DIR;
+        rmSync(directory, { recursive: true, force: true });
+        rmSync(outside, { recursive: true, force: true });
+      });
+
+      const download = (filePath: string) => toolHandler.callTool({
+        method: 'tools/call',
+        params: {
+          name: 'downloadAttachmentFile',
+          arguments: { conversationId: '123', attachmentId: '789', filePath },
+        },
+      });
+
+      it('saves the file and returns its path instead of the data', async () => {
+        nock(baseURL)
+          .get('/conversations/123/attachments/789/file')
+          .reply(200, Buffer.from('png bytes'), {
+            'Content-Disposition': 'attachment; filename="screenshot.png"',
+            'Content-Type': 'image/png',
+          });
+
+        const result = await download(join(directory, '789-screenshot.png'));
+
+        const response = JSON.parse((result.content[0] as { type: 'text'; text: string }).text);
+        expect(result.isError).toBeUndefined();
+        expect(response.filePath).toBe(join(realpathSync(directory), '789-screenshot.png'));
+        expect(response.data).toBeUndefined();
+        expect(readFileSync(response.filePath, 'utf8')).toBe('png bytes');
+      });
+
+      it('refuses a path outside HELPSCOUT_ATTACHMENT_DIR without downloading', async () => {
+        const scope = nock(baseURL).get('/conversations/123/attachments/789/file').reply(200, Buffer.from('png bytes'));
+
+        const result = await download(join(directory, '..', basename(outside), 'screenshot.png'));
+
+        expect(result.isError).toBe(true);
+        expect(scope.isDone()).toBe(false);
+      });
+
+      it('refuses a filePath when HELPSCOUT_ATTACHMENT_DIR is not set without downloading', async () => {
+        delete process.env.HELPSCOUT_ATTACHMENT_DIR;
+        const scope = nock(baseURL).get('/conversations/123/attachments/789/file').reply(200, Buffer.from('png bytes'));
+
+        const result = await download(join(directory, 'screenshot.png'));
+
+        expect(result.isError).toBe(true);
+        expect(scope.isDone()).toBe(false);
+      });
     });
 
     it('should not cache attachment data responses', async () => {
